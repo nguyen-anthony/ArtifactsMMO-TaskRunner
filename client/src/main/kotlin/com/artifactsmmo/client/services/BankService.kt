@@ -32,7 +32,7 @@ class BankService(client: HttpClient) : BaseApiService(client) {
      * Deposit gold into the bank
      */
     suspend fun depositGold(characterName: String, quantity: Int): BankGoldTransactionData {
-        val body = mapOf("quantity" to quantity)
+        val body = BankGoldRequest(quantity = quantity)
         return post<ApiResponse<BankGoldTransactionData>>("/my/$characterName/action/bank/deposit/gold", body).data
     }
 
@@ -40,7 +40,7 @@ class BankService(client: HttpClient) : BaseApiService(client) {
      * Withdraw gold from the bank
      */
     suspend fun withdrawGold(characterName: String, quantity: Int): BankGoldTransactionData {
-        val body = mapOf("quantity" to quantity)
+        val body = BankGoldRequest(quantity = quantity)
         return post<ApiResponse<BankGoldTransactionData>>("/my/$characterName/action/bank/withdraw/gold", body).data
     }
 

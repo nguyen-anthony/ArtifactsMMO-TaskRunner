@@ -48,6 +48,12 @@ fun main() = runBlocking {
             }
             println()
 
+            println("=== Getting Ash Plank Crafting Info ===")
+            val ashPlankItem = client.content.getItem("ash_plank")
+            val ashWoodPerPlank = ashPlankItem.craft?.items?.find { it.code == "ash_wood" }?.quantity ?: 10
+            println("Copper bar crafting requires: ${ashWoodPerPlank}x ash_wood -> 1x ash_plank")
+            println()
+
             // Gather ash_wood with all characters concurrently
             println("=== Starting Concurrent Gathering ===")
             println("All characters will gather independently from their current positions")
@@ -73,6 +79,51 @@ fun main() = runBlocking {
                                 if (totalItems >= inventoryThreshold) {
                                     println("${currentChar.name}: 📦 Inventory is ${totalItems}/${currentChar.inventoryMaxItems} - going to bank")
 
+                                    val woodCuttingStations = client.content.getMaps(
+                                        contentType = "workshop",
+                                        contentCode = "woodcutting",
+                                        hideBlockedMaps = true,
+                                        size = 50
+                                    )
+
+                                    if (woodCuttingStations.data.isEmpty()) {
+                                        println("No woodcutting workshop found on map!")
+                                        delay(30.seconds)
+                                        continue
+                                    }
+
+                                    val nearestStation = woodCuttingStations.data.minByOrNull { station ->
+                                        kotlin.math.abs(station.x - currentChar.x) + kotlin.math.abs(station.y - currentChar.y)
+                                    }!!
+
+                                    println("  📍 Moving to woodcutting workshop at (${nearestStation.x}, ${nearestStation.y})")
+                                    val moveToStationResult = client.actions.move(currentChar.name, nearestStation.x, nearestStation.y)
+                                    println("  ✓ Arrived at woodcutting workshop")
+
+                                    // Wait for movement cooldown
+                                    if (moveToStationResult.cooldown.totalSeconds > 0) {
+                                        delay(moveToStationResult.cooldown.totalSeconds.seconds)
+                                    }
+
+                                    val charAtStation = client.characters.getCharacter(currentChar.name)
+                                    val ashWoodCount = charAtStation.inventory.find { it.code == "ash_wood" }?.quantity ?: 0
+                                    val planksToCraft = ashWoodCount / ashWoodPerPlank
+
+                                    if (planksToCraft > 0) {
+                                        println(" Crafting $planksToCraft ash_plank(s) from $ashWoodCount ash_wood")
+                                        val craftResult = client.actions.craft(
+                                            characterName = charAtStation.name,
+                                            itemCode = "ash_plank",
+                                            quantity = planksToCraft
+                                        )
+                                        println(" Crafted ${craftResult.details.items.joinToString(", ") { "${it.quantity}x ${it.code}" }}")
+
+                                        // Wait for crafting cooldown
+                                        if (craftResult.cooldown.totalSeconds > 0) {
+                                            delay(craftResult.cooldown.totalSeconds.seconds)
+                                        }
+                                    }
+
                                     // Find nearest bank
                                     val banks = client.content.getMaps(
                                         contentType = "bank",
@@ -81,7 +132,7 @@ fun main() = runBlocking {
                                     )
 
                                     if (banks.data.isEmpty()) {
-                                        println("  ❌ No banks found on map!")
+                                        println("No banks found on map!")
                                         delay(30.seconds)
                                         continue
                                     }

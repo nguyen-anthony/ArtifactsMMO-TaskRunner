@@ -13,7 +13,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Move character to a destination
      */
     suspend fun move(characterName: String, x: Int, y: Int): CharacterMovementData {
-        val body = mapOf("x" to x, "y" to y)
+        val body = MoveRequest(x = x, y = y)
         return post<ApiResponse<CharacterMovementData>>("/my/$characterName/action/move", body).data
     }
 
@@ -21,7 +21,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Move character to a destination by map ID
      */
     suspend fun moveToMap(characterName: String, mapId: Int): CharacterMovementData {
-        val body = mapOf("map_id" to mapId)
+        val body = MoveToMapRequest(mapId = mapId)
         return post<ApiResponse<CharacterMovementData>>("/my/$characterName/action/move", body).data
     }
 
@@ -29,7 +29,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Start a fight with a monster
      */
     suspend fun fight(characterName: String, participants: List<String> = emptyList()): CharacterFightData {
-        val body = mapOf("participants" to participants)
+        val body = FightRequest(participants = participants)
         return post<ApiResponse<CharacterFightData>>("/my/$characterName/action/fight", body).data
     }
 
@@ -44,7 +44,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Craft an item
      */
     suspend fun craft(characterName: String, itemCode: String, quantity: Int = 1): SkillData {
-        val body = mapOf("code" to itemCode, "quantity" to quantity)
+        val body = CraftRequest(code = itemCode, quantity = quantity)
         return post<ApiResponse<SkillData>>("/my/$characterName/action/crafting", body).data
     }
 
@@ -59,7 +59,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Equip an item
      */
     suspend fun equip(characterName: String, itemCode: String, slot: String, quantity: Int = 1): EquipmentData {
-        val body = mapOf("code" to itemCode, "slot" to slot, "quantity" to quantity)
+        val body = EquipRequest(code = itemCode, slot = slot, quantity = quantity)
         return post<ApiResponse<EquipmentData>>("/my/$characterName/action/equip", body).data
     }
 
@@ -67,7 +67,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Unequip an item
      */
     suspend fun unequip(characterName: String, slot: String, quantity: Int = 1): EquipmentData {
-        val body = mapOf("slot" to slot, "quantity" to quantity)
+        val body = UnequipRequest(slot = slot, quantity = quantity)
         return post<ApiResponse<EquipmentData>>("/my/$characterName/action/unequip", body).data
     }
 
@@ -75,7 +75,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Use a consumable item
      */
     suspend fun use(characterName: String, itemCode: String, quantity: Int = 1): UseItemData {
-        val body = mapOf("code" to itemCode, "quantity" to quantity)
+        val body = UseItemRequest(code = itemCode, quantity = quantity)
         return post<ApiResponse<UseItemData>>("/my/$characterName/action/use", body).data
     }
 
@@ -83,7 +83,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Delete an item from inventory
      */
     suspend fun deleteItem(characterName: String, itemCode: String, quantity: Int): Character {
-        val body = mapOf("code" to itemCode, "quantity" to quantity)
+        val body = DeleteItemRequest(code = itemCode, quantity = quantity)
         return post<ApiResponse<Character>>("/my/$characterName/action/delete", body).data
     }
 
@@ -91,7 +91,7 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Recycle an item
      */
     suspend fun recycle(characterName: String, itemCode: String, quantity: Int = 1): RecyclingData {
-        val body = mapOf("code" to itemCode, "quantity" to quantity)
+        val body = RecycleRequest(code = itemCode, quantity = quantity)
         return post<ApiResponse<RecyclingData>>("/my/$characterName/action/recycling", body).data
     }
 }

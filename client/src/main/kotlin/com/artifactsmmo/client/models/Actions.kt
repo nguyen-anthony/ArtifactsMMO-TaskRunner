@@ -4,6 +4,64 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
+data class CraftRequest(
+    val code: String,
+    val quantity: Int
+)
+
+@Serializable
+data class MoveRequest(
+    val x: Int,
+    val y: Int
+)
+
+@Serializable
+data class MoveToMapRequest(
+    @SerialName("map_id") val mapId: Int
+)
+
+@Serializable
+data class FightRequest(
+    val participants: List<String> = emptyList()
+)
+
+@Serializable
+data class EquipRequest(
+    val code: String,
+    val slot: String,
+    val quantity: Int = 1
+)
+
+@Serializable
+data class UnequipRequest(
+    val slot: String,
+    val quantity: Int = 1
+)
+
+@Serializable
+data class UseItemRequest(
+    val code: String,
+    val quantity: Int = 1
+)
+
+@Serializable
+data class DeleteItemRequest(
+    val code: String,
+    val quantity: Int
+)
+
+@Serializable
+data class RecycleRequest(
+    val code: String,
+    val quantity: Int = 1
+)
+
+@Serializable
+data class BankGoldRequest(
+    val quantity: Int
+)
+
+@Serializable
 data class Bank(
     val slots: Int,
     val expansions: Int,
