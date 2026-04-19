@@ -1,8 +1,37 @@
 package com.artifactsmmo.client.models
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Instant
+
+/**
+ * Handles the ArtifactsMMO API inconsistency where `cooldown` on a Character
+ * is an Int (seconds remaining) when the character is idle, but a full Cooldown
+ * object when the character is actively in a cooldown. This serializer accepts
+ * both forms and returns the remaining seconds as an Int in both cases.
+ */
+object IntOrCooldownSerializer : KSerializer<Int> {
+    override val descriptor = PrimitiveSerialDescriptor("IntOrCooldown", PrimitiveKind.INT)
+    override fun serialize(encoder: Encoder, value: Int) = encoder.encodeInt(value)
+    override fun deserialize(decoder: Decoder): Int {
+        val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeInt()
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            is JsonPrimitive -> element.intOrNull ?: 0
+            is JsonObject    -> element["remaining_seconds"]?.jsonPrimitive?.intOrNull ?: 0
+            else             -> 0
+        }
+    }
+}
 
 @Serializable
 data class ApiResponse<T>(

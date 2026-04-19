@@ -5,9 +5,6 @@ plugins {
 
     // Apply the Application plugin to add support for building an executable JVM application.
     application
-
-    // Kotlin serialization plugin for TaskStore persistence
-    kotlin("plugin.serialization") version "2.2.21"
 }
 
 dependencies {
@@ -16,6 +13,9 @@ dependencies {
 
     // Add the ArtifactsMMO client library (includes coroutines, datetime, and serialization via api)
     implementation(project(":client"))
+
+    // Core task management module
+    implementation(project(":core"))
 
     // Mordant for styled terminal output (tables, colors, formatting)
     implementation("com.github.ajalt.mordant:mordant:3.0.2")
@@ -29,7 +29,9 @@ application {
     mainClass = "com.artifactsmmo.app.MainKt"
 }
 
-// Connect stdin to the application so interactive terminal input works
+// Connect stdin to the application so interactive terminal input works.
+// Use project root as working directory so tasks.json is shared with :gui.
 tasks.named<JavaExec>("run") {
     standardInput = System.`in`
+    workingDir = rootDir
 }

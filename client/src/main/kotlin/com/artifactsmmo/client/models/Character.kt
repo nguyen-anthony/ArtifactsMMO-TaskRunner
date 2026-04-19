@@ -79,6 +79,7 @@ data class Character(
     val y: Int,
     val layer: String,
     @SerialName("map_id") val mapId: Int,
+    @Serializable(with = IntOrCooldownSerializer::class)
     val cooldown: Int,
     @SerialName("cooldown_expiration") val cooldownExpiration: Instant,
 

@@ -1,6 +1,6 @@
 package com.artifactsmmo.app
 
-import com.artifactsmmo.app.task.TaskManager
+import com.artifactsmmo.core.task.TaskManager
 import com.artifactsmmo.app.ui.TerminalUI
 import com.artifactsmmo.client.ArtifactsMMOClient
 import io.github.cdimascio.dotenv.dotenv

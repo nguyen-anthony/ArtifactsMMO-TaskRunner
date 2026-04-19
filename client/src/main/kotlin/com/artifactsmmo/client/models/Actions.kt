@@ -214,3 +214,32 @@ data class NPCTransactionData(
     val character: Character
 )
 
+/**
+ * Minimal task-progress snapshot returned inside action responses.
+ * (Different from the full [Task] which includes rewards.)
+ */
+@Serializable
+data class TaskProgress(
+    val code: String = "",
+    val type: String = "",
+    val total: Int = 0,
+    val progress: Int = 0
+)
+
+/** Response for /my/{name}/action/task/trade */
+@Serializable
+data class TaskTradeResponseData(
+    val cooldown: Cooldown,
+    val trade: SimpleItem? = null,
+    val task: TaskProgress? = null,
+    val character: Character
+)
+
+/** Response for /my/{name}/action/task/cancel */
+@Serializable
+data class TaskCancelResponseData(
+    val cooldown: Cooldown,
+    val task: TaskProgress? = null,
+    val character: Character
+)
+

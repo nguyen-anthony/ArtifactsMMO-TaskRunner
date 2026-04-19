@@ -5,12 +5,12 @@ plugins {
 
 dependencies {
     // HTTP client
-    api("io.ktor:ktor-client-core:2.3.7")
-    implementation("io.ktor:ktor-client-cio:2.3.7")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.7")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.7")
-    implementation("io.ktor:ktor-client-auth:2.3.7")
-    implementation("io.ktor:ktor-client-logging:2.3.7")
+    api("io.ktor:ktor-client-core:3.1.3")
+    implementation("io.ktor:ktor-client-cio:3.1.3")
+    implementation("io.ktor:ktor-client-content-negotiation:3.1.3")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.3")
+    implementation("io.ktor:ktor-client-auth:3.1.3")
+    implementation("io.ktor:ktor-client-logging:3.1.3")
 
     // Serialization - expose to consumers for model serialization
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
@@ -26,7 +26,7 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.4.14")
 
     // Testing
-    testImplementation("io.ktor:ktor-client-mock:2.3.7")
+    testImplementation("io.ktor:ktor-client-mock:3.1.3")
     testImplementation(kotlin("test"))
 }
 

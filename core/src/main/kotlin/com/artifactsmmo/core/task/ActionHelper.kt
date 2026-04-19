@@ -1,4 +1,4 @@
-package com.artifactsmmo.app.task
+package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.ArtifactsApiException
@@ -729,9 +729,6 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
             monster = monsterCode,
             iterations = iterations
         )
-        // Debug: print serialized request
-        val json = kotlinx.serialization.json.Json { explicitNulls = false }
-        println("[DEBUG] Simulation request: ${json.encodeToString(com.artifactsmmo.client.models.CombatSimulationRequest.serializer(), request)}")
         return client.simulation.simulateFight(request)
     }
 

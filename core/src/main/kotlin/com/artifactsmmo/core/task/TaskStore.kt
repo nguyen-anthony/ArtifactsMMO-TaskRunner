@@ -1,4 +1,4 @@
-package com.artifactsmmo.app.task
+package com.artifactsmmo.core.task
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

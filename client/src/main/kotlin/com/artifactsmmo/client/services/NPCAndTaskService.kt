@@ -53,18 +53,20 @@ class TaskService(client: HttpClient) : BaseApiService(client) {
     }
 
     /**
-     * Trade items with a task master
+     * Trade items with a task master.
+     * The API returns a wrapper with cooldown, trade, task, and character fields.
      */
     suspend fun tradeTask(characterName: String, itemCode: String, quantity: Int): Character {
         val body = SimpleItem(code = itemCode, quantity = quantity)
-        return post<ApiResponse<Character>>("/my/$characterName/action/task/trade", body).data
+        return post<ApiResponse<TaskTradeResponseData>>("/my/$characterName/action/task/trade", body).data.character
     }
 
     /**
-     * Cancel a task
+     * Cancel a task.
+     * The API returns a wrapper with cooldown, task, and character fields.
      */
     suspend fun cancelTask(characterName: String): Character {
-        return post<ApiResponse<Character>>("/my/$characterName/action/task/cancel").data
+        return post<ApiResponse<TaskCancelResponseData>>("/my/$characterName/action/task/cancel").data.character
     }
 }
 

@@ -1,4 +1,4 @@
-package com.artifactsmmo.app.task
+package com.artifactsmmo.core.task
 
 import java.io.File
 import java.time.LocalDateTime

@@ -1,4 +1,4 @@
-package com.artifactsmmo.app.task
+package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.ArtifactsApiException
 import com.artifactsmmo.client.models.Character

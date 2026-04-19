@@ -1,6 +1,6 @@
 package com.artifactsmmo.app.ui
 
-import com.artifactsmmo.app.task.*
+import com.artifactsmmo.core.task.*
 import com.artifactsmmo.client.models.Character
 import com.github.ajalt.mordant.rendering.TextColors.*
 import com.github.ajalt.mordant.rendering.TextStyles.*
@@ -128,19 +128,20 @@ class TerminalUI(
                 }
                 body {
                     for ((i, s) in statuses.withIndex()) {
-                        val taskStr = when (s.task) {
+                        val task = s.task
+                        val taskStr = when (task) {
                             is TaskType.Idle -> gray("IDLE")
-                            is TaskType.Gather -> green("${s.task.skill}: ${s.task.resourceName}")
-                            is TaskType.Fight -> red("Fight: ${s.task.monsterName}")
+                            is TaskType.Gather -> green("${task.skill}: ${task.resourceName}")
+                            is TaskType.Fight -> red("Fight: ${task.monsterName}")
                             is TaskType.Craft -> {
-                                val modeStr = if (s.task.mode == CraftMode.LEVELING) "level" else {
-                                    "${s.task.craftedSoFar}/${s.task.targetQuantity}"
+                                val modeStr = if (task.mode == CraftMode.LEVELING) "level" else {
+                                    "${task.craftedSoFar}/${task.targetQuantity}"
                                 }
-                                yellow("${s.task.skill}: ${s.task.itemName} ($modeStr)")
+                                yellow("${task.skill}: ${task.itemName} ($modeStr)")
                             }
                             is TaskType.TaskMaster -> {
                                 val tasksStr = if (s.tasksCompleted > 0) " [${s.tasksCompleted} done]" else ""
-                                magenta("Tasks: ${s.task.type}$tasksStr")
+                                magenta("Tasks: ${task.type}$tasksStr")
                             }
                         }
                         val craftsStr = if (s.recycleCount > 0) {

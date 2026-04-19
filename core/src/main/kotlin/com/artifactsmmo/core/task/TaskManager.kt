@@ -1,4 +1,4 @@
-package com.artifactsmmo.app.task
+package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.models.Character
@@ -39,7 +39,8 @@ class TaskManager(
                 fightingExecutor = fightingExecutor,
                 craftingExecutor = craftingExecutor,
                 taskMasterExecutor = taskMasterExecutor,
-                logger = logger
+                logger = logger,
+                onTaskChanged = { persistTasks() }
             )
         }
 

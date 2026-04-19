@@ -1,4 +1,4 @@
-package com.artifactsmmo.app.task
+package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.ArtifactsApiException
 import com.artifactsmmo.client.ArtifactsMMOClient
@@ -28,7 +28,13 @@ class CharacterTaskRunner(
     private val fightingExecutor: FightingExecutor,
     private val craftingExecutor: CraftingExecutor,
     private val taskMasterExecutor: TaskMasterExecutor,
-    private val logger: TaskLogger
+    private val logger: TaskLogger,
+    /**
+     * Called whenever [currentTask] or [previousTask] changes due to an
+     * internal revert (craft/task-master completes). Allows [TaskManager]
+     * to persist the new state immediately so restarts see the correct task.
+     */
+    private val onTaskChanged: () -> Unit = {}
 ) {
     private val _status = MutableStateFlow(RunnerStatus(characterName = characterName))
     val status: StateFlow<RunnerStatus> = _status.asStateFlow()
@@ -428,6 +434,8 @@ class CharacterTaskRunner(
             if (s != null) {
                 currentTask = fallback
                 craftedSoFar = 0
+                // Swap is complete — persist so a restart sees the correct task
+                onTaskChanged()
 
                 updateStatus { it.copy(
                     task = fallback,
@@ -460,6 +468,8 @@ class CharacterTaskRunner(
             }
         } else {
             currentTask = TaskType.Idle
+            // Persist the now-idle state
+            onTaskChanged()
             updateStatus { it.copy(task = TaskType.Idle, statusMessage = "Idle (task complete)", isRunning = false) }
         }
     }
