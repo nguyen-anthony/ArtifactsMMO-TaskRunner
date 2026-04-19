@@ -75,16 +75,16 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      * Use a consumable item
      */
     suspend fun use(characterName: String, itemCode: String, quantity: Int = 1): UseItemData {
-        val body = UseItemRequest(code = itemCode, quantity = quantity)
+        val body = SimpleItem(code = itemCode, quantity = quantity)
         return post<ApiResponse<UseItemData>>("/my/$characterName/action/use", body).data
     }
 
     /**
      * Delete an item from inventory
      */
-    suspend fun deleteItem(characterName: String, itemCode: String, quantity: Int): Character {
+    suspend fun deleteItem(characterName: String, itemCode: String, quantity: Int): DeleteItemData {
         val body = DeleteItemRequest(code = itemCode, quantity = quantity)
-        return post<ApiResponse<Character>>("/my/$characterName/action/delete", body).data
+        return post<ApiResponse<DeleteItemData>>("/my/$characterName/action/delete", body).data
     }
 
     /**

@@ -43,3 +43,8 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### Environment ###
+.env
+tasks.json
+logs/

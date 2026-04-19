@@ -58,7 +58,7 @@ class GrandExchangeService(client: HttpClient) : BaseApiService(client) {
         quantity: Int,
         price: Int
     ): GECreateOrderData {
-        val body = mapOf("code" to itemCode, "quantity" to quantity, "price" to price)
+        val body = GESellOrderRequest(code = itemCode, quantity = quantity, price = price)
         return post<ApiResponse<GECreateOrderData>>("/my/$characterName/action/grandexchange/sell", body).data
     }
 
@@ -70,7 +70,7 @@ class GrandExchangeService(client: HttpClient) : BaseApiService(client) {
         orderId: String,
         quantity: Int
     ): GETransactionData {
-        val body = mapOf("id" to orderId, "quantity" to quantity)
+        val body = GEBuyOrderRequest(id = orderId, quantity = quantity)
         return post<ApiResponse<GETransactionData>>("/my/$characterName/action/grandexchange/buy", body).data
     }
 
@@ -78,7 +78,7 @@ class GrandExchangeService(client: HttpClient) : BaseApiService(client) {
      * Cancel a sell order
      */
     suspend fun cancelOrder(characterName: String, orderId: String): GETransactionData {
-        val body = mapOf("id" to orderId)
+        val body = GECancelOrderRequest(id = orderId)
         return post<ApiResponse<GETransactionData>>("/my/$characterName/action/grandexchange/cancel", body).data
     }
 }

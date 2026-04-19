@@ -13,7 +13,7 @@ class NPCService(client: HttpClient) : BaseApiService(client) {
      * Buy an item from an NPC
      */
     suspend fun buyItem(characterName: String, itemCode: String, quantity: Int): NPCTransactionData {
-        val body = mapOf("code" to itemCode, "quantity" to quantity)
+        val body = SimpleItem(code = itemCode, quantity = quantity)
         return post<ApiResponse<NPCTransactionData>>("/my/$characterName/action/npc/buy", body).data
     }
 
@@ -21,7 +21,7 @@ class NPCService(client: HttpClient) : BaseApiService(client) {
      * Sell an item to an NPC
      */
     suspend fun sellItem(characterName: String, itemCode: String, quantity: Int): NPCTransactionData {
-        val body = mapOf("code" to itemCode, "quantity" to quantity)
+        val body = SimpleItem(code = itemCode, quantity = quantity)
         return post<ApiResponse<NPCTransactionData>>("/my/$characterName/action/npc/sell", body).data
     }
 }
@@ -56,7 +56,7 @@ class TaskService(client: HttpClient) : BaseApiService(client) {
      * Trade items with a task master
      */
     suspend fun tradeTask(characterName: String, itemCode: String, quantity: Int): Character {
-        val body = mapOf("code" to itemCode, "quantity" to quantity)
+        val body = SimpleItem(code = itemCode, quantity = quantity)
         return post<ApiResponse<Character>>("/my/$characterName/action/task/trade", body).data
     }
 

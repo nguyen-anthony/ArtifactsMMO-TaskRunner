@@ -51,6 +51,13 @@ data class DeleteItemRequest(
 )
 
 @Serializable
+data class DeleteItemData(
+    val cooldown: Cooldown,
+    val item: SimpleItem,
+    val character: Character
+)
+
+@Serializable
 data class RecycleRequest(
     val code: String,
     val quantity: Int = 1
@@ -59,6 +66,24 @@ data class RecycleRequest(
 @Serializable
 data class BankGoldRequest(
     val quantity: Int
+)
+
+@Serializable
+data class GESellOrderRequest(
+    val code: String,
+    val quantity: Int,
+    val price: Int
+)
+
+@Serializable
+data class GEBuyOrderRequest(
+    val id: String,
+    val quantity: Int
+)
+
+@Serializable
+data class GECancelOrderRequest(
+    val id: String
 )
 
 @Serializable

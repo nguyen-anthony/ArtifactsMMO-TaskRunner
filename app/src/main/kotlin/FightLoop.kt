@@ -2,10 +2,12 @@ package com.nguyen_anthony.app
 
 import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.ArtifactsApiException
+import com.artifactsmmo.client.models.SimpleItem
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
+import kotlin.math.abs
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -48,31 +50,32 @@ fun main() = runBlocking {
             }
             println()
 
-            println("=== Getting Ash Plank Crafting Info ===")
-            val ashPlankItem = client.content.getItem("ash_plank")
-            val ashWoodPerPlank = ashPlankItem.craft?.items?.find { it.code == "ash_wood" }?.quantity ?: 10
-            println("Ash plank crafting requires: ${ashWoodPerPlank}x ash_wood -> 1x ash_plank")
+            // Get cooked_chicken healing info
+            println("=== Getting Cooked Chicken Info ===")
+            val cookedChickenItem = client.content.getItem("cooked_chicken")
+            val healAmount = cookedChickenItem.effects.find { it.code == "heal" }?.value ?: 0
+            println("Cooked chicken heals: ${healAmount} HP")
             println()
 
-            // Find woodcutting station location (used to determine optimal ash_tree)
-            println("=== Locating Woodcutting Station ===")
-            val woodcuttingStations = client.content.getMaps(
+            // Find woodcutting station location (used to determine optimal chicken)
+            println("=== Locating Cooking Station ===")
+            val cookingStations = client.content.getMaps(
                 contentType = "workshop",
-                contentCode = "woodcutting",
+                contentCode = "cooking",
                 hideBlockedMaps = true,
                 size = 50
             )
-            if (woodcuttingStations.data.isEmpty()) {
-                println("❌ No woodcutting workshop found on map!")
+            if (cookingStations.data.isEmpty()) {
+                println("No cooking stations found on map!")
                 return@use
             }
-            val woodcuttingStation = woodcuttingStations.data.first()
-            println("Woodcutting station located at (${woodcuttingStation.x}, ${woodcuttingStation.y})")
+            val cookingStation = cookingStations.data.first()
+            println("Woodcutting station located at (${cookingStation.x}, ${cookingStation.y})")
             println()
 
             // Gather ash_wood with all characters concurrently
-            println("=== Starting Concurrent Gathering ===")
-            println("All characters will gather independently from their current positions")
+            println("=== Starting Concurrent Fighting ===")
+            println("All characters will fight independently from their current positions")
             println("Press Ctrl+C to stop")
             println()
 
@@ -80,13 +83,53 @@ fun main() = runBlocking {
             coroutineScope {
                 for (character in characters) {
                     launch {
-                        var gatherCount = 0
-                        var depositCount = 0
 
                         while (true) {
                             try {
                                 // Refresh character data to check inventory
                                 val currentChar = client.characters.getCharacter(character.name)
+
+                                // Check HP and heal if needed
+                                val hpMissing = currentChar.maxHp - currentChar.hp
+                                if (hpMissing >= healAmount) {
+                                    val cookedChickenCount = currentChar.inventory.find { it.code == "cooked_chicken" }?.quantity ?: 0
+                                    val rawChickenCount = currentChar.inventory.find { it.code == "raw_chicken" }?.quantity ?: 0
+
+                                    if (cookedChickenCount > 0) {
+                                        // Use cooked chicken to heal
+                                        println("${currentChar.name}: 🍗 HP low (${currentChar.hp}/${currentChar.maxHp}), eating cooked_chicken...")
+                                        val useResult = client.actions.use(currentChar.name, "cooked_chicken", 1)
+                                        println("  ✓ Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
+                                        delay(useResult.cooldown.totalSeconds.seconds)
+                                    } else if (rawChickenCount > 0) {
+                                        // No cooked chicken but have raw chicken - go cook it!
+                                        println("${currentChar.name}: 🍳 HP low (${currentChar.hp}/${currentChar.maxHp}), no cooked chicken but have ${rawChickenCount}x raw_chicken - cooking...")
+
+                                        // Move to cooking station if not already there
+                                        if (currentChar.x != cookingStation.x || currentChar.y != cookingStation.y) {
+                                            println("  → Moving to cooking station at (${cookingStation.x}, ${cookingStation.y})")
+                                            val moveResult = client.actions.move(currentChar.name, cookingStation.x, cookingStation.y)
+                                            delay(moveResult.cooldown.totalSeconds.seconds)
+                                        }
+
+                                        // Cook as many raw chickens as possible (up to 10 at once to save time)
+                                        println("  🍳 Cooking ${rawChickenCount}x raw_chicken into cooked_chicken...")
+                                        val craftResult = client.actions.craft(currentChar.name, "cooked_chicken", rawChickenCount)
+                                        delay(craftResult.cooldown.totalSeconds.seconds)
+
+                                        // Now use one cooked chicken to heal
+                                        println("  🍗 Eating freshly cooked chicken...")
+                                        val useResult = client.actions.use(currentChar.name, "cooked_chicken", 1)
+                                        println("  ✓ Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
+                                        delay(useResult.cooldown.totalSeconds.seconds)
+                                    } else {
+                                        // No chicken available at all, rest instead
+                                        println("${currentChar.name}: 😴 HP low (${currentChar.hp}/${currentChar.maxHp}), no chicken - resting...")
+                                        val restResult = client.actions.rest(currentChar.name)
+                                        println("  ✓ Rested! HP: ${restResult.character.hp}/${restResult.character.maxHp}")
+                                        delay(restResult.cooldown.totalSeconds.seconds)
+                                    }
+                                }
 
                                 // Check if inventory is getting full (90% or more)
                                 val totalItems = currentChar.inventory.sumOf { it.quantity }
@@ -95,26 +138,9 @@ fun main() = runBlocking {
                                 if (totalItems >= inventoryThreshold) {
                                     println("${currentChar.name}: 📦 Inventory is ${totalItems}/${currentChar.inventoryMaxItems}")
 
-                                    val woodCuttingStations = client.content.getMaps(
-                                        contentType = "workshop",
-                                        contentCode = "woodcutting",
-                                        hideBlockedMaps = true,
-                                        size = 50
-                                    )
-
-                                    if (woodCuttingStations.data.isEmpty()) {
-                                        println("No woodcutting workshop found on map!")
-                                        delay(30.seconds)
-                                        continue
-                                    }
-
-                                    val nearestStation = woodCuttingStations.data.minByOrNull { station ->
-                                        kotlin.math.abs(station.x - currentChar.x) + kotlin.math.abs(station.y - currentChar.y)
-                                    }!!
-
-                                    println("  📍 Moving to woodcutting workshop at (${nearestStation.x}, ${nearestStation.y})")
-                                    val moveToStationResult = client.actions.move(currentChar.name, nearestStation.x, nearestStation.y)
-                                    println("  ✓ Arrived at woodcutting workshop")
+                                    println(" Moving to cooking workshop at (${cookingStation.x}, ${cookingStation.y})")
+                                    val moveToStationResult = client.actions.move(currentChar.name, cookingStation.x, cookingStation.y)
+                                    println(" Arrived at cooking workshop")
 
                                     // Wait for movement cooldown
                                     if (moveToStationResult.cooldown.totalSeconds > 0) {
@@ -122,15 +148,14 @@ fun main() = runBlocking {
                                     }
 
                                     val charAtStation = client.characters.getCharacter(currentChar.name)
-                                    val ashWoodCount = charAtStation.inventory.find { it.code == "ash_wood" }?.quantity ?: 0
-                                    val planksToCraft = ashWoodCount / ashWoodPerPlank
+                                    val rawChickenCount = charAtStation.inventory.find { it.code == "raw_chicken" }?.quantity ?: 0
 
-                                    if (planksToCraft > 0) {
-                                        println(" Crafting $planksToCraft ash_plank(s) from $ashWoodCount ash_wood")
+                                    if (rawChickenCount > 0) {
+                                        println(" Cooking $rawChickenCount chicken")
                                         val craftResult = client.actions.craft(
                                             characterName = charAtStation.name,
-                                            itemCode = "ash_plank",
-                                            quantity = planksToCraft
+                                            itemCode = "cooked_chicken",
+                                            quantity = rawChickenCount
                                         )
                                         println(" Crafted ${craftResult.details.items.joinToString(", ") { "${it.quantity}x ${it.code}" }}")
 
@@ -155,7 +180,7 @@ fun main() = runBlocking {
 
                                     // Find closest bank
                                     val nearestBank = banks.data.minByOrNull { bank ->
-                                        kotlin.math.abs(bank.x - currentChar.x) + kotlin.math.abs(bank.y - currentChar.y)
+                                        abs(bank.x - currentChar.x) + abs(bank.y - currentChar.y)
                                     }!!
 
                                     println("  📍 Moving to bank at (${nearestBank.x}, ${nearestBank.y})")
@@ -167,17 +192,32 @@ fun main() = runBlocking {
                                         delay(moveResult.cooldown.totalSeconds.seconds)
                                     }
 
-                                    // Deposit ash_wood, sap, and apple items
                                     val updatedChar = client.characters.getCharacter(currentChar.name)
-                                    val itemsToDeposit = updatedChar.inventory
-                                        .filter { it.code in listOf("ash_plank", "sap", "apple") && it.quantity > 0 }
-                                        .map { com.artifactsmmo.client.models.SimpleItem(it.code, it.quantity) }
+
+                                    // Calculate how much cooked chicken we have
+                                    val cookedChickenCount = updatedChar.inventory.find { it.code == "cooked_chicken" }?.quantity ?: 0
+                                    val totalItems = updatedChar.inventory.sumOf { it.quantity }
+                                    val cookedChickenPercentage = if (totalItems > 0) (cookedChickenCount.toDouble() / totalItems) else 0.0
+
+                                    // Build list of items to deposit
+                                    val itemsToDeposit = mutableListOf<SimpleItem>()
+
+                                    // Always deposit eggs, feathers, and golden_eggs
+                                    updatedChar.inventory
+                                        .filter { it.code in listOf("egg", "feather", "golden_egg") && it.quantity > 0 }
+                                        .forEach { itemsToDeposit.add(SimpleItem(it.code, it.quantity)) }
+
+                                    // Only deposit cooked_chicken if inventory is MOSTLY full of it (>70%)
+                                    if (cookedChickenPercentage > 0.7 && cookedChickenCount > 20) {
+                                        // Keep 20 cooked chicken, deposit the rest
+                                        val amountToDeposit = cookedChickenCount - 20
+                                        println("  🍗 Inventory is ${(cookedChickenPercentage * 100).toInt()}% cooked_chicken, depositing ${amountToDeposit} (keeping 20)")
+                                        itemsToDeposit.add(SimpleItem("cooked_chicken", amountToDeposit))
+                                    }
 
                                     if (itemsToDeposit.isNotEmpty()) {
                                         println("  💰 Depositing items: ${itemsToDeposit.joinToString(", ") { "${it.quantity}x ${it.code}" }}")
                                         val depositResult = client.bank.depositItems(currentChar.name, itemsToDeposit)
-                                        depositCount++
-                                        println("  ✓ Deposited successfully (Deposit #$depositCount)")
 
                                         // Wait for bank cooldown
                                         if (depositResult.cooldown.totalSeconds > 0) {
@@ -186,7 +226,7 @@ fun main() = runBlocking {
                                     }
                                 }
 
-                                // Now find nearest ash_tree and move there if not already there
+                                // Now find nearest chicken and move there if not already there
                                 val refreshedChar = client.characters.getCharacter(currentChar.name)
                                 val currentLocation = client.content.getMapByPosition(
                                     layer = refreshedChar.layer,
@@ -194,37 +234,36 @@ fun main() = runBlocking {
                                     y = refreshedChar.y
                                 )
 
-                                // Check if we're already at an ash_tree
-                                val isAtAshTree = currentLocation.interactions.content?.let {
-                                    it.type == "resource" && it.code == "ash_tree"
+                                // Check if we're already at chickens
+                                val isAtChicken = currentLocation.interactions.content?.let {
+                                    it.type == "monster" && it.code == "chicken"
                                 } ?: false
 
-                                if (!isAtAshTree) {
-                                    println("${currentChar.name}: 🌲 Looking for ash_tree closest to woodcutting station...")
+                                if (!isAtChicken) {
+                                    println("${currentChar.name}: Looking for chickens to fight ...")
 
-                                    // Find ash_tree closest to woodcutting station (not character)
-                                    // This optimizes the main gathering loop: tree -> workshop -> tree
-                                    val ashTrees = client.content.getMaps(
-                                        contentType = "resource",
-                                        contentCode = "ash_tree",
+                                    // Find chickens closest to cooking station (not character)
+                                    val chickenLocations = client.content.getMaps(
+                                        contentType = "monster",
+                                        contentCode = "chicken",
                                         hideBlockedMaps = true,
                                         size = 50
                                     )
 
-                                    if (ashTrees.data.isEmpty()) {
-                                        println("  ❌ No ash_tree locations found!")
+                                    if (chickenLocations.data.isEmpty()) {
+                                        println("No chickens locations found!")
                                         delay(30.seconds)
                                         continue
                                     }
 
-                                    // Find ash_tree closest to woodcutting station for optimal gathering loop
-                                    val optimalTree = ashTrees.data.minByOrNull { tree ->
-                                        kotlin.math.abs(tree.x - woodcuttingStation.x) + kotlin.math.abs(tree.y - woodcuttingStation.y)
+                                    // Find chicken closest to cooking station for optimal gathering loop
+                                    val optimalChicken = chickenLocations.data.minByOrNull { chicken ->
+                                        abs(chicken.x - cookingStation.x) + abs(chicken.y - cookingStation.y)
                                     }!!
 
-                                    println("  📍 Moving to optimal ash_tree at (${optimalTree.x}, ${optimalTree.y})")
-                                    val moveResult = client.actions.move(currentChar.name, optimalTree.x, optimalTree.y)
-                                    println("  ✓ Arrived at ash_tree")
+                                    println("Moving to optimal chicken at (${optimalChicken.x}, ${optimalChicken.y})")
+                                    val moveResult = client.actions.move(currentChar.name, optimalChicken.x, optimalChicken.y)
+                                    println("Arrived at chickens")
 
                                     // Wait for movement cooldown
                                     if (moveResult.cooldown.totalSeconds > 0) {
@@ -236,15 +275,13 @@ fun main() = runBlocking {
                                 val finalChar = client.characters.getCharacter(currentChar.name)
                                 val finalTotalItems = finalChar.inventory.sumOf { it.quantity }
 
-                                println("${currentChar.name}: 🪓 Gathering... (Inventory: $finalTotalItems/${finalChar.inventoryMaxItems})")
-                                val result = client.actions.gather(currentChar.name)
-                                gatherCount++
+                                println("${currentChar.name}: Fighting chickens... (Inventory: $finalTotalItems/${finalChar.inventoryMaxItems})")
+                                val result = client.actions.fight(currentChar.name)
 
                                 println("  ✓ ${currentChar.name} successfully gathered!")
-                                println("  Gained: ${result.details.items.joinToString(", ") { "${it.quantity}x ${it.code}" }}")
-                                println("  XP Gained: ${result.details.xp}")
+                                println("  XP Gained: ${result.fight.characters.first().xp}")
+                                println("  Gold Gained: ${result.fight.characters.first().gold}")
                                 println("  Cooldown: ${result.cooldown.totalSeconds}s")
-                                println("  Stats: Gathers: $gatherCount | Deposits: $depositCount")
                                 println()
 
                                 // Wait for cooldown

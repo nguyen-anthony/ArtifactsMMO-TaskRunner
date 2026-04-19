@@ -123,7 +123,13 @@ abstract class BaseApiService(protected val client: HttpClient) {
                 val errorMessage = try {
                     // Look for "message" field in JSON
                     val messagePattern = """"message"\s*:\s*"([^"]*)"""".toRegex()
-                    messagePattern.find(errorBody)?.groupValues?.get(1) ?: errorBody
+                    val msg = messagePattern.find(errorBody)?.groupValues?.get(1) ?: errorBody
+                    // For 422s, include the data field for debugging
+                    if (response.status.value == 422) {
+                        val dataPattern = """"data"\s*:\s*(\{[^}]*\})""".toRegex()
+                        val data = dataPattern.find(errorBody)?.groupValues?.get(1)
+                        if (data != null) "$msg | details: $data" else msg
+                    } else msg
                 } catch (e: Exception) {
                     errorBody
                 }

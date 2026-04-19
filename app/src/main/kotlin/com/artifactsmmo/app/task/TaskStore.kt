@@ -1,0 +1,159 @@
+package com.artifactsmmo.app.task
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+
+private val json = Json {
+    prettyPrint = true
+    ignoreUnknownKeys = true
+}
+
+/**
+ * Serializable representation of a task for persistence.
+ * Used for both current tasks and previous tasks.
+ */
+@Serializable
+data class StoredTask(
+    val type: String, // "idle", "gather", "fight", "craft", "task_master"
+    val skill: String? = null,
+    @SerialName("resource_code") val resourceCode: String? = null,
+    @SerialName("resource_name") val resourceName: String? = null,
+    @SerialName("on_full_inventory") val onFullInventory: String? = null,
+    @SerialName("monster_code") val monsterCode: String? = null,
+    @SerialName("monster_name") val monsterName: String? = null,
+    @SerialName("item_code") val itemCode: String? = null,
+    @SerialName("item_name") val itemName: String? = null,
+    @SerialName("craft_mode") val craftMode: String? = null, // "LEVELING", "SPECIFIC"
+    @SerialName("target_quantity") val targetQuantity: Int? = null,
+    @SerialName("crafted_so_far") val craftedSoFar: Int? = null,
+    @SerialName("task_master_type") val taskMasterType: String? = null // "items", "monsters"
+)
+
+/**
+ * A character's task assignment entry, including optional previous task.
+ */
+@Serializable
+data class StoredAssignment(
+    @SerialName("character_name") val characterName: String,
+    val task: StoredTask,
+    @SerialName("previous_task") val previousTask: StoredTask? = null
+)
+
+@Serializable
+data class TaskStoreData(
+    val tasks: List<StoredAssignment>
+)
+
+/**
+ * Data holder for a character's current + previous task.
+ */
+data class TaskAssignment(
+    val task: TaskType,
+    val previousTask: TaskType? = null
+)
+
+/**
+ * Persists task assignments to a JSON file so they survive restarts.
+ */
+class TaskStore(private val file: File = File("tasks.json")) {
+
+    /**
+     * Save current task assignments with optional previous tasks.
+     */
+    fun save(assignments: Map<String, TaskAssignment>) {
+        val stored = assignments.map { (name, assignment) ->
+            StoredAssignment(
+                characterName = name,
+                task = toStored(assignment.task),
+                previousTask = assignment.previousTask?.let { toStored(it) }
+            )
+        }
+        val data = TaskStoreData(tasks = stored)
+        file.writeText(json.encodeToString(data))
+    }
+
+    /**
+     * Load saved task assignments. Returns empty map if file doesn't exist or is invalid.
+     */
+    fun load(): Map<String, TaskAssignment> {
+        if (!file.exists()) return emptyMap()
+
+        return try {
+            val data = json.decodeFromString<TaskStoreData>(file.readText())
+            data.tasks.associate { entry ->
+                entry.characterName to TaskAssignment(
+                    task = fromStored(entry.task),
+                    previousTask = entry.previousTask?.let { fromStored(it) }
+                )
+            }
+        } catch (e: Exception) {
+            System.err.println("Warning: Failed to load tasks.json: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    private fun toStored(task: TaskType): StoredTask {
+        return when (task) {
+            is TaskType.Idle -> StoredTask(type = "idle")
+            is TaskType.Gather -> StoredTask(
+                type = "gather",
+                skill = task.skill,
+                resourceCode = task.resourceCode,
+                resourceName = task.resourceName,
+                onFullInventory = task.onFullInventory.name
+            )
+            is TaskType.Fight -> StoredTask(
+                type = "fight",
+                monsterCode = task.monsterCode,
+                monsterName = task.monsterName
+            )
+            is TaskType.Craft -> StoredTask(
+                type = "craft",
+                skill = task.skill,
+                itemCode = task.itemCode,
+                itemName = task.itemName,
+                craftMode = task.mode.name,
+                targetQuantity = task.targetQuantity,
+                craftedSoFar = task.craftedSoFar
+            )
+            is TaskType.TaskMaster -> StoredTask(
+                type = "task_master",
+                taskMasterType = task.type
+            )
+        }
+    }
+
+    private fun fromStored(stored: StoredTask): TaskType {
+        return when (stored.type) {
+            "gather" -> TaskType.Gather(
+                skill = stored.skill ?: "",
+                resourceCode = stored.resourceCode ?: "",
+                resourceName = stored.resourceName ?: "",
+                onFullInventory = stored.onFullInventory?.let {
+                    try { FullInventoryStrategy.valueOf(it) } catch (_: Exception) { FullInventoryStrategy.BANK_ONLY }
+                } ?: FullInventoryStrategy.BANK_ONLY
+            )
+            "fight" -> TaskType.Fight(
+                monsterCode = stored.monsterCode ?: "",
+                monsterName = stored.monsterName ?: ""
+            )
+            "craft" -> TaskType.Craft(
+                skill = stored.skill ?: "",
+                itemCode = stored.itemCode ?: "",
+                itemName = stored.itemName ?: "",
+                mode = stored.craftMode?.let {
+                    try { CraftMode.valueOf(it) } catch (_: Exception) { CraftMode.SPECIFIC }
+                } ?: CraftMode.SPECIFIC,
+                targetQuantity = stored.targetQuantity ?: 0,
+                craftedSoFar = stored.craftedSoFar ?: 0
+            )
+            "task_master" -> TaskType.TaskMaster(
+                type = stored.taskMasterType ?: "items"
+            )
+            else -> TaskType.Idle
+        }
+    }
+}

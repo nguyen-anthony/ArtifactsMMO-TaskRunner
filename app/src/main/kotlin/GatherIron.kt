@@ -50,25 +50,25 @@ fun main() = runBlocking {
             }
             println()
 
-            // Get copper_bar crafting requirements
-            println("=== Getting Copper Bar Crafting Info ===")
-            val copperBarItem = client.content.getItem("copper_bar")
-            val copperOrePerBar = copperBarItem.craft?.items?.find { it.code == "copper_ore" }?.quantity ?: 10
-            println("Copper bar crafting requires: ${copperOrePerBar}x copper_ore -> 1x copper_bar")
+            // Get iron_bar crafting requirements
+            println("=== Getting Bar Crafting Info ===")
+            val barItem = client.content.getItem("iron_bar")
+            val orePerBar = barItem.craft?.items?.find { it.code == "iron_ore" }?.quantity ?: 10
+            println("Bar crafting requires: ${orePerBar}x iron_ore -> 1x iron_bar")
             println()
 
-            // Clean up bank copper_ore first
-            println("=== Checking Bank for Copper Ore ===")
-            val bankItems = client.bank.getBankItems(itemCode = "copper_ore", size = 1)
-            val copperOreInBank = bankItems.data.firstOrNull()?.quantity ?: 0
-            println("Found ${copperOreInBank}x copper_ore in bank")
+            // Clean up bank iron_ore first
+            println("=== Checking Bank for Ore ===")
+            val bankItems = client.bank.getBankItems(itemCode = "iron_ore", size = 1)
+            val oreInBank = bankItems.data.firstOrNull()?.quantity ?: 0
+            println("Found ${oreInBank}x iron_ore in bank")
 
-            if (copperOreInBank >= copperOrePerBar * 5) {
-                println("Enough copper_ore to craft ${copperOreInBank / copperOrePerBar} bars (cleaning up bank first)")
+            if (oreInBank >= orePerBar * 5) {
+                println("Enough iron_ore to craft ${oreInBank / orePerBar} bars (cleaning up bank first)")
                 println()
 
                 // Use all characters to clean up the bank concurrently
-                println("Using all ${characters.size} characters to clean up bank copper_ore")
+                println("Using all ${characters.size} characters to clean up bank iron_ore")
 
                 coroutineScope {
                     for (cleanupChar in characters) {
@@ -85,14 +85,14 @@ fun main() = runBlocking {
                                 var result = client.actions.move(cleanupChar.name, nearestBank.x, nearestBank.y)
                                 delay(result.cooldown.totalSeconds.seconds)
 
-                                // Check current bank inventory and withdraw copper_ore
-                                var currentBankItems = client.bank.getBankItems(itemCode = "copper_ore", size = 1)
-                                var currentCopperOre = currentBankItems.data.firstOrNull()?.quantity ?: 0
+                                // Check current bank inventory and withdraw iron_ore
+                                var currentBankItems = client.bank.getBankItems(itemCode = "iron_ore", size = 1)
+                                var currentOre = currentBankItems.data.firstOrNull()?.quantity ?: 0
 
-                                while (currentCopperOre >= copperOrePerBar) {
-                                    val maxWithdraw = minOf(currentCopperOre, cleanupChar.inventoryMaxItems - 10) // Leave some space
-                                    println("  ${cleanupChar.name}: 💰 Withdrawing ${maxWithdraw}x copper_ore from bank")
-                                    val withdrawResult = client.bank.withdrawItems(cleanupChar.name, listOf(SimpleItem("copper_ore", maxWithdraw)))
+                                while (currentOre >= orePerBar) {
+                                    val maxWithdraw = minOf(currentOre, cleanupChar.inventoryMaxItems - 10) // Leave some space
+                                    println("  ${cleanupChar.name}: 💰 Withdrawing ${maxWithdraw}x iron_ore from bank")
+                                    val withdrawResult = client.bank.withdrawItems(cleanupChar.name, listOf(SimpleItem("iron_ore", maxWithdraw)))
                                     delay(withdrawResult.cooldown.totalSeconds.seconds)
 
                                     // Find mining station
@@ -109,14 +109,14 @@ fun main() = runBlocking {
                                         result = client.actions.move(cleanupChar.name, nearestStation.x, nearestStation.y)
                                         delay(result.cooldown.totalSeconds.seconds)
 
-                                        // Craft copper bars
+                                        // Craft bars
                                         val updatedChar = client.characters.getCharacter(cleanupChar.name)
-                                        val copperOreCount = updatedChar.inventory.find { it.code == "copper_ore" }?.quantity ?: 0
-                                        val barsToCraft = copperOreCount / copperOrePerBar
+                                        val oreCount = updatedChar.inventory.find { it.code == "iron_ore" }?.quantity ?: 0
+                                        val barsToCraft = oreCount / orePerBar
 
                                         if (barsToCraft > 0) {
-                                            println("  ${cleanupChar.name}: 🔨 Crafting ${barsToCraft}x copper_bar from ${copperOreCount}x copper_ore")
-                                            val craftResult = client.actions.craft(cleanupChar.name, "copper_bar", barsToCraft)
+                                            println("  ${cleanupChar.name}: 🔨 Crafting ${barsToCraft}x iron_bar from ${oreCount}x iron_ore")
+                                            val craftResult = client.actions.craft(cleanupChar.name, "iron_bar", barsToCraft)
                                             println("  ${cleanupChar.name}: ✓ Crafted successfully! XP gained: ${craftResult.details.xp}")
                                             delay(craftResult.cooldown.totalSeconds.seconds)
 
@@ -125,19 +125,19 @@ fun main() = runBlocking {
                                             result = client.actions.move(cleanupChar.name, nearestBank.x, nearestBank.y)
                                             delay(result.cooldown.totalSeconds.seconds)
 
-                                            // Deposit copper bars
+                                            // Deposit bars
                                             val charAfterCraft = client.characters.getCharacter(cleanupChar.name)
-                                            val copperBars = charAfterCraft.inventory.find { it.code == "copper_bar" }?.quantity ?: 0
-                                            if (copperBars > 0) {
-                                                println("  ${cleanupChar.name}: 💰 Depositing ${copperBars}x copper_bar to bank")
-                                                val depositResult = client.bank.depositItems(cleanupChar.name, listOf(SimpleItem("copper_bar", copperBars)))
+                                            val bars = charAfterCraft.inventory.find { it.code == "iron_bar" }?.quantity ?: 0
+                                            if (bars > 0) {
+                                                println("  ${cleanupChar.name}: 💰 Depositing ${bars}x iron_bar to bank")
+                                                val depositResult = client.bank.depositItems(cleanupChar.name, listOf(SimpleItem("iron_bar", bars)))
                                                 delay(depositResult.cooldown.totalSeconds.seconds)
                                                 println("  ${cleanupChar.name}: ✓ Cleanup complete!")
                                             }
                                         }
                                     }
-                                    currentBankItems = client.bank.getBankItems(itemCode = "copper_ore", size = 1)
-                                    currentCopperOre = currentBankItems.data.firstOrNull()?.quantity ?: 0
+                                    currentBankItems = client.bank.getBankItems(itemCode = "iron_ore", size = 1)
+                                    currentOre = currentBankItems.data.firstOrNull()?.quantity ?: 0
                                 }
                             } catch (e: ArtifactsApiException) {
                                 // Handle specific error codes that shouldn't stop the cleanup
@@ -158,11 +158,11 @@ fun main() = runBlocking {
                 }
                 println("=== Bank Cleanup Complete ===")
             } else {
-                println("Not enough copper_ore in bank to craft 5+ bars, skipping cleanup")
+                println("Not enough iron_ore in bank to craft 5+ bars, skipping cleanup")
                 println()
             }
 
-            // Gather copper_ore with all characters concurrently
+            // Gather iron_ore with all characters concurrently
             println("=== Starting Concurrent Gathering ===")
             println("All characters will gather independently from their current positions")
             println("Press Ctrl+C to stop")
@@ -186,9 +186,9 @@ fun main() = runBlocking {
                                 val inventoryThreshold = (currentChar.inventoryMaxItems * 0.9).toInt()
 
                                 if (totalItems >= inventoryThreshold) {
-                                    println("${currentChar.name}: 📦 Inventory is ${totalItems}/${currentChar.inventoryMaxItems} - processing copper ore")
+                                    println("${currentChar.name}: 📦 Inventory is ${totalItems}/${currentChar.inventoryMaxItems} - processing ore")
 
-                                    // First, go to mining station to craft copper bars
+                                    // First, go to mining station to craft bars
                                     val miningStations = client.content.getMaps(
                                         contentType = "workshop",
                                         contentCode = "mining",
@@ -216,14 +216,14 @@ fun main() = runBlocking {
                                         delay(moveResult.cooldown.totalSeconds.seconds)
                                     }
 
-                                    // Craft copper bars
+                                    // Craft bars
                                     val charAtStation = client.characters.getCharacter(currentChar.name)
-                                    val copperOreCount = charAtStation.inventory.find { it.code == "copper_ore" }?.quantity ?: 0
-                                    val barsToCraft = copperOreCount / copperOrePerBar
+                                    val oreCount = charAtStation.inventory.find { it.code == "iron_ore" }?.quantity ?: 0
+                                    val barsToCraft = oreCount / orePerBar
 
                                     if (barsToCraft > 0) {
-                                        println("  🔨 Crafting ${barsToCraft}x copper_bar from ${copperOreCount}x copper_ore")
-                                        val craftResult = client.actions.craft(currentChar.name, "copper_bar", barsToCraft)
+                                        println("  🔨 Crafting ${barsToCraft}x iron_bar from ${oreCount}x iron_ore")
+                                        val craftResult = client.actions.craft(currentChar.name, "iron_bar", barsToCraft)
                                         craftCount += barsToCraft
                                         println("  ✓ Crafted successfully! XP gained: ${craftResult.details.xp}")
 
@@ -233,7 +233,7 @@ fun main() = runBlocking {
                                         }
                                     }
 
-                                    // Now find nearest bank and deposit copper bars
+                                    // Now find nearest bank and deposit bars
                                     val banks = client.content.getMaps(
                                         contentType = "bank",
                                         hideBlockedMaps = true,
@@ -261,10 +261,10 @@ fun main() = runBlocking {
                                         delay(moveResult.cooldown.totalSeconds.seconds)
                                     }
 
-                                    // Deposit copper_bar and other items
+                                    // Deposit iron_bar and other items
                                     val updatedChar = client.characters.getCharacter(currentChar.name)
                                     val itemsToDeposit = updatedChar.inventory
-                                        .filter { it.code in listOf("copper_bar", "copper_ore", "topaz_stone", "emerald_stone", "ruby_stone", "sapphire_stone", "ash_wood", "sap", "apple") && it.quantity > 0 }
+                                        .filter { it.code in listOf("iron_bar", "topaz_stone", "emerald_stone", "ruby_stone", "sapphire_stone", "ash_wood", "sap", "apple") && it.quantity > 0 }
                                         .map { SimpleItem(it.code, it.quantity) }
 
                                     if (itemsToDeposit.isNotEmpty()) {
@@ -280,7 +280,7 @@ fun main() = runBlocking {
                                     }
                                 }
 
-                                // ...existing code for finding and moving to copper_rocks...
+                                // ...existing code for finding and moving to rocks...
                                 val refreshedChar = client.characters.getCharacter(currentChar.name)
                                 val currentLocation = client.content.getMapByPosition(
                                     layer = refreshedChar.layer,
@@ -288,36 +288,36 @@ fun main() = runBlocking {
                                     y = refreshedChar.y
                                 )
 
-                                // Check if we're already at copper_rocks
-                                val isAtCopperRocks = currentLocation.interactions.content?.let {
-                                    it.type == "resource" && it.code == "copper_rocks"
+                                // Check if we're already at rocks
+                                val isAtRocks = currentLocation.interactions.content?.let {
+                                    it.type == "resource" && it.code == "iron_rocks"
                                 } ?: false
 
-                                if (!isAtCopperRocks) {
-                                    println("${currentChar.name}: 🌲 Looking for nearest copper rocks...")
+                                if (!isAtRocks) {
+                                    println("${currentChar.name}: 🌲 Looking for nearest rocks...")
 
-                                    // Find nearest copper_rocks
-                                    val copperRocks = client.content.getMaps(
+                                    // Find nearest rocks
+                                    val rocks = client.content.getMaps(
                                         contentType = "resource",
-                                        contentCode = "copper_rocks",
+                                        contentCode = "iron_rocks",
                                         hideBlockedMaps = true,
                                         size = 50
                                     )
 
-                                    if (copperRocks.data.isEmpty()) {
-                                        println("  ❌ No copper rocks locations found!")
+                                    if (rocks.data.isEmpty()) {
+                                        println("  ❌ No rocks locations found!")
                                         delay(30.seconds)
                                         continue
                                     }
 
-                                    // Find closest copper_rocks
-                                    val nearestCopperRock = copperRocks.data.minByOrNull { copper ->
-                                        abs(copper.x - refreshedChar.x) + abs(copper.y - refreshedChar.y)
+                                    // Find closest rock
+                                    val nearestRock = rocks.data.minByOrNull { rock ->
+                                        abs(rock.x - refreshedChar.x) + abs(rock.y - refreshedChar.y)
                                     }!!
 
-                                    println("  📍 Moving to copper rocks at (${nearestCopperRock.x}, ${nearestCopperRock.y})")
-                                    val moveResult = client.actions.move(currentChar.name, nearestCopperRock.x, nearestCopperRock.y)
-                                    println("  ✓ Arrived at copper rocks")
+                                    println("  📍 Moving to rocks at (${nearestRock.x}, ${nearestRock.y})")
+                                    val moveResult = client.actions.move(currentChar.name, nearestRock.x, nearestRock.y)
+                                    println("  ✓ Arrived at rocks")
 
                                     // Wait for movement cooldown
                                     if (moveResult.cooldown.totalSeconds > 0) {

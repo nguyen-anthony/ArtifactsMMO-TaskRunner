@@ -75,6 +75,11 @@ class ArtifactsMMOClient(
     val tasks = TaskService(httpClient)
 
     /**
+     * Combat simulation service (requires Member or Founder account)
+     */
+    val simulation = SimulationService(httpClient)
+
+    /**
      * Close the HTTP client and release resources
      */
     override fun close() {
