@@ -38,7 +38,12 @@ sealed class TaskType {
     /** Fight monsters at a specific location. */
     data class Fight(
         val monsterCode: String,
-        val monsterName: String
+        val monsterName: String,
+        /**
+         * One-shot equip actions to execute before the fight loop begins.
+         * NOT persisted — these are set by the wizard and cleared after execution.
+         */
+        val equipActions: List<ActionHelper.EquipAction> = emptyList()
     ) : TaskType()
 
     /** Craft items at a workshop (weaponcrafting, gearcrafting, jewelrycrafting, or misc). */
@@ -54,6 +59,36 @@ sealed class TaskType {
     /** Run tasks from an NPC task master (items or monsters). */
     data class TaskMaster(
         val type: String  // "items" or "monsters"
+    ) : TaskType()
+
+    /** Quick task: withdraw a specific item from the bank. */
+    data class BankWithdraw(
+        val itemCode: String,
+        val itemName: String,
+        val quantity: Int
+    ) : TaskType()
+
+    /** Quick task: withdraw an item from the bank and recycle it at the appropriate workshop. */
+    data class BankRecycle(
+        val itemCode: String,
+        val itemName: String,
+        val quantity: Int,
+        val craftSkill: String
+    ) : TaskType()
+
+    /** Quick task: deposit a specific item from inventory to the bank. */
+    data class InventoryDeposit(
+        val itemCode: String,
+        val itemName: String,
+        val quantity: Int
+    ) : TaskType()
+
+    /** Quick task: recycle an inventory item at the appropriate workshop, then deposit recovered materials. */
+    data class InventoryRecycle(
+        val itemCode: String,
+        val itemName: String,
+        val quantity: Int,
+        val craftSkill: String
     ) : TaskType()
 }
 

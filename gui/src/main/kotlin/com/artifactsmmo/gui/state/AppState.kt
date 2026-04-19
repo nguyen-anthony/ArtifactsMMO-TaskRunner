@@ -126,8 +126,8 @@ class AppState(val scope: CoroutineScope) {
         _characterDetails.value = details
     }
 
-    /** Stop all running tasks. */
+    /** Stop all running tasks without clearing the persisted task file. */
     fun stopAll() {
-        taskManager.stopAllAndClear()
+        taskManager.stopAll()
     }
 }

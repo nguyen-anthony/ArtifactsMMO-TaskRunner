@@ -143,6 +143,10 @@ class TerminalUI(
                                 val tasksStr = if (s.tasksCompleted > 0) " [${s.tasksCompleted} done]" else ""
                                 magenta("Tasks: ${task.type}$tasksStr")
                             }
+                            is TaskType.BankWithdraw     -> cyan("Withdraw: ${task.quantity}x ${task.itemName}")
+                            is TaskType.BankRecycle      -> cyan("Recycle(bank): ${task.itemName}")
+                            is TaskType.InventoryDeposit -> cyan("Deposit: ${task.quantity}x ${task.itemName}")
+                            is TaskType.InventoryRecycle -> cyan("Recycle(inv): ${task.itemName}")
                         }
                         val craftsStr = if (s.recycleCount > 0) {
                             "${s.craftCount} (${s.recycleCount}r)"
@@ -773,7 +777,11 @@ class TerminalUI(
                 val modeStr = if (task.mode == CraftMode.LEVELING) "leveling" else "${task.craftedSoFar}/${task.targetQuantity}"
                 "Crafting ${task.itemName} ($modeStr) [${task.skill}]"
             }
-            is TaskType.TaskMaster -> "Task Master (${task.type})"
+            is TaskType.TaskMaster       -> "Task Master (${task.type})"
+            is TaskType.BankWithdraw     -> "Withdraw ${task.quantity}x ${task.itemName} from bank"
+            is TaskType.BankRecycle      -> "Recycle ${task.quantity}x ${task.itemName} (bank)"
+            is TaskType.InventoryDeposit -> "Deposit ${task.quantity}x ${task.itemName} to bank"
+            is TaskType.InventoryRecycle -> "Recycle ${task.quantity}x ${task.itemName} (inventory)"
         }
     }
 }

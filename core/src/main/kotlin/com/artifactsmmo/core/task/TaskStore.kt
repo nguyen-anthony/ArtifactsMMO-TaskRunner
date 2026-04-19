@@ -17,7 +17,7 @@ private val json = Json {
  */
 @Serializable
 data class StoredTask(
-    val type: String, // "idle", "gather", "fight", "craft", "task_master"
+    val type: String, // "idle", "gather", "fight", "craft", "task_master", "bank_withdraw", "bank_recycle", "inventory_deposit", "inventory_recycle"
     val skill: String? = null,
     @SerialName("resource_code") val resourceCode: String? = null,
     @SerialName("resource_name") val resourceName: String? = null,
@@ -29,7 +29,9 @@ data class StoredTask(
     @SerialName("craft_mode") val craftMode: String? = null, // "LEVELING", "SPECIFIC"
     @SerialName("target_quantity") val targetQuantity: Int? = null,
     @SerialName("crafted_so_far") val craftedSoFar: Int? = null,
-    @SerialName("task_master_type") val taskMasterType: String? = null // "items", "monsters"
+    @SerialName("task_master_type") val taskMasterType: String? = null, // "items", "monsters"
+    val quantity: Int? = null,
+    @SerialName("craft_skill") val craftSkill: String? = null
 )
 
 /**
@@ -123,6 +125,32 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 type = "task_master",
                 taskMasterType = task.type
             )
+            is TaskType.BankWithdraw -> StoredTask(
+                type = "bank_withdraw",
+                itemCode = task.itemCode,
+                itemName = task.itemName,
+                quantity = task.quantity
+            )
+            is TaskType.BankRecycle -> StoredTask(
+                type = "bank_recycle",
+                itemCode = task.itemCode,
+                itemName = task.itemName,
+                quantity = task.quantity,
+                craftSkill = task.craftSkill
+            )
+            is TaskType.InventoryDeposit -> StoredTask(
+                type = "inventory_deposit",
+                itemCode = task.itemCode,
+                itemName = task.itemName,
+                quantity = task.quantity
+            )
+            is TaskType.InventoryRecycle -> StoredTask(
+                type = "inventory_recycle",
+                itemCode = task.itemCode,
+                itemName = task.itemName,
+                quantity = task.quantity,
+                craftSkill = task.craftSkill
+            )
         }
     }
 
@@ -152,6 +180,28 @@ class TaskStore(private val file: File = File("tasks.json")) {
             )
             "task_master" -> TaskType.TaskMaster(
                 type = stored.taskMasterType ?: "items"
+            )
+            "bank_withdraw" -> TaskType.BankWithdraw(
+                itemCode = stored.itemCode ?: "",
+                itemName = stored.itemName ?: "",
+                quantity = stored.quantity ?: 1
+            )
+            "bank_recycle" -> TaskType.BankRecycle(
+                itemCode = stored.itemCode ?: "",
+                itemName = stored.itemName ?: "",
+                quantity = stored.quantity ?: 1,
+                craftSkill = stored.craftSkill ?: ""
+            )
+            "inventory_deposit" -> TaskType.InventoryDeposit(
+                itemCode = stored.itemCode ?: "",
+                itemName = stored.itemName ?: "",
+                quantity = stored.quantity ?: 1
+            )
+            "inventory_recycle" -> TaskType.InventoryRecycle(
+                itemCode = stored.itemCode ?: "",
+                itemName = stored.itemName ?: "",
+                quantity = stored.quantity ?: 1,
+                craftSkill = stored.craftSkill ?: ""
             )
             else -> TaskType.Idle
         }

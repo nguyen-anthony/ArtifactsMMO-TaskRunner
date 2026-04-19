@@ -28,6 +28,7 @@ class CharacterTaskRunner(
     private val fightingExecutor: FightingExecutor,
     private val craftingExecutor: CraftingExecutor,
     private val taskMasterExecutor: TaskMasterExecutor,
+    private val bankExecutor: BankExecutor,
     private val logger: TaskLogger,
     /**
      * Called whenever [currentTask] or [previousTask] changes due to an
@@ -60,10 +61,12 @@ class CharacterTaskRunner(
         val oldTask = currentTask
         job?.cancel()
 
-        // Save previous task when assigning a craft or task master task (and current task isn't idle)
-        if ((task is TaskType.Craft || task is TaskType.TaskMaster) && oldTask !is TaskType.Idle) {
+        // Save previous task when assigning a craft, task master, or quick bank/inventory task (and current task isn't idle)
+        val isQuickTask = task is TaskType.BankWithdraw || task is TaskType.BankRecycle ||
+            task is TaskType.InventoryDeposit || task is TaskType.InventoryRecycle
+        if ((task is TaskType.Craft || task is TaskType.TaskMaster || isQuickTask) && oldTask !is TaskType.Idle) {
             previousTask = oldTask
-        } else if (task !is TaskType.Craft && task !is TaskType.TaskMaster) {
+        } else if (task !is TaskType.Craft && task !is TaskType.TaskMaster && !isQuickTask) {
             // Clear previous task when assigning a regular task
             previousTask = null
         }
@@ -102,6 +105,19 @@ class CharacterTaskRunner(
                 val char = helper.refreshCharacter(characterName)
                 updateStatus { it.copy(characterLevel = char.level) }
             } catch (_: Exception) {}
+
+            // For fight tasks, execute any pending equipment actions first
+            if (task is TaskType.Fight && task.equipActions.isNotEmpty()) {
+                try {
+                    logger.log(characterName, "Retrieving and equipping gear before fight...")
+                    updateStatus { it.copy(statusMessage = "Equipping gear...") }
+                    helper.retrieveAndEquipItems(characterName, task.equipActions)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.log(characterName, "[equip] Error during gear retrieval: ${e.message}")
+                }
+            }
 
             // For gather tasks, check bank for leftover raw materials to craft
             if (task is TaskType.Gather) {
@@ -175,6 +191,8 @@ class CharacterTaskRunner(
                 is TaskType.Fight -> cleanupFightTask(previousTask, onStatus)
                 is TaskType.Craft -> cleanupCraftTask(onStatus)
                 is TaskType.TaskMaster -> cleanupTaskMasterTask(onStatus)
+                is TaskType.BankWithdraw, is TaskType.BankRecycle,
+                is TaskType.InventoryDeposit, is TaskType.InventoryRecycle -> {} // no cleanup
                 is TaskType.Idle -> {} // unreachable
             }
         } catch (e: CancellationException) {
@@ -328,6 +346,22 @@ class CharacterTaskRunner(
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg) }
                     }
+                    is TaskType.BankWithdraw -> bankExecutor.executeBankWithdraw(characterName, task) { msg ->
+                        logger.log(characterName, msg)
+                        updateStatus { it.copy(statusMessage = msg) }
+                    }
+                    is TaskType.BankRecycle -> bankExecutor.executeBankRecycle(characterName, task) { msg ->
+                        logger.log(characterName, msg)
+                        updateStatus { it.copy(statusMessage = msg) }
+                    }
+                    is TaskType.InventoryDeposit -> bankExecutor.executeInventoryDeposit(characterName, task) { msg ->
+                        logger.log(characterName, msg)
+                        updateStatus { it.copy(statusMessage = msg) }
+                    }
+                    is TaskType.InventoryRecycle -> bankExecutor.executeInventoryRecycle(characterName, task) { msg ->
+                        logger.log(characterName, msg)
+                        updateStatus { it.copy(statusMessage = msg) }
+                    }
                 }
 
                 // Update counters based on result
@@ -367,6 +401,13 @@ class CharacterTaskRunner(
                     }
                     is StepResult.CraftTaskComplete -> {
                         logger.log(characterName, "Crafting task complete!")
+                        revertToPreviousTask()
+                        break
+                    }
+
+                    // Quick bank/inventory task results
+                    is StepResult.QuickTaskComplete -> {
+                        logger.log(characterName, "Quick task complete!")
                         revertToPreviousTask()
                         break
                     }
@@ -422,6 +463,8 @@ class CharacterTaskRunner(
         when (currentTask) {
             is TaskType.Craft -> cleanupCraftTask(onCleanup)
             is TaskType.TaskMaster -> cleanupTaskMasterTask(onCleanup)
+            is TaskType.BankWithdraw, is TaskType.BankRecycle,
+            is TaskType.InventoryDeposit, is TaskType.InventoryRecycle -> {} // no extra cleanup needed
             else -> {}
         }
 
@@ -480,6 +523,10 @@ class CharacterTaskRunner(
             is TaskType.Fight -> "fight ${task.monsterName}"
             is TaskType.Craft -> "craft ${task.itemName} (${task.skill})"
             is TaskType.TaskMaster -> "task master (${task.type})"
+            is TaskType.BankWithdraw -> "withdraw ${task.quantity}x ${task.itemName} from bank"
+            is TaskType.BankRecycle -> "recycle ${task.quantity}x ${task.itemName} (bank)"
+            is TaskType.InventoryDeposit -> "deposit ${task.quantity}x ${task.itemName} to bank"
+            is TaskType.InventoryRecycle -> "recycle ${task.quantity}x ${task.itemName} (inventory)"
             is TaskType.Idle -> "idle"
         }
     }

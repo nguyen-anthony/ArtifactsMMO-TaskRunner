@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.artifactsmmo.client.models.CombatSimulationData
 import com.artifactsmmo.client.models.Monster
 import com.artifactsmmo.client.models.Resource
+import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.CraftMode
 import com.artifactsmmo.core.task.FullInventoryStrategy
@@ -48,6 +49,37 @@ private sealed class WizardStep {
         val monster: Monster,
         val sim: CombatSimulationData?,
         val simError: String?
+    ) : WizardStep()
+
+    // Equipment Browser (from FightSim → Check Equipment)
+    data class EquipmentBrowser(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val originalSim: CombatSimulationData?,
+        val char: Character,
+        /** slot → item code selected by user (overrides current gear) */
+        val slotOverrides: Map<String, String> = emptyMap(),
+        /** Tracks source ("inventory"/"bank"/"craftable") per slot, used for EquipActions */
+        val slotSources: Map<String, String> = emptyMap()
+    ) : WizardStep()
+    data class EquipmentSlotPicker(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val originalSim: CombatSimulationData?,
+        val char: Character,
+        val slotOverrides: Map<String, String>,
+        val slotSources: Map<String, String>,
+        val slotInfo: ActionHelper.SlotInfo,
+        val options: List<ActionHelper.EquipmentOption>
+    ) : WizardStep()
+    data class EquipmentResim(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val originalSim: CombatSimulationData?,
+        val char: Character,
+        val newSim: CombatSimulationData,
+        val slotOverrides: Map<String, String>,
+        val equipActions: List<ActionHelper.EquipAction>
     ) : WizardStep()
 
     // Craft
@@ -251,6 +283,82 @@ fun TaskWizardDialog(
                                         monsterName = s.monster.name
                                     )
                                 )
+                            },
+                            onCheckEquipment = {
+                                load("Loading character equipment...") {
+                                    val char = appState.taskManager.getCharacterDetails(characterName)
+                                    step = WizardStep.EquipmentBrowser(s.monsters, s.monster, s.sim, char)
+                                }
+                            }
+                        )
+
+                        is WizardStep.EquipmentBrowser -> StepEquipmentBrowser(
+                            step = s,
+                            onBack = {
+                                step = WizardStep.FightSim(s.monsters, s.monster, s.originalSim, null)
+                            },
+                            onBrowseSlot = { slotInfo ->
+                                load("Loading options for ${slotInfo.slot}...") {
+                                    val options = appState.taskManager.getAvailableEquipmentForSlot(characterName, slotInfo)
+                                    step = WizardStep.EquipmentSlotPicker(
+                                        s.monsters, s.monster, s.originalSim, s.char,
+                                        s.slotOverrides, s.slotSources, slotInfo, options
+                                    )
+                                }
+                            },
+                            onResetSlot = { slot ->
+                                step = s.copy(
+                                    slotOverrides = s.slotOverrides - slot,
+                                    slotSources   = s.slotSources   - slot
+                                )
+                            },
+                            onSimulate = {
+                                load("Simulating with new gear...") {
+                                    val newSim = appState.taskManager.simulateFightWithOverrides(
+                                        characterName, s.monster.code, s.slotOverrides, 20
+                                    )
+                                    val actions = s.slotOverrides.map { (slot, itemCode) ->
+                                        ActionHelper.EquipAction(slot, itemCode, s.slotSources[slot] ?: "bank")
+                                    }
+                                    step = WizardStep.EquipmentResim(
+                                        s.monsters, s.monster, s.originalSim, s.char, newSim, s.slotOverrides, actions
+                                    )
+                                }
+                            }
+                        )
+
+                        is WizardStep.EquipmentSlotPicker -> StepEquipmentSlotPicker(
+                            step = s,
+                            onBack = {
+                                step = WizardStep.EquipmentBrowser(
+                                    s.monsters, s.monster, s.originalSim, s.char, s.slotOverrides, s.slotSources
+                                )
+                            },
+                            onSelectOption = { option ->
+                                val newOverrides = s.slotOverrides + (s.slotInfo.slot to option.item.code)
+                                val newSources   = s.slotSources   + (s.slotInfo.slot to option.source)
+                                step = WizardStep.EquipmentBrowser(
+                                    s.monsters, s.monster, s.originalSim, s.char, newOverrides, newSources
+                                )
+                            }
+                        )
+
+                        is WizardStep.EquipmentResim -> StepEquipmentResim(
+                            step = s,
+                            onBack = {
+                                step = WizardStep.EquipmentBrowser(
+                                    s.monsters, s.monster, s.originalSim, s.char, s.slotOverrides,
+                                    s.equipActions.associate { it.slot to it.source }
+                                )
+                            },
+                            onEquipAndFight = {
+                                assign(
+                                    TaskType.Fight(
+                                        monsterCode  = s.monster.code,
+                                        monsterName  = s.monster.name,
+                                        equipActions = s.equipActions
+                                    )
+                                )
                             }
                         )
 
@@ -431,7 +539,8 @@ private fun WizardRadioCard(
 private fun WizardNavRow(
     onBack: () -> Unit,
     confirmLabel: String = "Confirm",
-    onConfirm: (() -> Unit)? = null
+    onConfirm: (() -> Unit)? = null,
+    extraButton: (@Composable () -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -441,6 +550,10 @@ private fun WizardNavRow(
     ) {
         TextButton(onClick = onBack) { Text("← Back") }
         Spacer(Modifier.weight(1f))
+        if (extraButton != null) {
+            extraButton()
+            Spacer(Modifier.width(8.dp))
+        }
         if (onConfirm != null) {
             Button(onClick = onConfirm) { Text(confirmLabel) }
         }
@@ -639,7 +752,8 @@ private fun StepFightMonster(
 private fun StepFightSim(
     step: WizardStep.FightSim,
     onBack: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    onCheckEquipment: () -> Unit
 ) {
     val mon = step.monster
     val sim = step.sim
@@ -767,7 +881,14 @@ private fun StepFightSim(
             )
         }
 
-        WizardNavRow(onBack = onBack, confirmLabel = "Fight!", onConfirm = onConfirm)
+        WizardNavRow(
+            onBack = onBack,
+            extraButton = {
+                OutlinedButton(onClick = onCheckEquipment) { Text("Check Equipment") }
+            },
+            confirmLabel = "Fight!",
+            onConfirm = onConfirm
+        )
     }
 }
 
@@ -980,5 +1101,305 @@ private fun StepTaskMasterType(
             )
         }
         TextButton(onClick = onBack) { Text("← Back") }
+    }
+}
+
+// ── Step: Equipment Browser ────────────────────────────────────────────────────
+
+@Composable
+private fun StepEquipmentBrowser(
+    step: WizardStep.EquipmentBrowser,
+    onBack: () -> Unit,
+    onBrowseSlot: (ActionHelper.SlotInfo) -> Unit,
+    onResetSlot: (String) -> Unit,
+    onSimulate: () -> Unit
+) {
+    val char = step.char
+    val overrides = step.slotOverrides
+    val hasOverrides = overrides.isNotEmpty()
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(
+                text = "Equipment for ${step.monster.name}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Browse slots to try different gear. Overridden slots shown in accent.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
+            items(ActionHelper.COMBAT_SLOTS) { slotInfo ->
+                val currentCode = overrides[slotInfo.slot]
+                    ?: when (slotInfo.slot) {
+                        "weapon"     -> char.weaponSlot
+                        "shield"     -> char.shieldSlot
+                        "helmet"     -> char.helmetSlot
+                        "body_armor" -> char.bodyArmorSlot
+                        "leg_armor"  -> char.legArmorSlot
+                        "boots"      -> char.bootsSlot
+                        "ring1"      -> char.ring1Slot
+                        "ring2"      -> char.ring2Slot
+                        "amulet"     -> char.amuletSlot
+                        "artifact1"  -> char.artifact1Slot
+                        "artifact2"  -> char.artifact2Slot
+                        "artifact3"  -> char.artifact3Slot
+                        "rune"       -> char.runeSlot
+                        else         -> ""
+                    }
+                val isOverridden = slotInfo.slot in overrides
+                val displayColor = if (isOverridden)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurface
+
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = slotInfo.slot.replace('_', ' ').replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = if (currentCode.isEmpty()) "(empty)" else currentCode,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = displayColor
+                        )
+                    },
+                    trailingContent = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { onBrowseSlot(slotInfo) }) { Text("Browse") }
+                            if (isOverridden) {
+                                TextButton(onClick = { onResetSlot(slotInfo.slot) }) { Text("Reset") }
+                            }
+                        }
+                    }
+                )
+                HorizontalDivider()
+            }
+        }
+
+        WizardNavRow(
+            onBack = onBack,
+            confirmLabel = "Simulate",
+            onConfirm = if (hasOverrides) onSimulate else null
+        )
+    }
+}
+
+// ── Step: Equipment Slot Picker ────────────────────────────────────────────────
+
+@Composable
+private fun StepEquipmentSlotPicker(
+    step: WizardStep.EquipmentSlotPicker,
+    onBack: () -> Unit,
+    onSelectOption: (ActionHelper.EquipmentOption) -> Unit
+) {
+    val slotLabel = step.slotInfo.slot.replace('_', ' ').replaceFirstChar { it.uppercase() }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(
+                text = "Choose: $slotLabel",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        if (step.options.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "No equipment options available for this slot.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            // Group by source
+            val bySource = step.options.groupBy { it.source }
+            LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
+                val sourceOrder = listOf("inventory", "bank", "craftable")
+                for (src in sourceOrder) {
+                    val group = bySource[src] ?: continue
+                    item {
+                        Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                            Text(
+                                text = src.replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                    items(group) { option ->
+                        val subtitle = when (src) {
+                            "inventory" -> "Lv.${option.item.level}  •  in inventory (${option.quantity})"
+                            "bank"      -> "Lv.${option.item.level}  •  in bank (${option.quantity})"
+                            "craftable" -> {
+                                val ing = option.craftInfo?.ingredients
+                                    ?.joinToString(", ") { "${it.quantity}× ${it.code}" } ?: ""
+                                "Lv.${option.item.level}  •  craftable × ${option.quantity}  •  needs: $ing"
+                            }
+                            else -> "Lv.${option.item.level}"
+                        }
+                        ListItem(
+                            headlineContent = {
+                                Text(option.item.name, fontWeight = FontWeight.Medium)
+                            },
+                            supportingContent = {
+                                Text(subtitle, style = MaterialTheme.typography.bodySmall)
+                            },
+                            modifier = Modifier.clickable { onSelectOption(option) }
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+
+        WizardNavRow(onBack = onBack)
+    }
+}
+
+// ── Step: Equipment Re-simulation ─────────────────────────────────────────────
+
+@Composable
+private fun StepEquipmentResim(
+    step: WizardStep.EquipmentResim,
+    onBack: () -> Unit,
+    onEquipAndFight: () -> Unit
+) {
+    val orig = step.originalSim
+    val new  = step.newSim
+
+    fun winColor(rate: Double): Color = when {
+        rate >= 70.0 -> Color(0xFF388E3C)
+        rate >= 40.0 -> Color(0xFFF57C00)
+        else         -> Color(0xFFD32F2F)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Simulation: ${step.monster.name}",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        // Side-by-side win rates
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Original
+            Surface(
+                color = if (orig != null) winColor(orig.winrate).copy(alpha = 0.12f)
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Current gear",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (orig != null) {
+                        Text(
+                            text = "${"%.0f".format(orig.winrate)}%",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = winColor(orig.winrate)
+                        )
+                        Text(
+                            "${orig.wins}W / ${orig.losses}L",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text("N/A", style = MaterialTheme.typography.headlineSmall)
+                    }
+                }
+            }
+
+            // New
+            val delta = if (orig != null) new.winrate - orig.winrate else null
+            val deltaColor = when {
+                delta == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                delta > 0    -> Color(0xFF388E3C)
+                delta < 0    -> Color(0xFFD32F2F)
+                else         -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Surface(
+                color = winColor(new.winrate).copy(alpha = 0.18f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "New gear",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${"%.0f".format(new.winrate)}%",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = winColor(new.winrate)
+                    )
+                    Text(
+                        "${new.wins}W / ${new.losses}L",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (delta != null) {
+                        Text(
+                            text = "${if (delta >= 0) "+" else ""}${"%.0f".format(delta)}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = deltaColor
+                        )
+                    }
+                }
+            }
+        }
+
+        // Gear changes list
+        if (step.slotOverrides.isNotEmpty()) {
+            HorizontalDivider()
+            Text(
+                "Gear changes:",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            for ((slot, itemCode) in step.slotOverrides) {
+                val slotLabel = slot.replace('_', ' ').replaceFirstChar { it.uppercase() }
+                Text(
+                    "$slotLabel  →  $itemCode",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        WizardNavRow(
+            onBack = onBack,
+            confirmLabel = "Equip & Fight!",
+            onConfirm = onEquipAndFight
+        )
     }
 }

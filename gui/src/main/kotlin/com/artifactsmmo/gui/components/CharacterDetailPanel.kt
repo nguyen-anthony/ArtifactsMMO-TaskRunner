@@ -31,6 +31,8 @@ fun CharacterDetailPanel(
     onClose: () -> Unit,
     onAssignTask: () -> Unit,
     onStopTask: () -> Unit,
+    onOpenBank: () -> Unit = {},
+    onOpenInventory: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -70,6 +72,8 @@ fun CharacterDetailPanel(
                     ) {
                         Text("Stop")
                     }
+                    OutlinedButton(onClick = onOpenBank) { Text("Bank") }
+                    OutlinedButton(onClick = onOpenInventory) { Text("Inventory") }
                     Button(onClick = onAssignTask) {
                         Text("Assign Task")
                     }

@@ -2,8 +2,10 @@ package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.models.Character
+import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.Monster
 import com.artifactsmmo.client.models.Resource
+import com.artifactsmmo.client.models.SimpleItem
 import com.artifactsmmo.client.utils.CharacterUtils
 import kotlinx.coroutines.CoroutineScope
 
@@ -22,6 +24,7 @@ class TaskManager(
     private val fightingExecutor = FightingExecutor(helper)
     private val craftingExecutor = CraftingExecutor(helper)
     private val taskMasterExecutor = TaskMasterExecutor(helper, gatheringExecutor, fightingExecutor)
+    private val bankExecutor = BankExecutor(helper)
 
     private val runners = mutableMapOf<String, CharacterTaskRunner>()
 
@@ -39,6 +42,7 @@ class TaskManager(
                 fightingExecutor = fightingExecutor,
                 craftingExecutor = craftingExecutor,
                 taskMasterExecutor = taskMasterExecutor,
+                bankExecutor = bankExecutor,
                 logger = logger,
                 onTaskChanged = { persistTasks() }
             )
@@ -139,6 +143,31 @@ class TaskManager(
     }
 
     /**
+     * Get available equipment options for a combat slot.
+     */
+    suspend fun getAvailableEquipmentForSlot(
+        characterName: String,
+        slotInfo: ActionHelper.SlotInfo
+    ): List<ActionHelper.EquipmentOption> {
+        val char = client.characters.getCharacter(characterName)
+        return helper.getAvailableEquipmentForSlot(char, slotInfo)
+    }
+
+    /**
+     * Simulate combat using the character's current gear with optional slot overrides.
+     * [slotOverrides] maps slot name (e.g. "weapon") to an item code.
+     */
+    suspend fun simulateFightWithOverrides(
+        characterName: String,
+        monsterCode: String,
+        slotOverrides: Map<String, String>,
+        iterations: Int = 20
+    ): com.artifactsmmo.client.models.CombatSimulationData {
+        val char = client.characters.getCharacter(characterName)
+        return helper.simulateFightWithSlotOverrides(char, monsterCode, slotOverrides, iterations)
+    }
+
+    /**
      * Assign a task to a character.
      */
     fun assignTask(characterName: String, task: TaskType) {
@@ -186,5 +215,35 @@ class TaskManager(
      */
     fun getCharacterNames(): List<String> {
         return runners.keys.toList()
+    }
+
+    /**
+     * Detail record combining a [SimpleItem] bank entry with the full [Item] metadata.
+     */
+    data class BankItemDetail(
+        val bankItem: SimpleItem,
+        val item: Item
+    )
+
+    /**
+     * Fetch all bank items and enrich each with full item metadata from the content API.
+     * Items whose metadata cannot be fetched are silently skipped.
+     */
+    suspend fun getBankItemsWithDetails(): List<BankItemDetail> {
+        val allItems = mutableListOf<SimpleItem>()
+        var page = 1
+        while (true) {
+            val result = client.bank.getBankItems(page = page, size = 100)
+            allItems.addAll(result.data)
+            if (page >= (result.pages ?: Int.MAX_VALUE)) break
+            if (result.data.size < 100) break
+            page++
+        }
+
+        return allItems.mapNotNull { bankItem ->
+            runCatching { client.content.getItem(bankItem.code) }
+                .getOrNull()
+                ?.let { BankItemDetail(bankItem, it) }
+        }
     }
 }

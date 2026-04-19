@@ -16,6 +16,8 @@ import androidx.compose.ui.unit.dp
 import com.artifactsmmo.core.task.TaskLogger
 import com.artifactsmmo.gui.components.CharacterCard
 import com.artifactsmmo.gui.components.CharacterDetailPanel
+import com.artifactsmmo.gui.components.BankDialog
+import com.artifactsmmo.gui.components.InventoryDialog
 import com.artifactsmmo.gui.components.TaskWizardDialog
 import com.artifactsmmo.gui.state.AppState
 import com.artifactsmmo.gui.state.ImageCache
@@ -53,6 +55,12 @@ fun DashboardScreen(
 
     // Task wizard: list of characters to assign to (null = closed)
     var wizardCharacters by remember { mutableStateOf<List<String>?>(null) }
+
+    // Bank dialog: character name (null = closed)
+    var bankDialogCharacter by remember { mutableStateOf<String?>(null) }
+
+    // Inventory dialog: character name (null = closed)
+    var inventoryDialogCharacter by remember { mutableStateOf<String?>(null) }
 
     // Log filter: null = All
     var logFilter by remember { mutableStateOf<String?>(null) }
@@ -197,6 +205,8 @@ fun DashboardScreen(
                             onClose = { selectedCharacter = null },
                             onAssignTask = { wizardCharacters = listOf(selName) },
                             onStopTask = { appState.taskManager.stopTask(selName) },
+                            onOpenBank = { bankDialogCharacter = selName },
+                            onOpenInventory = { inventoryDialogCharacter = selName },
                             modifier = Modifier.weight(0.4f)
                         )
                     }
@@ -215,6 +225,28 @@ fun DashboardScreen(
                                 multiSelectMode = false
                             }
                         }
+                    )
+                }
+
+                // ── Bank dialog ────────────────────────────────────────────────
+                val bankChar = bankDialogCharacter
+                if (bankChar != null) {
+                    BankDialog(
+                        characterName = bankChar,
+                        appState = appState,
+                        onDismiss = { bankDialogCharacter = null }
+                    )
+                }
+
+                // ── Inventory dialog ───────────────────────────────────────────
+                val invChar = inventoryDialogCharacter
+                val invCharDetails = if (invChar != null) characterDetails[invChar] else null
+                if (invChar != null && invCharDetails != null) {
+                    InventoryDialog(
+                        characterName = invChar,
+                        character = invCharDetails,
+                        appState = appState,
+                        onDismiss = { inventoryDialogCharacter = null }
                     )
                 }
 

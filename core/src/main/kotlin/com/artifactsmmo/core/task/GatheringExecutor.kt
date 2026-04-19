@@ -326,4 +326,6 @@ sealed class StepResult {
     data object TaskMasterTaskCompleted : StepResult()
     /** Task master: current task was cancelled (can't fulfill), will accept new one. */
     data object TaskMasterTaskCancelled : StepResult()
+    /** Quick task (BankWithdraw/BankRecycle/InventoryDeposit/InventoryRecycle): task is done, revert to previous. */
+    data object QuickTaskComplete : StepResult()
 }

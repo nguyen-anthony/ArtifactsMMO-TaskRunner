@@ -835,6 +835,287 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
         return results
     }
 
+    // ── Equipment browser data ──
+
+    /**
+     * Info about a piece of equipment available for a slot.
+     */
+    data class EquipmentOption(
+        val item: Item,
+        /** Where to get it: "inventory", "bank", or "craftable". */
+        val source: String,
+        val quantity: Int,
+        val craftInfo: CraftableItemInfo? = null
+    )
+
+    /**
+     * An action to equip a specific item in a specific slot.
+     */
+    data class EquipAction(
+        val slot: String,
+        val itemCode: String,
+        val source: String   // "inventory", "bank", or "craftable"
+    )
+
+    /**
+     * Metadata for a single combat equipment slot.
+     */
+    data class SlotInfo(
+        val slot: String,
+        val itemType: String,
+        val craftSkill: String?
+    )
+
+    companion object {
+        /** All combat-relevant equipment slots, in display order. */
+        val COMBAT_SLOTS = listOf(
+            SlotInfo("weapon",    "weapon",     "weaponcrafting"),
+            SlotInfo("shield",    "shield",     "gearcrafting"),
+            SlotInfo("helmet",    "helmet",     "gearcrafting"),
+            SlotInfo("body_armor","body_armor", "gearcrafting"),
+            SlotInfo("leg_armor", "leg_armor",  "gearcrafting"),
+            SlotInfo("boots",     "boots",      "gearcrafting"),
+            SlotInfo("ring1",     "ring",       "jewelrycrafting"),
+            SlotInfo("ring2",     "ring",       "jewelrycrafting"),
+            SlotInfo("amulet",    "amulet",     "jewelrycrafting"),
+            SlotInfo("artifact1", "artifact",   null),
+            SlotInfo("artifact2", "artifact",   null),
+            SlotInfo("artifact3", "artifact",   null),
+            SlotInfo("rune",      "rune",       null)
+        )
+    }
+
+    // ── Equipment slot helpers ──
+
+    /**
+     * Return the item code currently equipped in [slot], or empty string if none.
+     */
+    fun getEquippedInSlot(char: Character, slot: String): String {
+        return when (slot) {
+            "weapon"     -> char.weaponSlot
+            "shield"     -> char.shieldSlot
+            "helmet"     -> char.helmetSlot
+            "body_armor" -> char.bodyArmorSlot
+            "leg_armor"  -> char.legArmorSlot
+            "boots"      -> char.bootsSlot
+            "ring1"      -> char.ring1Slot
+            "ring2"      -> char.ring2Slot
+            "amulet"     -> char.amuletSlot
+            "artifact1"  -> char.artifact1Slot
+            "artifact2"  -> char.artifact2Slot
+            "artifact3"  -> char.artifact3Slot
+            "rune"       -> char.runeSlot
+            else         -> ""
+        }
+    }
+
+    // ── Equipment browser methods ──
+
+    /**
+     * Return all equipment options for a given combat slot.
+     * Checks inventory, bank, and craftable items (if slot has a craft skill).
+     * Excludes the item currently equipped in that slot.
+     * Results are sorted by item level descending.
+     */
+    suspend fun getAvailableEquipmentForSlot(
+        char: Character,
+        slotInfo: SlotInfo
+    ): List<EquipmentOption> {
+        val currentEquipped = getEquippedInSlot(char, slotInfo.slot)
+
+        // Fetch all items of this type up to character level
+        val allItems = mutableListOf<Item>()
+        var page = 1
+        while (true) {
+            val result = try {
+                client.content.getItems(type = slotInfo.itemType, maxLevel = char.level, page = page, size = 100)
+            } catch (_: Exception) { break }
+            allItems.addAll(result.data)
+            if (page >= (result.pages ?: Int.MAX_VALUE)) break
+            if (result.data.size < 100) break
+            page++
+        }
+
+        // Exclude currently equipped item and tools (subtype == "tool")
+        val candidates = allItems.filter { it.code != currentEquipped && it.subtype != "tool" }
+
+        // Build inventory lookup
+        val inventoryMap = char.inventory.associate { it.code to it.quantity }
+
+        // Build bank lookup (paginated)
+        val bankMap = mutableMapOf<String, Int>()
+        var bankPage = 1
+        while (true) {
+            val result = try {
+                client.bank.getBankItems(page = bankPage, size = 100)
+            } catch (_: Exception) { break }
+            for (item in result.data) {
+                bankMap[item.code] = (bankMap[item.code] ?: 0) + item.quantity
+            }
+            if (bankPage >= (result.pages ?: Int.MAX_VALUE)) break
+            if (result.data.size < 100) break
+            bankPage++
+        }
+
+        // Build craftable lookup for this slot's craft skill
+        val craftableMap = mutableMapOf<String, CraftableItemInfo>()
+        if (slotInfo.craftSkill != null) {
+            try {
+                val craftable = getAvailableCraftingItems(char, slotInfo.craftSkill)
+                for (info in craftable) {
+                    if (info.item.type == slotInfo.itemType) {
+                        craftableMap[info.item.code] = info
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        val results = mutableListOf<EquipmentOption>()
+        for (item in candidates) {
+            val invQty  = inventoryMap[item.code] ?: 0
+            val bankQty = bankMap[item.code] ?: 0
+            when {
+                invQty > 0            -> results.add(EquipmentOption(item, "inventory", invQty))
+                bankQty > 0           -> results.add(EquipmentOption(item, "bank", bankQty))
+                item.code in craftableMap -> {
+                    val ci = craftableMap[item.code]!!
+                    results.add(EquipmentOption(item, "craftable", ci.maxCraftable, ci))
+                }
+            }
+        }
+
+        return results.sortedByDescending { it.item.level }
+    }
+
+    /**
+     * Simulate combat using [char]'s current gear with optional slot overrides.
+     * [slotOverrides] maps slot name (e.g. "weapon") to an item code.
+     */
+    suspend fun simulateFightWithSlotOverrides(
+        char: Character,
+        monsterCode: String,
+        slotOverrides: Map<String, String>,
+        iterations: Int = 20
+    ): com.artifactsmmo.client.models.CombatSimulationData {
+        val base = com.artifactsmmo.client.models.FakeCharacterRequest.fromCharacter(char)
+        val overridden = base.copy(
+            weaponSlot    = slotOverrides["weapon"]     ?: base.weaponSlot,
+            shieldSlot    = slotOverrides["shield"]     ?: base.shieldSlot,
+            helmetSlot    = slotOverrides["helmet"]     ?: base.helmetSlot,
+            bodyArmorSlot = slotOverrides["body_armor"] ?: base.bodyArmorSlot,
+            legArmorSlot  = slotOverrides["leg_armor"]  ?: base.legArmorSlot,
+            bootsSlot     = slotOverrides["boots"]      ?: base.bootsSlot,
+            ring1Slot     = slotOverrides["ring1"]      ?: base.ring1Slot,
+            ring2Slot     = slotOverrides["ring2"]      ?: base.ring2Slot,
+            amuletSlot    = slotOverrides["amulet"]     ?: base.amuletSlot,
+            artifact1Slot = slotOverrides["artifact1"]  ?: base.artifact1Slot,
+            artifact2Slot = slotOverrides["artifact2"]  ?: base.artifact2Slot,
+            artifact3Slot = slotOverrides["artifact3"]  ?: base.artifact3Slot,
+            runeSlot      = slotOverrides["rune"]       ?: base.runeSlot
+        )
+        val request = com.artifactsmmo.client.models.CombatSimulationRequest(
+            characters = listOf(overridden),
+            monster    = monsterCode,
+            iterations = iterations
+        )
+        return client.simulation.simulateFight(request)
+    }
+
+    /**
+     * Retrieve gear from inventory/bank/workshop (craftable) and equip it.
+     *
+     * Flow:
+     *  1. Go to bank; unequip slots that are being replaced and deposit them.
+     *     Tools (subtype == "tool", e.g. pickaxes, axes) are never deposited —
+     *     they stay in inventory so characters keep their gathering tools.
+     *  2. Withdraw bank items and craftable ingredients.
+     *  3. Visit workshops and craft craftable items.
+     *  4. Equip all new items.
+     */
+    suspend fun retrieveAndEquipItems(
+        characterName: String,
+        equipActions: List<EquipAction>
+    ): Character {
+        if (equipActions.isEmpty()) return refreshCharacter(characterName)
+
+        var char = refreshCharacter(characterName)
+
+        // Snapshot what's currently equipped in each affected slot
+        val prevEquipped = equipActions.associate { it.slot to getEquippedInSlot(char, it.slot) }
+
+        // ── Step 1: Go to bank, unequip replaced slots, deposit them ──
+        val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
+        char = moveTo(characterName, bank.x, bank.y)
+
+        for ((slot, equipped) in prevEquipped) {
+            if (equipped.isNotEmpty()) {
+                char = unequip(characterName, slot)
+            }
+        }
+
+        // Deposit unequipped items — but keep tools (pickaxes, axes, etc.) in inventory
+        val itemsToDeposit = prevEquipped.values
+            .filter { it.isNotEmpty() }
+            .filter { code ->
+                val subtype = try { client.content.getItem(code).subtype } catch (_: Exception) { "" }
+                subtype != "tool"
+            }
+            .map { SimpleItem(it, 1) }
+        if (itemsToDeposit.isNotEmpty()) {
+            val result = client.bank.depositItems(characterName, itemsToDeposit)
+            waitForCooldown(result.cooldown.totalSeconds)
+            char = result.character
+        }
+
+        // ── Step 2: Withdraw bank items ──
+        for (action in equipActions.filter { it.source == "bank" }) {
+            try {
+                val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(action.itemCode, 1)))
+                waitForCooldown(result.cooldown.totalSeconds)
+                char = result.character
+            } catch (_: Exception) {}
+        }
+
+        // ── Step 3: Withdraw ingredients for craftable items ──
+        for (action in equipActions.filter { it.source == "craftable" }) {
+            try {
+                val item = getItem(action.itemCode)
+                val craft = item.craft ?: continue
+                val ingredients = craft.items.map { SimpleItem(it.code, it.quantity) }
+                val result = client.bank.withdrawItems(characterName, ingredients)
+                waitForCooldown(result.cooldown.totalSeconds)
+                char = result.character
+            } catch (_: Exception) {}
+        }
+
+        // ── Step 4: Craft craftable items at workshops ──
+        val craftableActions = equipActions.filter { it.source == "craftable" }
+        val craftBySkill = craftableActions.groupBy { action ->
+            try { getItem(action.itemCode).craft?.skill ?: "weaponcrafting" }
+            catch (_: Exception) { "weaponcrafting" }
+        }
+        for ((skill, actions) in craftBySkill) {
+            val workshop = findNearestWorkshop(char, skill) ?: continue
+            char = moveTo(characterName, workshop.x, workshop.y)
+            for (action in actions) {
+                try {
+                    val result = client.actions.craft(characterName, action.itemCode, 1)
+                    waitForCooldown(result.cooldown.totalSeconds)
+                    char = result.character
+                } catch (_: Exception) {}
+            }
+        }
+
+        // ── Step 5: Equip all new items ──
+        for (action in equipActions) {
+            try {
+                char = equip(characterName, action.itemCode, action.slot)
+            } catch (_: Exception) {}
+        }
+
+        return char
+    }
+
     // ── Task Master ──
 
     /**

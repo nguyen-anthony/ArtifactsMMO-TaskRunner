@@ -236,9 +236,13 @@ private fun CounterChip(label: String, value: Int) {
 // ── Task description ───────────────────────────────────────────────────────────
 
 private fun describeTask(task: TaskType): String = when (task) {
-    is TaskType.Idle       -> "Idle"
-    is TaskType.Gather     -> "Gathering: ${task.resourceName} (${task.skill})"
-    is TaskType.Fight      -> "Fighting: ${task.monsterName}"
-    is TaskType.Craft      -> "Crafting: ${task.itemName} (${task.skill})"
-    is TaskType.TaskMaster -> "Task Master (${task.type})"
+    is TaskType.Idle             -> "Idle"
+    is TaskType.Gather           -> "Gathering: ${task.resourceName} (${task.skill})"
+    is TaskType.Fight            -> "Fighting: ${task.monsterName}"
+    is TaskType.Craft            -> "Crafting: ${task.itemName} (${task.skill})"
+    is TaskType.TaskMaster       -> "Task Master (${task.type})"
+    is TaskType.BankWithdraw     -> "Withdrawing: ${task.quantity}x ${task.itemName}"
+    is TaskType.BankRecycle      -> "Recycling (bank): ${task.quantity}x ${task.itemName}"
+    is TaskType.InventoryDeposit -> "Depositing: ${task.quantity}x ${task.itemName}"
+    is TaskType.InventoryRecycle -> "Recycling (inv): ${task.quantity}x ${task.itemName}"
 }
