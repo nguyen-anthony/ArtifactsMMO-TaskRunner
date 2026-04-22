@@ -28,12 +28,14 @@ jobs:
 
       - name: Build distributable
         shell: bash
-        run: ./gradlew :gui:createReleaseDistributable -Papp.version=${{ env.APP_VERSION }} --no-configuration-cache
+        # createDistributable skips ProGuard — unnecessary for a desktop portable zip
+        # and ProGuard fails on Caffeine/Logback/Ktor's reflective internals anyway.
+        run: ./gradlew :gui:createDistributable -Papp.version=${{ env.APP_VERSION }} --no-configuration-cache
 
       - name: Zip distributable
         shell: pwsh
         run: |
-          $src = "gui\build\compose\binaries\main-release\app\ArtifactsMMO"
+          $src = "gui\build\compose\binaries\main\app\ArtifactsMMO"
           $dst = "ArtifactsMMO-${{ env.APP_VERSION }}-windows.zip"
           Compress-Archive -Path $src -DestinationPath $dst
           Write-Host "Created $dst"
