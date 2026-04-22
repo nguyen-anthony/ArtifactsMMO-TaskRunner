@@ -122,7 +122,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         char = moveTo(name, bank.x, bank.y)
 
         // Only deposit resources and consumables; keep everything else (weapons, tools, gear, etc.)
-        val safeTypes = setOf("resource", "consumable")
+        val safeTypes = setOf("resource", "consumable", "currency")
         val itemsToDeposit = mutableListOf<SimpleItem>()
         for (slot in char.inventory) {
             if (slot.quantity <= 0) continue
@@ -1167,16 +1167,34 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     }
 
     /**
+     * A single raw ingredient in a crafting recipe that can be obtained by gathering.
+     */
+    data class TaskItemIngredient(
+        /** The raw item code dropped by the resource (e.g. "iron_ore", "coal"). */
+        val rawItemCode: String,
+        /** How many of this item are needed per single craft. */
+        val rawPerCraft: Int,
+        /** The gathering skill used to collect this ingredient. */
+        val gatherSkill: String,
+        /** The resource node code on the map. */
+        val resourceCode: String,
+        /** Human-readable resource name. */
+        val resourceName: String,
+        /** Minimum gathering skill level required. */
+        val gatherLevel: Int
+    )
+
+    /**
      * Information about how to obtain a task item.
      */
     data class TaskItemSource(
-        /** The gathering skill needed (mining, woodcutting, fishing, alchemy). */
+        /** The gathering skill needed (primary ingredient). */
         val gatherSkill: String,
-        /** The resource code to gather from (the map resource node code). */
+        /** The resource code to gather from (primary ingredient). */
         val resourceCode: String,
-        /** The resource name. */
+        /** The resource name (primary ingredient). */
         val resourceName: String,
-        /** The raw item code that the resource drops. */
+        /** The raw item code that the resource drops (primary ingredient). */
         val rawItemCode: String,
         /** True if the task item is crafted from the raw item (needs crafting step). */
         val needsCrafting: Boolean,
@@ -1184,18 +1202,26 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         val craftSkill: String? = null,
         /** Required crafting skill level. */
         val craftLevel: Int = 0,
-        /** How many raw items are needed per craft. */
+        /** How many of the primary raw item are needed per craft. */
         val rawPerCraft: Int = 1,
         /** How many target items are produced per craft. */
         val outputPerCraft: Int = 1,
-        /** The required gathering skill level. */
-        val gatherLevel: Int = 0
+        /** The required gathering skill level (primary ingredient). */
+        val gatherLevel: Int = 0,
+        /**
+         * All gatherable ingredients for crafted items (including the primary one above).
+         * Empty for direct-gather items. When non-empty, the loop must collect every
+         * ingredient before crafting — not just the first one.
+         */
+        val allIngredients: List<TaskItemIngredient> = emptyList()
     )
 
     /**
      * Determine how to obtain a task item.
      * - If the item is directly dropped by a resource, returns the resource info.
-     * - If the item is crafted from a raw resource, traces back to the raw resource.
+     * - If the item is crafted, discovers ALL ingredients that are directly gatherable
+     *   from resource nodes and returns them in [TaskItemSource.allIngredients].
+     *   The primary fields (gatherSkill, resourceCode, etc.) reflect the first ingredient.
      * Returns null if the item cannot be obtained through gathering.
      */
     suspend fun findTaskItemSource(itemCode: String): TaskItemSource? {
@@ -1203,41 +1229,64 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         val directResources = client.content.getResources(drop = itemCode, size = 100)
         if (directResources.data.isNotEmpty()) {
             val resource = directResources.data.first()
-            return TaskItemSource(
-                gatherSkill = resource.skill,
+            val ingredient = TaskItemIngredient(
+                rawItemCode  = itemCode,
+                rawPerCraft  = 1,
+                gatherSkill  = resource.skill,
                 resourceCode = resource.code,
                 resourceName = resource.name,
-                rawItemCode = itemCode,
+                gatherLevel  = resource.level
+            )
+            return TaskItemSource(
+                gatherSkill   = resource.skill,
+                resourceCode  = resource.code,
+                resourceName  = resource.name,
+                rawItemCode   = itemCode,
                 needsCrafting = false,
-                gatherLevel = resource.level
+                gatherLevel   = resource.level,
+                allIngredients = listOf(ingredient)
             )
         }
 
-        // Second: check if the item is crafted, and trace to the raw ingredient
+        // Second: check if the item is crafted, and trace ALL raw ingredients
         val item = contentCache.getItemOrNull(itemCode) ?: return null
         val craft = item.craft ?: return null
         val craftSkill = craft.skill ?: return null
 
-        // Look at craft ingredients — find the one that's a gatherable resource drop
+        // Collect every ingredient that is directly obtainable via a resource node
+        val gatherableIngredients = mutableListOf<TaskItemIngredient>()
         for (ingredient in craft.items) {
             val ingredientResources = client.content.getResources(drop = ingredient.code, size = 100)
             if (ingredientResources.data.isNotEmpty()) {
                 val resource = ingredientResources.data.first()
-                return TaskItemSource(
-                    gatherSkill = resource.skill,
-                    resourceCode = resource.code,
-                    resourceName = resource.name,
-                    rawItemCode = ingredient.code,
-                    needsCrafting = true,
-                    craftSkill = craftSkill,
-                    craftLevel = craft.level ?: 0,
-                    rawPerCraft = ingredient.quantity,
-                    outputPerCraft = craft.quantity ?: 1,
-                    gatherLevel = resource.level
+                gatherableIngredients.add(
+                    TaskItemIngredient(
+                        rawItemCode  = ingredient.code,
+                        rawPerCraft  = ingredient.quantity,
+                        gatherSkill  = resource.skill,
+                        resourceCode = resource.code,
+                        resourceName = resource.name,
+                        gatherLevel  = resource.level
+                    )
                 )
             }
         }
 
-        return null
+        if (gatherableIngredients.isEmpty()) return null
+
+        val primary = gatherableIngredients.first()
+        return TaskItemSource(
+            gatherSkill    = primary.gatherSkill,
+            resourceCode   = primary.resourceCode,
+            resourceName   = primary.resourceName,
+            rawItemCode    = primary.rawItemCode,
+            needsCrafting  = true,
+            craftSkill     = craftSkill,
+            craftLevel     = craft.level ?: 0,
+            rawPerCraft    = primary.rawPerCraft,
+            outputPerCraft = craft.quantity ?: 1,
+            gatherLevel    = primary.gatherLevel,
+            allIngredients = gatherableIngredients
+        )
     }
 }

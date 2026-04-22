@@ -228,7 +228,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             FullInventoryStrategy.BANK_ONLY -> {
                 onStatus("Banking items...")
                 val char = helper.refreshCharacter(characterName)
-                val safeTypes = setOf("resource", "consumable")
+                val safeTypes = setOf("resource", "consumable", "currency")
                 val itemsToDeposit = mutableListOf<com.artifactsmmo.client.models.SimpleItem>()
                 for (slot in char.inventory) {
                     if (slot.quantity <= 0) continue
@@ -286,7 +286,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
 
                 // Bank resources and consumables, EXCEPT leftover raw ingredients
                 val updatedChar = helper.refreshCharacter(characterName)
-                val safeTypes2 = setOf("resource", "consumable")
+                val safeTypes2 = setOf("resource", "consumable", "currency")
                 val itemsToDeposit = mutableListOf<com.artifactsmmo.client.models.SimpleItem>()
                 for (slot in updatedChar.inventory) {
                     if (slot.quantity <= 0) continue

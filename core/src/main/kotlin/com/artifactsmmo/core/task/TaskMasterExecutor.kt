@@ -299,6 +299,11 @@ class TaskMasterExecutor(
 
     /**
      * Gather a batch of items for the task, craft if needed, then trade.
+     *
+     * For multi-ingredient recipes (e.g. steel bar = 3 iron_ore + 7 coal), the loop
+     * works through each ingredient in recipe order: once we have enough of ingredient N
+     * for [craftsTarget] crafts, it moves on to ingredient N+1, then crafts when all
+     * ingredients are satisfied.
      */
     private suspend fun gatherBatchForTask(
         characterName: String,
@@ -310,53 +315,89 @@ class TaskMasterExecutor(
     ): StepResult {
         var currentChar = char
 
-        // Equip best tool for the gathering skill
-        onStatus("Checking tool for ${source.gatherSkill}...")
-        currentChar = helper.ensureToolEquipped(characterName, source.gatherSkill)
-
-        // Check for tool upgrade periodically
-        val now = System.currentTimeMillis()
-        val lastCheck = lastUpgradeCheck[characterName] ?: 0L
-        if (now - lastCheck >= upgradeCheckIntervalMs) {
-            lastUpgradeCheck[characterName] = now
-            currentChar = tryUpgradeTool(characterName, currentChar, source.gatherSkill, onStatus)
+        // Use allIngredients when available; fall back to a single-item list from legacy fields
+        val ingredients = source.allIngredients.ifEmpty {
+            listOf(
+                ActionHelper.TaskItemIngredient(
+                    rawItemCode  = source.rawItemCode,
+                    rawPerCraft  = source.rawPerCraft,
+                    gatherSkill  = source.gatherSkill,
+                    resourceCode = source.resourceCode,
+                    resourceName = source.resourceName,
+                    gatherLevel  = source.gatherLevel
+                )
+            )
         }
 
-        // Calculate how many raw items we need to gather
-        val rawNeeded = if (source.needsCrafting) {
-            // Need rawPerCraft raw items per outputPerCraft task items
-            val taskItemsNeeded = remaining
-            val craftsNeeded = (taskItemsNeeded + source.outputPerCraft - 1) / source.outputPerCraft
-            craftsNeeded * source.rawPerCraft
+        // ── How many crafts to target this trip ──
+        val craftsNeeded     = if (source.needsCrafting)
+            (remaining + source.outputPerCraft - 1) / source.outputPerCraft
+        else remaining
+
+        val currentItems     = currentChar.inventory.sumOf { it.quantity }
+        val freeSlots        = currentChar.inventoryMaxItems - currentItems
+        val rawPerCraftTotal = if (source.needsCrafting) ingredients.sumOf { it.rawPerCraft } else 1
+        val craftsFit        = if (rawPerCraftTotal > 0) (freeSlots / rawPerCraftTotal).coerceAtLeast(1) else 1
+        val craftsTarget     = craftsNeeded.coerceAtMost(craftsFit)
+
+        // ── Find the first ingredient we're still short on ──
+        val activeIngredient = if (source.needsCrafting) {
+            ingredients.firstOrNull { ing ->
+                helper.getItemQuantity(currentChar, ing.rawItemCode) < ing.rawPerCraft * craftsTarget
+            }
         } else {
-            remaining
+            ingredients.firstOrNull()
         }
 
-        // How many can we fit in inventory?
-        val currentItems = currentChar.inventory.sumOf { it.quantity }
-        val freeSlots = currentChar.inventoryMaxItems - currentItems
-        val batchRaw = rawNeeded.coerceAtMost(freeSlots)
+        // All crafted ingredients satisfied → go craft immediately
+        if (source.needsCrafting && activeIngredient == null) {
+            return craftAndTrade(characterName, source, taskItemCode, onStatus)
+        }
 
-        if (batchRaw <= 0) {
-            // Inventory is full — need to bank safe items first
+        val ing = activeIngredient ?: ingredients.first()
+
+        // ── Inventory capacity check ──
+        val ingHave   = helper.getItemQuantity(currentChar, ing.rawItemCode)
+        val ingNeeded = if (source.needsCrafting) ing.rawPerCraft * craftsTarget else remaining
+        val batchRaw  = (ingNeeded - ingHave).coerceAtLeast(0).coerceAtMost(freeSlots)
+
+        if (batchRaw <= 0 && freeSlots <= 0) {
             onStatus("Inventory full, banking safe items...")
             currentChar = helper.bankDepositAll(characterName)
             return StepResult.Banked
         }
 
-        // Move to resource and gather
-        val resourceMap = helper.findNearest(currentChar, "resource", source.resourceCode)
-            ?: return StepResult.Error("No ${source.resourceCode} locations found on map")
+        // ── Equip best tool for this ingredient's skill ──
+        onStatus("Checking tool for ${ing.gatherSkill}...")
+        currentChar = helper.ensureToolEquipped(characterName, ing.gatherSkill)
+
+        // Periodic tool upgrade check
+        val now       = System.currentTimeMillis()
+        val lastCheck = lastUpgradeCheck[characterName] ?: 0L
+        if (now - lastCheck >= upgradeCheckIntervalMs) {
+            lastUpgradeCheck[characterName] = now
+            currentChar = tryUpgradeTool(characterName, currentChar, ing.gatherSkill, onStatus)
+        }
+
+        // ── Move to resource and gather ──
+        val resourceMap = helper.findNearest(currentChar, "resource", ing.resourceCode)
+            ?: return StepResult.Error("No ${ing.resourceCode} locations found on map")
 
         if (!helper.isAt(currentChar, resourceMap.x, resourceMap.y)) {
-            onStatus("Moving to ${source.resourceName}...")
+            onStatus("Moving to ${ing.resourceName}...")
             currentChar = helper.moveTo(characterName, resourceMap.x, resourceMap.y)
         }
 
-        // Gather one action
-        val rawInInventory = helper.getItemQuantity(currentChar, source.rawItemCode)
+        // Build a progress string that covers all ingredients for multi-ingredient recipes
         val totalItems = currentChar.inventory.sumOf { it.quantity }
-        onStatus("Gathering ${source.resourceName} for task... (${rawInInventory}/${batchRaw} raw, Inv: $totalItems/${currentChar.inventoryMaxItems})")
+        val progressStr = if (ingredients.size > 1) {
+            ingredients.joinToString(", ") { i ->
+                "${helper.getItemQuantity(currentChar, i.rawItemCode)}/${i.rawPerCraft * craftsTarget} ${i.rawItemCode}"
+            }
+        } else {
+            "${helper.getItemQuantity(currentChar, ing.rawItemCode)}/$batchRaw"
+        }
+        onStatus("Gathering ${ing.resourceName} for task... ($progressStr, Inv: $totalItems/${currentChar.inventoryMaxItems})")
 
         val gatherResult = try {
             helper.gather(characterName)
@@ -368,38 +409,36 @@ class TaskMasterExecutor(
         val drops = gatherResult.details.items.joinToString(", ") { "${it.quantity}x ${it.code}" }
         onStatus("Gathered: $drops (+${gatherResult.details.xp} XP)")
 
-        // Check if we have enough raw items now
+        // ── Re-evaluate after gather ──
         currentChar = helper.refreshCharacter(characterName)
-        val currentRaw = helper.getItemQuantity(currentChar, source.rawItemCode)
-        val inventoryFull = helper.isInventoryFull(currentChar)
+        val inventoryFull    = helper.isInventoryFull(currentChar)
         val updatedRemaining = currentChar.taskTotal - currentChar.taskProgress
 
-        // Only go trade when inventory is full or we have enough for the entire remaining task
-        val haveEnoughForTask = if (source.needsCrafting) {
-            val possibleCrafts = currentRaw / source.rawPerCraft
-            val possibleOutput = possibleCrafts * source.outputPerCraft
-            possibleOutput >= updatedRemaining
-        } else {
-            currentRaw >= updatedRemaining
-        }
+        if (source.needsCrafting) {
+            val canCraftAtLeastOne = ingredients.all { i ->
+                helper.getItemQuantity(currentChar, i.rawItemCode) >= i.rawPerCraft
+            }
+            val possibleCrafts = ingredients.minOf { i ->
+                helper.getItemQuantity(currentChar, i.rawItemCode) / i.rawPerCraft
+            }
+            val haveEnoughForTask = possibleCrafts * source.outputPerCraft >= updatedRemaining
 
-        if (inventoryFull || haveEnoughForTask) {
-            if (source.needsCrafting) {
-                // Need at least one craft batch worth
-                if (currentRaw >= source.rawPerCraft) {
+            if (inventoryFull || haveEnoughForTask) {
+                if (canCraftAtLeastOne) {
                     return craftAndTrade(characterName, source, taskItemCode, onStatus)
                 }
-                // Inventory full but not enough to craft — trade any finished items we have
+                // Full but missing at least one ingredient — trade finished items if any, else bank
                 val finishedQty = helper.getItemQuantity(currentChar, taskItemCode)
                 if (finishedQty > 0) {
                     return tradeItems(characterName, currentChar, taskItemCode, finishedQty.coerceAtMost(updatedRemaining), onStatus)
                 }
-                // Inventory full with junk — bank it
                 onStatus("Inventory full, banking to make room...")
                 helper.bankDepositAll(characterName)
                 return StepResult.Banked
-            } else {
-                // Trade raw items directly
+            }
+        } else {
+            val currentRaw = helper.getItemQuantity(currentChar, source.rawItemCode)
+            if (inventoryFull || currentRaw >= updatedRemaining) {
                 val tradeQty = helper.getItemQuantity(currentChar, taskItemCode)
                 if (tradeQty > 0) {
                     return tradeItems(characterName, currentChar, taskItemCode, tradeQty.coerceAtMost(updatedRemaining), onStatus)
@@ -429,10 +468,15 @@ class TaskMasterExecutor(
         onStatus("Moving to $craftSkill workshop...")
         char = helper.moveTo(characterName, workshop.x, workshop.y)
 
-        // Craft as many as possible from raw materials in inventory
+        // Craft as many as possible — limited by whichever ingredient we have least of
         char = helper.refreshCharacter(characterName)
-        val rawQty = helper.getItemQuantity(char, source.rawItemCode)
-        val craftCount = rawQty / source.rawPerCraft
+        val craftCount = if (source.allIngredients.isNotEmpty()) {
+            source.allIngredients.minOf { ing ->
+                helper.getItemQuantity(char, ing.rawItemCode) / ing.rawPerCraft
+            }
+        } else {
+            helper.getItemQuantity(char, source.rawItemCode) / source.rawPerCraft
+        }
 
         if (craftCount > 0) {
             onStatus("Crafting ${craftCount}x $taskItemCode...")
