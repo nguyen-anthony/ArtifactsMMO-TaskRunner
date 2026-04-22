@@ -258,10 +258,10 @@ class FightingExecutor(private val helper: ActionHelper) {
                     itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
                 }
             } else {
-                // Not food — bank it, but never deposit gathering tools
-                // (weapons with subtype == "tool", e.g. pickaxes, axes, fishing rods)
-                val item = try { helper.getItem(slot.code) } catch (_: Exception) { null }
-                if (item != null && item.type == "weapon" && item.subtype == "tool") continue
+                // Not food — only deposit if the item should be banked under deposit rules
+                // (never deposits combat weapons, armor, rings, etc.; deposits inferior tools)
+                val shouldDeposit = try { helper.shouldDepositItem(char, slot.code) } catch (_: Exception) { true }
+                if (!shouldDeposit) continue
                 itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
             }
         }

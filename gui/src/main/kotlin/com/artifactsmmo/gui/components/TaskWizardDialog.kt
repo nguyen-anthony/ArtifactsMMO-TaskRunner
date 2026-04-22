@@ -264,7 +264,7 @@ fun TaskWizardDialog(
                             onMonsterSelected = { monster ->
                                 load("Simulating combat vs ${monster.name}...") {
                                     val simResult = try {
-                                        appState.taskManager.simulateFight(characterName, monster.code, 20)
+                                        appState.taskManager.simulateFight(characterName, monster.code, 100)
                                     } catch (e: Exception) {
                                         step = WizardStep.FightSim(s.monsters, monster, null, e.message)
                                         return@load
@@ -316,7 +316,7 @@ fun TaskWizardDialog(
                             onSimulate = {
                                 load("Simulating with new gear...") {
                                     val newSim = appState.taskManager.simulateFightWithOverrides(
-                                        characterName, s.monster.code, s.slotOverrides, 20
+                                        characterName, s.monster.code, s.slotOverrides, 100
                                     )
                                     val actions = s.slotOverrides.map { (slot, itemCode) ->
                                         ActionHelper.EquipAction(slot, itemCode, s.slotSources[slot] ?: "bank")
@@ -793,8 +793,7 @@ private fun StepFightSim(
         // Sim results
         if (sim != null) {
             val winColor = when {
-                sim.winrate >= 70.0 -> Color(0xFF388E3C)
-                sim.winrate >= 40.0 -> Color(0xFFF57C00)
+                sim.winrate >= 90.0 -> Color(0xFF388E3C)
                 else                -> MaterialTheme.colorScheme.error
             }
             Surface(

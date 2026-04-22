@@ -163,10 +163,10 @@ class TaskMasterExecutor(
 
     /**
      * After a monster task has just been accepted, simulate the fight and
-     * optionally cancel + re-accept up to 5 times if win rate is below 70%.
+     * optionally cancel + re-accept up to 5 times if win rate is below 90%.
      *
      * Returns:
-     *  - [StepResult.Waiting]  if a viable task was found (win rate >= 0.70) or simulation failed
+     *  - [StepResult.Waiting]  if a viable task was found (win rate >= 0.90) or simulation failed
      *  - null                  if no viable task could be found (no coins or attempts exhausted)
      */
     private suspend fun simulateAndFilterMonsterTask(
@@ -181,7 +181,7 @@ class TaskMasterExecutor(
 
             onStatus("Simulating fight vs $monsterCode (attempt ${attempt + 1}/$maxAttempts)...")
             val simData = try {
-                helper.simulateFight(characterName, monsterCode, iterations = 20)
+                helper.simulateFight(characterName, monsterCode, iterations = 100)
             } catch (e: Exception) {
                 onStatus("Simulation failed (${e.message}), proceeding with task")
                 return StepResult.Waiting
@@ -190,12 +190,12 @@ class TaskMasterExecutor(
             val winRate = simData.winrate
             onStatus("Win rate vs $monsterCode: ${"%.0f".format(winRate * 100)}%")
 
-            if (winRate >= 0.70) {
+            if (winRate >= 0.90) {
                 onStatus("Win rate acceptable, proceeding with $monsterCode task")
                 return StepResult.Waiting
             }
 
-            // Win rate too low — need a coin to cancel
+            // Win rate too low (<90%) — need a coin to cancel
             onStatus("Win rate too low (${"%,.0f".format(winRate * 100)}%), attempting to cancel task...")
             if (!ensureTaskCoinInInventory(characterName, onStatus)) {
                 return null // No coin available — give up
@@ -630,7 +630,11 @@ class TaskMasterExecutor(
             if (char.weaponSlot.isNotEmpty()) {
                 val oldTool = char.weaponSlot
                 char = helper.unequip(characterName, "weapon")
-                helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
+                // Only deposit back to the bank if it's a gathering tool — never deposit combat weapons
+                val oldItem = runCatching { helper.getItem(oldTool) }.getOrNull()
+                if (oldItem?.subtype == "tool") {
+                    helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
+                }
             }
 
             char = helper.equip(characterName, readyMade.tool.code, "weapon")

@@ -479,9 +479,9 @@ class TerminalUI(
             val monster = monsters[index]
 
             // Run combat simulation
-            terminal.println(gray("Simulating combat vs ${monster.name} (20 iterations)..."))
+            terminal.println(gray("Simulating combat vs ${monster.name} (100 iterations)..."))
             val simResult = try {
-                taskManager.simulateFight(referenceCharacter, monster.code, 20)
+                taskManager.simulateFight(referenceCharacter, monster.code, 100)
             } catch (e: Exception) {
                 terminal.println(yellow("Simulation failed: ${e.message}"))
                 terminal.println(yellow("Proceeding without simulation data."))
@@ -503,8 +503,7 @@ class TerminalUI(
             terminal.println()
             val winrate = simResult.winrate
             val winColor = when {
-                winrate >= 70.0 -> green
-                winrate >= 40.0 -> yellow
+                winrate >= 90.0 -> green
                 else -> red
             }
             terminal.println(bold("Combat Simulation: ${monster.name} (Lv.${monster.level})"))

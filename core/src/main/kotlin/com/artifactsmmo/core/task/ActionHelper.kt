@@ -141,6 +141,45 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     }
 
     /**
+     * Determines whether an item in the character's inventory should be deposited to the bank
+     * during automatic inventory management (e.g., when inventory is full while grinding).
+     *
+     * Rules:
+     *  - Resources and consumables → always deposit
+     *  - Equipment types (weapon, helmet, shield, body_armor, amulet, leg_armor,
+     *    boots, ring, rune, artifact) → **never** deposit, EXCEPT inferior gathering tools
+     *  - Gathering tools (type=weapon, subtype=tool) → deposit only if the character
+     *    already owns a better tool (higher level) for the same gathering skill,
+     *    considering both inventory and the currently equipped weapon slot
+     *  - Unknown item (not in cache) → deposit (safe default)
+     */
+    suspend fun shouldDepositItem(char: Character, itemCode: String): Boolean {
+        val item = contentCache.getItemOrNull(itemCode) ?: return true
+
+        val neverDepositTypes = setOf(
+            "weapon", "helmet", "shield", "body_armor", "amulet",
+            "leg_armor", "boots", "ring", "rune", "artifact"
+        )
+
+        if (item.type !in neverDepositTypes) return true // resource, consumable, etc.
+
+        // Gathering tool: deposit only if a better one for the same skill is already owned
+        if (item.type == "weapon" && item.subtype == "tool") {
+            val gatheringSkills = listOf("mining", "woodcutting", "fishing", "alchemy")
+            val toolSkill = gatheringSkills.firstOrNull { skill ->
+                item.effects.any { it.code == skill }
+            } ?: return false // Unknown tool type — keep it to be safe
+
+            val bestTool = findBestToolInInventory(char, toolSkill) ?: return false
+            // Deposit this tool only if a different (better) tool is the best for this skill
+            return bestTool.code != itemCode
+        }
+
+        // Combat weapon or other non-tool equipment — never deposit
+        return false
+    }
+
+    /**
      * Move to nearest bank and deposit specific items.
      */
     suspend fun bankDepositItems(name: String, items: List<SimpleItem>): Character {
