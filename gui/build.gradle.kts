@@ -7,6 +7,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
 }
 
+// Single source of truth for the app version.
+// Overridden in CI via -Papp.version=X.Y.Z (extracted from the git tag).
+val appVersion = (findProperty("app.version") as String?) ?: "1.0.0"
+
 dependencies {
     // Core task management and API client
     implementation(project(":core"))
@@ -22,9 +26,15 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
 
-    // Ktor client for image loading (character sprites)
+    // Ktor client for image loading (character sprites) and update checks
     implementation("io.ktor:ktor-client-cio:3.1.3")
+}
 
+// Stamp the version into version.properties at build time so the app can read it at runtime.
+tasks.named<ProcessResources>("processResources") {
+    filesMatching("version.properties") {
+        expand("appVersion" to appVersion)
+    }
 }
 
 compose.desktop {
@@ -33,7 +43,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe)
             packageName = "ArtifactsMMO"
-            packageVersion = "1.0.0"
+            packageVersion = appVersion
         }
     }
 }

@@ -48,3 +48,11 @@ bin/
 .env
 tasks.json
 logs/
+
+### Runtime data ###
+artifacts.json
+hs_err_pid*.log
+
+### IDE — user-specific ###
+.idea/workspace.xml
+.idea/copilot*.xml
