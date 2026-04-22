@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -470,13 +471,16 @@ fun TaskWizardDialog(
 private fun WizardButton(
     title: String,
     subtitle: String = "",
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer
         )
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1091,8 +1095,36 @@ private fun StepTaskMasterType(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        WizardButton("Items",    "Gather or craft items for the task master",  onClick = { onTypeSelected("items") })
-        WizardButton("Monsters", "Kill monsters for the task master",          onClick = { onTypeSelected("monsters") })
+
+        // Items button — disabled when character already has an items task active
+        val itemsEnabled = step.existingType != "items"
+        val itemsSubtitle = when (step.existingType) {
+            "items"    -> "Current task: ${step.existingDesc}"
+            "monsters" -> "Current monsters task will be cancelled first"
+            else       -> "Gather or craft items for the task master"
+        }
+        WizardButton(
+            title    = "Items",
+            subtitle = itemsSubtitle,
+            enabled  = itemsEnabled,
+            onClick  = { onTypeSelected("items") }
+        )
+
+        // Monsters button — disabled when character already has a monsters task active
+        val monstersEnabled = step.existingType != "monsters"
+        val monstersSubtitle = when (step.existingType) {
+            "monsters" -> "Current task: ${step.existingDesc}"
+            "items"    -> "Current items task will be cancelled first"
+            else       -> "Kill monsters for the task master"
+        }
+        WizardButton(
+            title    = "Monsters",
+            subtitle = monstersSubtitle,
+            enabled  = monstersEnabled,
+            onClick  = { onTypeSelected("monsters") }
+        )
+
+        // Resume Current — only shown when there is an active task
         if (step.existingType != null) {
             WizardButton(
                 title    = "Resume Current",
@@ -1100,6 +1132,7 @@ private fun StepTaskMasterType(
                 onClick  = { onTypeSelected(step.existingType) }
             )
         }
+
         TextButton(onClick = onBack) { Text("← Back") }
     }
 }

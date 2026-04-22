@@ -25,8 +25,6 @@ dependencies {
     // Ktor client for image loading (character sprites)
     implementation("io.ktor:ktor-client-cio:3.1.3")
 
-    // dotenv for loading .env files
-    implementation("io.github.cdimascio:dotenv-kotlin:6.5.0")
 }
 
 compose.desktop {

@@ -87,6 +87,14 @@ class CharacterTaskRunner(
             // Cleanup previous task before starting new one
             runCleanup(oldTask)
 
+            // Wait for any active cooldown before starting — prevents 486 errors
+            // when a task is switched while the character is mid-action.
+            try {
+                helper.waitForActiveCooldown(characterName)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {}
+
             updateStatus { it.copy(
                 task = task,
                 statusMessage = "Starting...",
@@ -178,6 +186,14 @@ class CharacterTaskRunner(
 
         try {
             val char = helper.refreshCharacter(characterName)
+
+            // Wait for any active cooldown before performing cleanup actions.
+            // The task may have been switched while the character was mid-action.
+            if (char.cooldown > 0) {
+                updateStatus { it.copy(statusMessage = "Waiting for cooldown (${char.cooldown}s)...") }
+                helper.waitForCooldown(char.cooldown)
+            }
+
             val totalItems = char.inventory.sumOf { it.quantity }
             if (totalItems == 0) return
 
@@ -423,6 +439,11 @@ class CharacterTaskRunner(
                         logger.log(characterName, "Task cancelled, will accept new one")
                         // Loop continues — will accept next task on next step
                     }
+                    is StepResult.TaskMasterNoViableTask -> {
+                        logger.log(characterName, "No viable monster task found (exhausted attempts or no tasks_coins)")
+                        revertToPreviousTask()
+                        break
+                    }
                 }
 
             } catch (e: CancellationException) {
@@ -506,6 +527,13 @@ class CharacterTaskRunner(
                         logger.log(characterName, "[prepare] Error during bank cleanup: ${e.message}")
                     }
                 }
+
+                // Drain any cooldown before re-entering the loop
+                try {
+                    helper.waitForActiveCooldown(characterName)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {}
 
                 runTaskLoop(fallback)
             }

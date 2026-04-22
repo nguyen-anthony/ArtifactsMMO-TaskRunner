@@ -167,10 +167,13 @@ class GatheringExecutor(private val helper: ActionHelper) {
             // Unequip current weapon if any
             var char = helper.refreshCharacter(characterName)
             if (char.weaponSlot.isNotEmpty()) {
-                // Deposit old tool to bank
                 val oldTool = char.weaponSlot
                 char = helper.unequip(characterName, "weapon")
-                helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
+                // Only deposit back to the bank if it's a gathering tool — never deposit combat weapons
+                val oldItem = runCatching { helper.getItem(oldTool) }.getOrNull()
+                if (oldItem?.subtype == "tool") {
+                    helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
+                }
             }
 
             char = helper.equip(characterName, readyMade.tool.code, "weapon")
@@ -328,4 +331,6 @@ sealed class StepResult {
     data object TaskMasterTaskCancelled : StepResult()
     /** Quick task (BankWithdraw/BankRecycle/InventoryDeposit/InventoryRecycle): task is done, revert to previous. */
     data object QuickTaskComplete : StepResult()
+    /** Task master (monsters): no viable task found and no tasks_coins remain to keep cancelling. */
+    data object TaskMasterNoViableTask : StepResult()
 }

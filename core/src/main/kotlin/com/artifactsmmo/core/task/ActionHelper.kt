@@ -6,20 +6,33 @@ import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.MapInfo
 import com.artifactsmmo.client.models.SimpleItem
 import com.artifactsmmo.client.models.Item
+import com.artifactsmmo.client.utils.CharacterUtils
 import kotlinx.coroutines.delay
-import kotlin.math.abs
 import kotlin.time.Duration.Companion.seconds
 
 /**
  * Common helper functions for character actions.
  * Handles cooldowns, movement, banking, equipping, and inventory management.
  */
-class ActionHelper(private val client: ArtifactsMMOClient) {
+class ActionHelper(private val client: ArtifactsMMOClient, private val contentCache: ContentCache) {
 
     // ── Cooldown ──
 
     suspend fun waitForCooldown(seconds: Int) {
         if (seconds > 0) delay(seconds.seconds)
+    }
+
+    /**
+     * Refresh the character and wait for any active cooldown to expire before
+     * starting work. Should be called at the beginning of every task to avoid
+     * hitting 486 "Character in cooldown" errors when tasks are switched while
+     * an action is still in progress.
+     */
+    suspend fun waitForActiveCooldown(name: String) {
+        val char = refreshCharacter(name)
+        if (char.cooldown > 0) {
+            waitForCooldown(char.cooldown)
+        }
     }
 
     // ── Character refresh ──
@@ -64,13 +77,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
         contentType: String,
         contentCode: String? = null
     ): MapInfo? {
-        val maps = client.content.getMaps(
-            contentType = contentType,
-            contentCode = contentCode,
-            hideBlockedMaps = true,
-            size = 100
-        )
-        return maps.data.minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
+        return contentCache.findNearest(char, contentType, contentCode)
     }
 
     /**
@@ -209,15 +216,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
      * Returns list sorted by craft level descending (higher level = more XP).
      */
     suspend fun getAvailableCraftingItems(char: Character, skill: String): List<CraftableItemInfo> {
-        val craftableItems = mutableListOf<Item>()
-        var page = 1
-        while (true) {
-            val result = client.content.getItems(craftSkill = skill, page = page, size = 100)
-            craftableItems.addAll(result.data)
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        val craftableItems = contentCache.getItemsBySkill(skill)
 
         val skillLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, skill) ?: 0
 
@@ -257,15 +256,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
         for (skill in miscSkills) {
             val skillLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, skill) ?: 0
 
-            val craftableItems = mutableListOf<Item>()
-            var page = 1
-            while (true) {
-                val result = client.content.getItems(craftSkill = skill, page = page, size = 100)
-                craftableItems.addAll(result.data)
-                if (page >= (result.pages ?: Int.MAX_VALUE)) break
-                if (result.data.size < 100) break
-                page++
-            }
+            val craftableItems = contentCache.getItemsBySkill(skill)
 
             for (item in craftableItems) {
                 val craft = item.craft ?: continue
@@ -296,7 +287,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
      * Look up an item's details by code.
      */
     suspend fun getItem(code: String): Item {
-        return client.content.getItem(code)
+        return contentCache.getItem(code)
     }
 
     /**
@@ -415,7 +406,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
         for (slot in char.inventory) {
             if (slot.quantity <= 0) continue
             val item = try {
-                client.content.getItem(slot.code)
+                contentCache.getItem(slot.code)
             } catch (_: Exception) {
                 continue
             }
@@ -449,7 +440,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
             for (slot in bankPage.data) {
                 if (slot.quantity <= 0) continue
                 val item = try {
-                    client.content.getItem(slot.code)
+                    contentCache.getItem(slot.code)
                 } catch (_: Exception) {
                     continue
                 }
@@ -500,21 +491,26 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
      */
     suspend fun findBestToolInInventory(char: Character, skill: String): Item? {
         val inventoryCodes = char.inventory.filter { it.quantity > 0 }.map { it.code }.toSet()
-        if (inventoryCodes.isEmpty()) return null
 
-        // Get all weapons up to character's level
-        val allTools = mutableListOf<Item>()
-        var page = 1
-        while (true) {
-            val result = client.content.getItems(type = "weapon", maxLevel = char.level, page = page, size = 100)
-            allTools.addAll(result.data.filter { isToolForSkill(it, skill) })
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        // Also include the currently equipped weapon — when a tool is equipped it leaves the
+        // inventory slot, so without this the function would ignore it and always return a
+        // lower-level inventory tool, causing an infinite equip-swap loop.
+        val equippedCode = char.weaponSlot.takeIf { it.isNotEmpty() }
+        val ownedCodes = if (equippedCode != null) inventoryCodes + equippedCode else inventoryCodes
 
-        // Filter to items the character actually has in inventory
-        val ownedTools = allTools.filter { it.code in inventoryCodes }
+        if (ownedCodes.isEmpty()) return null
+
+        // Use the higher of overall character level and skill level — tool usability is gated
+        // by the gathering skill level (e.g. miningLevel), not just overall combat level.
+        val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
+        val effectiveLevel = maxOf(char.level, skillLevel)
+
+        // Get all weapons up to effective level from cache
+        val allTools = contentCache.getItemsByType("weapon")
+            .filter { it.level <= effectiveLevel && isToolForSkill(it, skill) }
+
+        // Filter to items the character actually has (inventory + currently equipped)
+        val ownedTools = allTools.filter { it.code in ownedCodes }
 
         // Return the highest level tool
         return ownedTools.maxByOrNull { it.level }
@@ -559,16 +555,13 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
      * in the bank. Returns the best one, or null if none found.
      */
     suspend fun findReadyMadeToolInBank(char: Character, skill: String): ToolUpgradeInfo? {
-        // Get all tools for this skill up to the character's level
-        val allTools = mutableListOf<Item>()
-        var page = 1
-        while (true) {
-            val result = client.content.getItems(type = "weapon", maxLevel = char.level, page = page, size = 100)
-            allTools.addAll(result.data.filter { isToolForSkill(it, skill) })
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        // Use the higher of overall character level and skill level (tool usability is skill-gated)
+        val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
+        val effectiveLevel = maxOf(char.level, skillLevel)
+
+        // Get all tools for this skill up to the effective level from cache
+        val allTools = contentCache.getItemsByType("weapon")
+            .filter { it.level <= effectiveLevel && isToolForSkill(it, skill) }
 
         // Determine current best tool level (equipped or in inventory)
         val currentBest = findBestToolInInventory(char, skill)
@@ -614,16 +607,13 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
      * craftable upgrade and the ingredients to withdraw.
      */
     suspend fun findBestCraftableToolFromBank(char: Character, skill: String): ToolUpgradeInfo? {
-        // Get all tools for this skill up to the character's level
-        val allTools = mutableListOf<Item>()
-        var page = 1
-        while (true) {
-            val result = client.content.getItems(type = "weapon", maxLevel = char.level, page = page, size = 100)
-            allTools.addAll(result.data.filter { isToolForSkill(it, skill) })
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        // Use the higher of overall character level and skill level (tool usability is skill-gated)
+        val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
+        val effectiveLevel = maxOf(char.level, skillLevel)
+
+        // Get all tools for this skill up to the effective level from cache
+        val allTools = contentCache.getItemsByType("weapon")
+            .filter { it.level <= effectiveLevel && isToolForSkill(it, skill) }
 
         // Determine current best tool level (equipped or in inventory)
         val currentBest = findBestToolInInventory(char, skill)
@@ -737,11 +727,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
      * Returns null if the item can't be looked up.
      */
     suspend fun getItemType(code: String): String? {
-        return try {
-            client.content.getItem(code).type
-        } catch (_: Exception) {
-            null
-        }
+        return contentCache.getItemOrNull(code)?.type
     }
 
     /**
@@ -760,15 +746,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
             else -> return emptyList()
         }
 
-        val craftableItems = mutableListOf<Item>()
-        var page = 1
-        while (true) {
-            val result = client.content.getItems(craftSkill = workshopSkill, page = page, size = 100)
-            craftableItems.addAll(result.data)
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        val craftableItems = contentCache.getItemsBySkill(workshopSkill)
 
         // Filter to items the character has the skill level to craft
         val skillLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, workshopSkill) ?: 0
@@ -803,15 +781,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
             else -> return emptyList()
         }
 
-        val craftableItems = mutableListOf<Item>()
-        var page = 1
-        while (true) {
-            val result = client.content.getItems(craftSkill = workshopSkill, page = page, size = 100)
-            craftableItems.addAll(result.data)
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        val craftableItems = contentCache.getItemsBySkill(workshopSkill)
 
         val skillLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, workshopSkill) ?: 0
 
@@ -923,18 +893,10 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
     ): List<EquipmentOption> {
         val currentEquipped = getEquippedInSlot(char, slotInfo.slot)
 
-        // Fetch all items of this type up to character level
-        val allItems = mutableListOf<Item>()
-        var page = 1
-        while (true) {
-            val result = try {
-                client.content.getItems(type = slotInfo.itemType, maxLevel = char.level, page = page, size = 100)
-            } catch (_: Exception) { break }
-            allItems.addAll(result.data)
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        // Fetch all items of this type from cache, filter by character level
+        val allItems = try {
+            contentCache.getItemsByType(slotInfo.itemType).filter { it.level <= char.level }
+        } catch (_: Exception) { emptyList() }
 
         // Exclude currently equipped item and tools (subtype == "tool")
         val candidates = allItems.filter { it.code != currentEquipped && it.subtype != "tool" }
@@ -1054,13 +1016,13 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
         }
 
         // Deposit unequipped items — but keep tools (pickaxes, axes, etc.) in inventory
-        val itemsToDeposit = prevEquipped.values
-            .filter { it.isNotEmpty() }
-            .filter { code ->
-                val subtype = try { client.content.getItem(code).subtype } catch (_: Exception) { "" }
-                subtype != "tool"
+        val itemsToDeposit = mutableListOf<SimpleItem>()
+        for (code in prevEquipped.values) {
+            if (code.isEmpty()) continue
+            if (contentCache.getItemOrNull(code)?.subtype != "tool") {
+                itemsToDeposit.add(SimpleItem(code, 1))
             }
-            .map { SimpleItem(it, 1) }
+        }
         if (itemsToDeposit.isNotEmpty()) {
             val result = client.bank.depositItems(characterName, itemsToDeposit)
             waitForCooldown(result.cooldown.totalSeconds)
@@ -1213,7 +1175,7 @@ class ActionHelper(private val client: ArtifactsMMOClient) {
         }
 
         // Second: check if the item is crafted, and trace to the raw ingredient
-        val item = try { getItem(itemCode) } catch (_: Exception) { return null }
+        val item = contentCache.getItemOrNull(itemCode) ?: return null
         val craft = item.craft ?: return null
         val craftSkill = craft.skill ?: return null
 

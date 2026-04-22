@@ -80,6 +80,11 @@ class ArtifactsMMOClient(
     val simulation = SimulationService(httpClient)
 
     /**
+     * Account details service
+     */
+    val account = AccountService(httpClient)
+
+    /**
      * Close the HTTP client and release resources
      */
     override fun close() {

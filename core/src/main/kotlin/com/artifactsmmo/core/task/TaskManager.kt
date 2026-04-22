@@ -19,7 +19,8 @@ class TaskManager(
     private val taskStore: TaskStore = TaskStore(),
     val logger: TaskLogger = TaskLogger()
 ) {
-    private val helper = ActionHelper(client)
+    private val contentCache = ContentCache(client.content)
+    private val helper = ActionHelper(client, contentCache)
     private val gatheringExecutor = GatheringExecutor(helper)
     private val fightingExecutor = FightingExecutor(helper)
     private val craftingExecutor = CraftingExecutor(helper)
@@ -32,6 +33,9 @@ class TaskManager(
      * Initialize runners for all characters. Restores saved tasks if available.
      */
     suspend fun initialize(): List<String> {
+        // Pre-warm the map cache before restoring tasks so findNearest* calls are ready
+        contentCache.preWarmMaps()
+
         val characters = client.characters.getMyCharacters()
         for (char in characters) {
             runners[char.name] = CharacterTaskRunner(
@@ -241,7 +245,7 @@ class TaskManager(
         }
 
         return allItems.mapNotNull { bankItem ->
-            runCatching { client.content.getItem(bankItem.code) }
+            runCatching { contentCache.getItem(bankItem.code) }
                 .getOrNull()
                 ?.let { BankItemDetail(bankItem, it) }
         }

@@ -52,7 +52,12 @@ class TaskMasterExecutor(
             return acceptNewTask(characterName, char, task.type, onStatus)
         }
 
-        // We have an active task — fulfill it
+        // We have an active task — if it's a different type than requested, cancel it first
+        if (char.taskType != task.type) {
+            return cancelCurrentAndAcceptNew(characterName, char, task.type, onStatus)
+        }
+
+        // We have an active task of the right type — fulfill it
         return when (char.taskType) {
             "items" -> fulfillItemTask(characterName, char, onStatus)
             "monsters" -> fulfillMonsterTask(characterName, char, onStatus)
@@ -82,7 +87,141 @@ class TaskMasterExecutor(
         val t = taskData.task
         onStatus("Task accepted: ${t.total}x ${t.code} (${t.type})")
 
+        // For monster tasks, run the simulation/cancel loop
+        if (t.type == "monsters") {
+            val simResult = simulateAndFilterMonsterTask(characterName, type, onStatus)
+            if (simResult != null) return simResult
+            // null means no viable task found — signal revert
+            return StepResult.TaskMasterNoViableTask
+        }
+
         return StepResult.Waiting // Next step will start fulfillment
+    }
+
+    // ── Cross-Type Task Switch ──
+
+    /**
+     * The character has an active task of a different type than requested.
+     * Cancel it at the appropriate task master, then accept a new one of [newType].
+     */
+    private suspend fun cancelCurrentAndAcceptNew(
+        characterName: String,
+        char: Character,
+        newType: String,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        val currentType = char.taskType
+        onStatus("Cancelling $currentType task to switch to $newType...")
+
+        // Cancelling a task always consumes a tasks_coin — ensure one is available first.
+        if (!ensureTaskCoinInInventory(characterName, onStatus)) {
+            return StepResult.Error(
+                "Cannot cancel $currentType task: no tasks_coin in inventory or bank. " +
+                "Obtain a tasks_coin to switch task types."
+            )
+        }
+
+        val currentTaskMaster = helper.findNearestTasksMaster(char, currentType)
+            ?: return StepResult.Error("No $currentType task master found to cancel current task")
+
+        if (!helper.isAt(char, currentTaskMaster.x, currentTaskMaster.y)) {
+            onStatus("Moving to $currentType task master to cancel...")
+            helper.moveTo(characterName, currentTaskMaster.x, currentTaskMaster.y)
+        }
+
+        onStatus("Cancelling $currentType task...")
+        helper.cancelTask(characterName)
+
+        val updatedChar = helper.refreshCharacter(characterName)
+        return acceptNewTask(characterName, updatedChar, newType, onStatus)
+    }
+
+    // ── Monster Task Simulation / Cancel Loop ──
+
+    /**
+     * Ensure a tasks_coin is in the character's inventory.
+     * Checks inventory first; if absent, tries to withdraw one from the bank.
+     * Returns true if a coin is (or was made) available, false if none anywhere.
+     */
+    private suspend fun ensureTaskCoinInInventory(
+        characterName: String,
+        onStatus: (String) -> Unit
+    ): Boolean {
+        val char = helper.refreshCharacter(characterName)
+        if (helper.getItemQuantity(char, "tasks_coin") >= 1) return true
+
+        val inBank = helper.getBankItemQuantity("tasks_coin")
+        if (inBank <= 0) {
+            onStatus("No tasks_coins available in inventory or bank")
+            return false
+        }
+
+        onStatus("Withdrawing 1x tasks_coin from bank...")
+        helper.bankWithdrawItems(characterName, listOf(SimpleItem("tasks_coin", 1)))
+        return true
+    }
+
+    /**
+     * After a monster task has just been accepted, simulate the fight and
+     * optionally cancel + re-accept up to 5 times if win rate is below 70%.
+     *
+     * Returns:
+     *  - [StepResult.Waiting]  if a viable task was found (win rate >= 0.70) or simulation failed
+     *  - null                  if no viable task could be found (no coins or attempts exhausted)
+     */
+    private suspend fun simulateAndFilterMonsterTask(
+        characterName: String,
+        type: String,
+        onStatus: (String) -> Unit
+    ): StepResult? {
+        val maxAttempts = 5
+        repeat(maxAttempts) { attempt ->
+            val char = helper.refreshCharacter(characterName)
+            val monsterCode = char.task
+
+            onStatus("Simulating fight vs $monsterCode (attempt ${attempt + 1}/$maxAttempts)...")
+            val simData = try {
+                helper.simulateFight(characterName, monsterCode, iterations = 20)
+            } catch (e: Exception) {
+                onStatus("Simulation failed (${e.message}), proceeding with task")
+                return StepResult.Waiting
+            }
+
+            val winRate = simData.winrate
+            onStatus("Win rate vs $monsterCode: ${"%.0f".format(winRate * 100)}%")
+
+            if (winRate >= 0.70) {
+                onStatus("Win rate acceptable, proceeding with $monsterCode task")
+                return StepResult.Waiting
+            }
+
+            // Win rate too low — need a coin to cancel
+            onStatus("Win rate too low (${"%,.0f".format(winRate * 100)}%), attempting to cancel task...")
+            if (!ensureTaskCoinInInventory(characterName, onStatus)) {
+                return null // No coin available — give up
+            }
+
+            // Move to task master (may already be there) and cancel
+            val updatedChar = helper.refreshCharacter(characterName)
+            val taskMaster = helper.findNearestTasksMaster(updatedChar, type)
+                ?: return StepResult.Error("No $type task master found on map")
+
+            if (!helper.isAt(updatedChar, taskMaster.x, taskMaster.y)) {
+                onStatus("Moving to task master to cancel...")
+                helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+            }
+
+            onStatus("Cancelling task (low win rate)...")
+            helper.cancelTask(characterName)
+
+            onStatus("Accepting new task...")
+            val taskData = helper.acceptTask(characterName)
+            val t = taskData.task
+            onStatus("New task accepted: ${t.total}x ${t.code} (${t.type})")
+        }
+
+        onStatus("Exhausted $maxAttempts attempts, no viable monster task found")
+        return null
     }
 
     // ── Item Task Fulfillment ──

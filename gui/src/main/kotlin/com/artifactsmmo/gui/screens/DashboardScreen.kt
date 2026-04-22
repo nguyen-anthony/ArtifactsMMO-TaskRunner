@@ -38,7 +38,9 @@ fun DashboardScreen(
     appState: AppState,
     imageCache: ImageCache,
     isDarkTheme: Boolean,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    onDisconnect: () -> Unit = {},
+    username: String? = null
 ) {
     val scope = rememberCoroutineScope()
     val initState by appState.initState.collectAsState()
@@ -64,6 +66,9 @@ fun DashboardScreen(
 
     // Log filter: null = All
     var logFilter by remember { mutableStateOf<String?>(null) }
+
+    // Disconnect confirmation dialog
+    var showDisconnectConfirm by remember { mutableStateOf(false) }
 
     // When multi-select mode is toggled off, clear selections
     LaunchedEffect(multiSelectMode) {
@@ -120,6 +125,18 @@ fun DashboardScreen(
                         )
                     ) { Text("Stop All") }
 
+                    if (username != null) {
+                        Text(
+                            text = "@$username",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    OutlinedButton(onClick = { showDisconnectConfirm = true }) {
+                        Text("Disconnect")
+                    }
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -130,9 +147,31 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Switch(checked = isDarkTheme, onCheckedChange = { onToggleTheme() })
-                    }
-                }
+        }
+    }
+
+    if (showDisconnectConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDisconnectConfirm = false },
+            title = { Text("Disconnect") },
+            text = {
+                Text("This will remove your stored API token. You will need to re-enter it to use the app.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDisconnectConfirm = false
+                        onDisconnect()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Disconnect") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDisconnectConfirm = false }) { Text("Cancel") }
             }
+        )
+    }
+}
         }
 
         // ── Body ──────────────────────────────────────────────────────────────

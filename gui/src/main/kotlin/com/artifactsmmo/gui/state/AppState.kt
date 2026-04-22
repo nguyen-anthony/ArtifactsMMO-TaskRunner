@@ -5,7 +5,6 @@ import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.core.task.RunnerStatus
 import com.artifactsmmo.core.task.TaskLogger
 import com.artifactsmmo.core.task.TaskManager
-import io.github.cdimascio.dotenv.dotenv
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,18 +16,9 @@ import kotlinx.coroutines.flow.asStateFlow
  * Holds the [TaskManager], manages initialization, exposes runner statuses
  * and character details as [StateFlow]s, and provides a log ring-buffer.
  */
-class AppState(val scope: CoroutineScope) {
+class AppState(val scope: CoroutineScope, private val apiToken: String) {
 
     // ── API client ────────────────────────────────────────────────────────────
-
-    private val apiToken: String by lazy {
-        runCatching {
-            dotenv { ignoreIfMissing = true }["ARTIFACTS_API_TOKEN"]
-        }.getOrElse {
-            System.getenv("ARTIFACTS_API_TOKEN")
-                ?: error("ARTIFACTS_API_TOKEN not found in .env or environment")
-        }
-    }
 
     val client: ArtifactsMMOClient by lazy { ArtifactsMMOClient(apiToken) }
 
