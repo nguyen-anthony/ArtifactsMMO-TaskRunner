@@ -335,10 +335,30 @@ class TaskMasterExecutor(
         else remaining
 
         val currentItems     = currentChar.inventory.sumOf { it.quantity }
-        val freeSlots        = currentChar.inventoryMaxItems - currentItems
+        var freeSlots        = currentChar.inventoryMaxItems - currentItems
         val rawPerCraftTotal = if (source.needsCrafting) ingredients.sumOf { it.rawPerCraft } else 1
         val craftsFit        = if (rawPerCraftTotal > 0) (freeSlots / rawPerCraftTotal).coerceAtLeast(1) else 1
         val craftsTarget     = craftsNeeded.coerceAtMost(craftsFit)
+
+        // ── Withdraw banked ingredients before deciding what to gather ──
+        // If any ingredient has stock in the bank that we're short on, retrieve it first
+        // so we don't re-gather something we've already collected.
+        if (source.needsCrafting) {
+            val toWithdraw = ingredients.mapNotNull { ing ->
+                val have    = helper.getItemQuantity(currentChar, ing.rawItemCode)
+                val need    = ing.rawPerCraft * craftsTarget
+                val inBank  = helper.getBankItemQuantity(ing.rawItemCode)
+                val deficit = (need - have).coerceAtLeast(0)
+                val qty     = deficit.coerceAtMost(inBank)
+                if (qty > 0) SimpleItem(ing.rawItemCode, qty) else null
+            }
+            if (toWithdraw.isNotEmpty()) {
+                onStatus("Withdrawing banked ingredients: ${toWithdraw.joinToString { "${it.quantity}x ${it.code}" }}...")
+                currentChar = helper.bankWithdrawItems(characterName, toWithdraw)
+                // Recalculate free slots now that inventory has changed
+                freeSlots = currentChar.inventoryMaxItems - currentChar.inventory.sumOf { it.quantity }
+            }
+        }
 
         // ── Find the first ingredient we're still short on ──
         val activeIngredient = if (source.needsCrafting) {
