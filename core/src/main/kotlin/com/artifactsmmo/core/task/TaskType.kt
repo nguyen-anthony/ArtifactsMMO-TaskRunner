@@ -11,6 +11,18 @@ enum class CraftMode {
 }
 
 /**
+ * How to handle a cookable drop from a monster during a fight task.
+ */
+enum class DropStrategy {
+    /** Cook and keep on hand for healing during fights. */
+    COOK_AND_USE,
+    /** Cook then deposit to bank (stockpile cooked food). */
+    COOK_AND_BANK,
+    /** Deposit raw to bank without cooking (stockpile raw materials). */
+    BANK_RAW
+}
+
+/**
  * Represents a task that a character can be assigned to.
  */
 sealed class TaskType {
@@ -37,7 +49,12 @@ sealed class TaskType {
          * One-shot equip actions to execute before the fight loop begins.
          * NOT persisted — these are set by the wizard and cleared after execution.
          */
-        val equipActions: List<ActionHelper.EquipAction> = emptyList()
+        val equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        /**
+         * Per-drop strategy for cookable drops. Key = raw item code, value = strategy.
+         * Drops not in this map default to COOK_AND_USE (current behavior).
+         */
+        val dropStrategies: Map<String, DropStrategy> = emptyMap()
     ) : TaskType()
 
     /** Craft items at a workshop (weaponcrafting, gearcrafting, jewelrycrafting, or misc). */

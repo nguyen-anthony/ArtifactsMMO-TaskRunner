@@ -8,11 +8,16 @@ import com.artifactsmmo.client.utils.CharacterUtils
  * Executes fighting task loops.
  *
  * Loop: move to monster -> fight -> heal if needed -> repeat
- *       when inventory full -> cook droppable food, bank non-food, keep food on hand
+ *       when inventory full -> handle drops per strategy, bank non-food, keep food on hand
+ *
+ * Drop strategies (per cookable drop):
+ *   - COOK_AND_USE: cook and keep on hand for healing (default)
+ *   - COOK_AND_BANK: cook then deposit to bank
+ *   - BANK_RAW: deposit raw without cooking
  *
  * Healing priority:
- *   1. Eat cooked food from inventory
- *   2. Cook raw food from inventory, then eat
+ *   1. Eat cooked food from inventory (COOK_AND_USE drops only)
+ *   2. Cook raw food from inventory (COOK_AND_USE drops only), then eat
  *   3. Withdraw cooked food from bank, then eat
  *   4. Rest as last resort
  */
@@ -32,20 +37,31 @@ class FightingExecutor(private val helper: ActionHelper) {
         var char = helper.refreshCharacter(characterName)
 
         // Discover cookable drops for this monster (cached after first call)
-        val cookableDrops = getCookableDrops(task.monsterCode, char)
+        val allCookableDrops = getCookableDrops(task.monsterCode, char)
 
-        // The set of item codes we consider "food-related" and want to keep on hand
-        val foodCodes = buildFoodCodes(cookableDrops)
+        // Split drops by strategy
+        val cookAndUseDrops = allCookableDrops.filter {
+            getDropStrategy(task, it.rawCode) == DropStrategy.COOK_AND_USE
+        }
+        val cookAndBankDrops = allCookableDrops.filter {
+            getDropStrategy(task, it.rawCode) == DropStrategy.COOK_AND_BANK
+        }
+        val bankRawDrops = allCookableDrops.filter {
+            getDropStrategy(task, it.rawCode) == DropStrategy.BANK_RAW
+        }
+
+        // Food codes: only COOK_AND_USE drops are considered "food" to keep on hand
+        val foodCodes = buildFoodCodes(cookAndUseDrops)
 
         // Check if inventory is full
         if (helper.isInventoryFull(char)) {
             onStatus("Inventory full, handling...")
-            return handleFullInventory(characterName, cookableDrops, foodCodes, onStatus)
+            return handleFullInventory(characterName, cookAndUseDrops, cookAndBankDrops, bankRawDrops, foodCodes, onStatus)
         }
 
         // Check HP - heal if below 50%
         if (!CharacterUtils.hasEnoughHP(char, 0.5)) {
-            return handleHealing(characterName, char, cookableDrops, foodCodes, onStatus)
+            return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
         }
 
         // Find monster location and move there
@@ -82,6 +98,13 @@ class FightingExecutor(private val helper: ActionHelper) {
     }
 
     /**
+     * Get the drop strategy for a raw item code, defaulting to COOK_AND_USE.
+     */
+    private fun getDropStrategy(task: TaskType.Fight, rawCode: String): DropStrategy {
+        return task.dropStrategies[rawCode] ?: DropStrategy.COOK_AND_USE
+    }
+
+    /**
      * Get cookable drops for a monster, filtering by character's cooking level.
      */
     private suspend fun getCookableDrops(
@@ -99,10 +122,11 @@ class FightingExecutor(private val helper: ActionHelper) {
 
     /**
      * Build the set of item codes we consider "food" (raw + cooked) to keep on hand.
+     * Only includes COOK_AND_USE drops.
      */
-    private fun buildFoodCodes(cookableDrops: List<ActionHelper.CookableDropInfo>): Set<String> {
+    private fun buildFoodCodes(cookAndUseDrops: List<ActionHelper.CookableDropInfo>): Set<String> {
         val codes = mutableSetOf<String>()
-        for (info in cookableDrops) {
+        for (info in cookAndUseDrops) {
             codes.add(info.rawCode)
             codes.add(info.cookedCode)
         }
@@ -111,12 +135,12 @@ class FightingExecutor(private val helper: ActionHelper) {
 
     /**
      * Handle healing when HP is low.
-     * Priority: eat cooked food > cook raw food then eat > withdraw from bank > rest
+     * Priority: eat cooked food > cook raw food then eat (COOK_AND_USE only) > withdraw from bank > rest
      */
     private suspend fun handleHealing(
         characterName: String,
         char: com.artifactsmmo.client.models.Character,
-        cookableDrops: List<ActionHelper.CookableDropInfo>,
+        cookAndUseDrops: List<ActionHelper.CookableDropInfo>,
         foodCodes: Set<String>,
         onStatus: (String) -> Unit
     ): StepResult {
@@ -133,8 +157,8 @@ class FightingExecutor(private val helper: ActionHelper) {
             return StepResult.Rested
         }
 
-        // 2. Try to cook raw food from inventory (only drops we can actually eat)
-        for (info in cookableDrops) {
+        // 2. Try to cook raw food from inventory (only COOK_AND_USE drops)
+        for (info in cookAndUseDrops) {
             val rawQty = helper.getItemQuantity(char, info.rawCode)
             if (rawQty >= info.rawPerCraft) {
                 val craftQty = rawQty / info.rawPerCraft
@@ -154,9 +178,9 @@ class FightingExecutor(private val helper: ActionHelper) {
             }
         }
 
-        // 3. Try to withdraw cooked food from bank — first check this monster's drops,
+        // 3. Try to withdraw cooked food from bank — first check this monster's COOK_AND_USE drops,
         //    then fall back to ANY usable food in the bank
-        for (info in cookableDrops) {
+        for (info in cookAndUseDrops) {
             val bankQty = helper.getBankItemQuantity(info.cookedCode)
             if (bankQty > 0) {
                 val withdrawQty = minOf(bankQty, 25)
@@ -194,35 +218,40 @@ class FightingExecutor(private val helper: ActionHelper) {
 
     /**
      * Handle full inventory during fighting.
-     * - Cook any raw food drops into cooked versions
-     * - Bank everything EXCEPT food (cooked food stays on character)
-     * - If inventory is mostly food, bank excess food but keep ~20
+     * - COOK_AND_USE drops: cook, keep on hand for healing
+     * - COOK_AND_BANK drops: cook, then deposit to bank
+     * - BANK_RAW drops: deposit raw to bank
+     * - Non-food items: bank per deposit rules
      */
     private suspend fun handleFullInventory(
         characterName: String,
-        cookableDrops: List<ActionHelper.CookableDropInfo>,
+        cookAndUseDrops: List<ActionHelper.CookableDropInfo>,
+        cookAndBankDrops: List<ActionHelper.CookableDropInfo>,
+        bankRawDrops: List<ActionHelper.CookableDropInfo>,
         foodCodes: Set<String>,
         onStatus: (String) -> Unit
     ): StepResult {
         var char = helper.refreshCharacter(characterName)
         var totalCrafted = 0
 
-        // Cook any raw food in inventory
-        if (cookableDrops.isNotEmpty()) {
-            val workshop = helper.findNearestWorkshop(char, "cooking")
-            if (workshop != null) {
-                var needsWorkshop = false
-                for (info in cookableDrops) {
-                    val rawQty = helper.getItemQuantity(char, info.rawCode)
-                    if (rawQty >= info.rawPerCraft) needsWorkshop = true
-                }
+        // Collect all drops that need cooking (COOK_AND_USE + COOK_AND_BANK)
+        val dropsToCook = cookAndUseDrops + cookAndBankDrops
 
-                if (needsWorkshop) {
+        if (dropsToCook.isNotEmpty()) {
+            var needsWorkshop = false
+            for (info in dropsToCook) {
+                val rawQty = helper.getItemQuantity(char, info.rawCode)
+                if (rawQty >= info.rawPerCraft) needsWorkshop = true
+            }
+
+            if (needsWorkshop) {
+                val workshop = helper.findNearestWorkshop(char, "cooking")
+                if (workshop != null) {
                     onStatus("Moving to cooking workshop...")
                     helper.moveTo(characterName, workshop.x, workshop.y)
                     char = helper.refreshCharacter(characterName)
 
-                    for (info in cookableDrops) {
+                    for (info in dropsToCook) {
                         val rawQty = helper.getItemQuantity(char, info.rawCode)
                         val craftQty = rawQty / info.rawPerCraft
                         if (craftQty > 0) {
@@ -236,38 +265,52 @@ class FightingExecutor(private val helper: ActionHelper) {
             }
         }
 
-        // Build deposit list: everything EXCEPT food we want to keep
+        // Build the set of cooked item codes from COOK_AND_BANK drops — these get deposited
+        val cookAndBankCookedCodes = cookAndBankDrops.map { it.cookedCode }.toSet()
+
+        // Build the set of raw item codes from BANK_RAW drops — these get deposited raw
+        val bankRawCodes = bankRawDrops.map { it.rawCode }.toSet()
+
+        // Build deposit list
         val itemsToDeposit = mutableListOf<SimpleItem>()
-        val foodToKeep = 25 // Keep up to this many cooked food items
+        val foodToKeep = 25 // Keep up to this many cooked food items (COOK_AND_USE only)
 
         for (slot in char.inventory) {
             if (slot.quantity <= 0) continue
 
-            if (slot.code in foodCodes) {
-                // For cooked food: keep some, bank the excess
-                val cookableInfo = cookableDrops.find { it.cookedCode == slot.code }
-                if (cookableInfo != null) {
-                    // This is cooked food - keep up to foodToKeep
-                    if (slot.quantity > foodToKeep) {
-                        itemsToDeposit.add(SimpleItem(slot.code, slot.quantity - foodToKeep))
-                    }
-                    // Don't deposit any if we have <= foodToKeep
-                } else {
-                    // This is raw food that we couldn't cook (shouldn't happen after cooking step,
-                    // but handle edge case) - bank it
+            when {
+                // COOK_AND_BANK cooked items: always deposit all
+                slot.code in cookAndBankCookedCodes -> {
                     itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
                 }
-            } else {
-                // Not food — only deposit if the item should be banked under deposit rules
-                // (never deposits combat weapons, armor, rings, etc.; deposits inferior tools)
-                val shouldDeposit = try { helper.shouldDepositItem(char, slot.code) } catch (_: Exception) { true }
-                if (!shouldDeposit) continue
-                itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
+                // BANK_RAW items: always deposit all
+                slot.code in bankRawCodes -> {
+                    itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
+                }
+                // COOK_AND_USE food: keep some, bank excess
+                slot.code in foodCodes -> {
+                    val cookableInfo = cookAndUseDrops.find { it.cookedCode == slot.code }
+                    if (cookableInfo != null) {
+                        // Cooked food from COOK_AND_USE — keep up to foodToKeep
+                        if (slot.quantity > foodToKeep) {
+                            itemsToDeposit.add(SimpleItem(slot.code, slot.quantity - foodToKeep))
+                        }
+                    } else {
+                        // Raw food that we couldn't cook — bank it
+                        itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
+                    }
+                }
+                // Everything else: deposit per standard rules
+                else -> {
+                    val shouldDeposit = try { helper.shouldDepositItem(char, slot.code) } catch (_: Exception) { true }
+                    if (!shouldDeposit) continue
+                    itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
+                }
             }
         }
 
         if (itemsToDeposit.isNotEmpty()) {
-            onStatus("Banking ${itemsToDeposit.sumOf { it.quantity }} non-food items...")
+            onStatus("Banking ${itemsToDeposit.sumOf { it.quantity }} items...")
             helper.bankDepositItems(characterName, itemsToDeposit)
         }
 

@@ -26,6 +26,7 @@ data class StoredTask(
     @SerialName("cook_before_deposit") val cookBeforeDeposit: Boolean? = null,
     @SerialName("monster_code") val monsterCode: String? = null,
     @SerialName("monster_name") val monsterName: String? = null,
+    @SerialName("drop_strategies") val dropStrategies: Map<String, String>? = null,
     @SerialName("item_code") val itemCode: String? = null,
     @SerialName("item_name") val itemName: String? = null,
     @SerialName("craft_mode") val craftMode: String? = null, // "LEVELING", "SPECIFIC"
@@ -114,7 +115,10 @@ class TaskStore(private val file: File = File("tasks.json")) {
             is TaskType.Fight -> StoredTask(
                 type = "fight",
                 monsterCode = task.monsterCode,
-                monsterName = task.monsterName
+                monsterName = task.monsterName,
+                dropStrategies = if (task.dropStrategies.isNotEmpty())
+                    task.dropStrategies.mapValues { it.value.name }
+                else null
             )
             is TaskType.Craft -> StoredTask(
                 type = "craft",
@@ -170,7 +174,10 @@ class TaskStore(private val file: File = File("tasks.json")) {
             )
             "fight" -> TaskType.Fight(
                 monsterCode = stored.monsterCode ?: "",
-                monsterName = stored.monsterName ?: ""
+                monsterName = stored.monsterName ?: "",
+                dropStrategies = stored.dropStrategies?.mapValues { (_, v) ->
+                    try { DropStrategy.valueOf(v) } catch (_: Exception) { DropStrategy.COOK_AND_USE }
+                } ?: emptyMap()
             )
             "craft" -> TaskType.Craft(
                 skill = stored.skill ?: "",

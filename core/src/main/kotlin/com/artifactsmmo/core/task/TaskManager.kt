@@ -130,6 +130,17 @@ class TaskManager(
     }
 
     /**
+     * Get cookable drop info for a monster, filtered by the character's cooking level.
+     * Used by the fight wizard to configure drop strategies.
+     */
+    suspend fun getCookableDrops(characterName: String, monsterCode: String): List<ActionHelper.CookableDropInfo> {
+        val char = client.characters.getCharacter(characterName)
+        val cookingLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, "cooking") ?: 0
+        val allDrops = helper.findCookableDrops(monsterCode)
+        return allDrops.filter { it.cookingLevelRequired <= cookingLevel && it.useLevelRequired <= char.level }
+    }
+
+    /**
      * Get available monsters based on character's combat level.
      */
     suspend fun getAvailableMonsters(characterName: String): List<Monster> {

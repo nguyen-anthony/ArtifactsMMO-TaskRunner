@@ -25,6 +25,7 @@ import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.CraftMode
+import com.artifactsmmo.core.task.DropStrategy
 import com.artifactsmmo.core.task.TaskType
 import com.artifactsmmo.gui.state.AppState
 import kotlinx.coroutines.launch
@@ -48,6 +49,12 @@ private sealed class WizardStep {
         val monster: Monster,
         val sim: CombatSimulationData?,
         val simError: String?
+    ) : WizardStep()
+    data class FightDropConfig(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val cookableDrops: List<ActionHelper.CookableDropInfo>,
+        val equipActions: List<ActionHelper.EquipAction> = emptyList()
     ) : WizardStep()
 
     // Equipment Browser (from FightSim → Check Equipment)
@@ -341,12 +348,20 @@ fun TaskWizardDialog(
                             step = s,
                             onBack = { step = WizardStep.FightMonster(s.monsters) },
                             onConfirm = {
-                                assign(
-                                    TaskType.Fight(
-                                        monsterCode = s.monster.code,
-                                        monsterName = s.monster.name
-                                    )
-                                )
+                                load("Checking monster drops...") {
+                                    val cookable = appState.taskManager.getCookableDrops(characterName, s.monster.code)
+                                    if (cookable.isEmpty()) {
+                                        // No cookable drops — skip config, assign directly
+                                        assign(
+                                            TaskType.Fight(
+                                                monsterCode = s.monster.code,
+                                                monsterName = s.monster.name
+                                            )
+                                        )
+                                    } else {
+                                        step = WizardStep.FightDropConfig(s.monsters, s.monster, cookable)
+                                    }
+                                }
                             },
                             onCheckEquipment = {
                                 load("Loading character equipment...") {
@@ -416,11 +431,46 @@ fun TaskWizardDialog(
                                 )
                             },
                             onEquipAndFight = {
+                                load("Checking monster drops...") {
+                                    val cookable = appState.taskManager.getCookableDrops(characterName, s.monster.code)
+                                    if (cookable.isEmpty()) {
+                                        assign(
+                                            TaskType.Fight(
+                                                monsterCode  = s.monster.code,
+                                                monsterName  = s.monster.name,
+                                                equipActions = s.equipActions
+                                            )
+                                        )
+                                    } else {
+                                        step = WizardStep.FightDropConfig(
+                                            s.monsters, s.monster, cookable, s.equipActions
+                                        )
+                                    }
+                                }
+                            }
+                        )
+
+                        is WizardStep.FightDropConfig -> StepFightDropConfig(
+                            step = s,
+                            onBack = {
+                                // Go back to the sim step
+                                load("Simulating combat vs ${s.monster.name}...") {
+                                    val simResult = try {
+                                        appState.taskManager.simulateFight(characterName, s.monster.code, 100)
+                                    } catch (e: Exception) {
+                                        step = WizardStep.FightSim(s.monsters, s.monster, null, e.message)
+                                        return@load
+                                    }
+                                    step = WizardStep.FightSim(s.monsters, s.monster, simResult, null)
+                                }
+                            },
+                            onConfirm = { strategies ->
                                 assign(
                                     TaskType.Fight(
-                                        monsterCode  = s.monster.code,
-                                        monsterName  = s.monster.name,
-                                        equipActions = s.equipActions
+                                        monsterCode = s.monster.code,
+                                        monsterName = s.monster.name,
+                                        equipActions = s.equipActions,
+                                        dropStrategies = strategies
                                     )
                                 )
                             }
@@ -859,6 +909,120 @@ private fun StepFishingStrategy(
             onClick = { cook = true }
         )
         WizardNavRow(onBack = onBack, confirmLabel = "Confirm", onConfirm = { onConfirm(cook) })
+    }
+}
+
+// ── Step: Fight — configure drops ─────────────────────────────────────────────
+
+@Composable
+private fun StepFightDropConfig(
+    step: WizardStep.FightDropConfig,
+    onBack: () -> Unit,
+    onConfirm: (Map<String, DropStrategy>) -> Unit
+) {
+    val strategies = remember {
+        mutableStateMapOf<String, DropStrategy>().apply {
+            for (info in step.cookableDrops) {
+                put(info.rawCode, DropStrategy.COOK_AND_USE)
+            }
+        }
+    }
+
+    val strategyLabels = listOf(
+        DropStrategy.COOK_AND_USE to "Cook & Use",
+        DropStrategy.COOK_AND_BANK to "Cook & Bank",
+        DropStrategy.BANK_RAW to "Bank Raw"
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(
+                text = "Configure Drops — ${step.monster.name}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Choose what to do with cookable drops:",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+            // Cookable drops with strategy selector
+            items(step.cookableDrops) { info ->
+                val current = strategies[info.rawCode] ?: DropStrategy.COOK_AND_USE
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = info.rawCode.replace('_', ' ').replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Cooks into: ${info.cookedCode.replace('_', ' ')} (heals ${info.healAmount} HP)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        for ((strategy, label) in strategyLabels) {
+                            FilterChip(
+                                selected = current == strategy,
+                                onClick = { strategies[info.rawCode] = strategy },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider()
+            }
+
+            // Non-cookable drops (info only)
+            val nonCookableCodes = step.cookableDrops.map { it.rawCode }.toSet()
+            val nonCookableDrops = step.monster.drops.filter { it.code !in nonCookableCodes }
+            if (nonCookableDrops.isNotEmpty()) {
+                item {
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Text(
+                            text = "Other drops (auto-banked)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+                items(nonCookableDrops) { drop ->
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                drop.code.replace('_', ' ').replaceFirstChar { it.uppercase() },
+                                fontWeight = FontWeight.Medium
+                            )
+                        },
+                        supportingContent = {
+                            Text("Bank", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+
+        WizardNavRow(
+            onBack = onBack,
+            confirmLabel = "Fight!",
+            onConfirm = { onConfirm(strategies.toMap()) }
+        )
     }
 }
 

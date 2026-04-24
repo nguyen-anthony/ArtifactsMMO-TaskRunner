@@ -286,7 +286,9 @@ class CharacterTaskRunner(
     }
 
     /**
-     * Cleanup after a fight task: cook any raw food drops, then bank everything.
+     * Cleanup after a fight task: cook drops per strategy, then bank everything.
+     * COOK_AND_USE and COOK_AND_BANK drops get cooked; BANK_RAW drops are deposited raw.
+     * On cleanup we bank everything (including food) since we're transitioning away.
      */
     private suspend fun cleanupFightTask(task: TaskType.Fight, onStatus: (String) -> Unit) {
         var char = helper.refreshCharacter(characterName)
@@ -294,14 +296,19 @@ class CharacterTaskRunner(
         // Discover cookable drops for this monster
         val cookableDrops = helper.findCookableDrops(task.monsterCode)
         val cookingLevel = CharacterUtils.getSkillLevel(char, "cooking") ?: 0
-        val cookable = cookableDrops.filter {
+        val allCookable = cookableDrops.filter {
             it.cookingLevelRequired <= cookingLevel && it.useLevelRequired <= char.level
         }
 
-        // Cook any raw food
-        if (cookable.isNotEmpty()) {
+        // Only cook drops that are COOK_AND_USE or COOK_AND_BANK (not BANK_RAW)
+        val dropsToCook = allCookable.filter {
+            val strategy = task.dropStrategies[it.rawCode] ?: DropStrategy.COOK_AND_USE
+            strategy != DropStrategy.BANK_RAW
+        }
+
+        if (dropsToCook.isNotEmpty()) {
             var needsWorkshop = false
-            for (info in cookable) {
+            for (info in dropsToCook) {
                 if (helper.getItemQuantity(char, info.rawCode) >= info.rawPerCraft) {
                     needsWorkshop = true
                     break
@@ -315,7 +322,7 @@ class CharacterTaskRunner(
                     helper.moveTo(characterName, workshop.x, workshop.y)
                     char = helper.refreshCharacter(characterName)
 
-                    for (info in cookable) {
+                    for (info in dropsToCook) {
                         val rawQty = helper.getItemQuantity(char, info.rawCode)
                         val craftQty = rawQty / info.rawPerCraft
                         if (craftQty > 0) {
