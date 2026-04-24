@@ -219,31 +219,57 @@ class CharacterTaskRunner(
     }
 
     /**
-     * Cleanup after a gather task: craft refinements if CRAFT_THEN_BANK, then bank all.
+     * Cleanup after a gather task: craft target item or cook fish if applicable, then bank all.
      */
     private suspend fun cleanupGatherTask(task: TaskType.Gather, onStatus: (String) -> Unit) {
-        if (task.onFullInventory == FullInventoryStrategy.CRAFT_THEN_BANK) {
+        if (task.targetItemCode != null) {
+            // Craft the specific target item from leftover inventory
             val char = helper.refreshCharacter(characterName)
-            val craftable = helper.findCraftableRefinements(char, task.skill)
+            val targetItem = try { helper.getItem(task.targetItemCode) } catch (_: Exception) { null }
+            val craft = targetItem?.craft
+            val workshopSkill = craft?.skill
 
-            if (craftable.isNotEmpty()) {
-                val workshopSkill = when (task.skill) {
-                    "mining" -> "mining"
-                    "woodcutting" -> "woodcutting"
-                    "fishing" -> "cooking"
-                    "alchemy" -> "alchemy"
-                    else -> task.skill
+            if (craft != null && workshopSkill != null) {
+                val maxCraftable = craft.items.minOfOrNull { ingredient ->
+                    helper.getItemQuantity(char, ingredient.code) / ingredient.quantity
+                } ?: 0
+
+                if (maxCraftable > 0) {
+                    val workshop = helper.findNearestWorkshop(char, workshopSkill)
+                    if (workshop != null) {
+                        onStatus("Crafting leftover materials into ${targetItem.name}...")
+                        helper.moveTo(characterName, workshop.x, workshop.y)
+
+                        val updatedChar = helper.refreshCharacter(characterName)
+                        val actualCraftable = craft.items.minOfOrNull { ingredient ->
+                            helper.getItemQuantity(updatedChar, ingredient.code) / ingredient.quantity
+                        } ?: 0
+
+                        if (actualCraftable > 0) {
+                            onStatus("Crafting ${actualCraftable}x ${targetItem.name}...")
+                            helper.craft(characterName, targetItem.code, actualCraftable)
+                        }
+                    }
                 }
-                val workshop = helper.findNearestWorkshop(char, workshopSkill)
+            }
+        } else if (task.cookBeforeDeposit) {
+            // Cook simple fish recipes from leftover inventory
+            val char = helper.refreshCharacter(characterName)
+            val cookable = helper.findCraftableRefinements(char, "fishing")
+                .filter { (item, _) -> item.craft?.items?.size == 1 }
+
+            if (cookable.isNotEmpty()) {
+                val workshop = helper.findNearestWorkshop(char, "cooking")
                 if (workshop != null) {
-                    onStatus("Crafting leftover ${task.skill} materials...")
+                    onStatus("Cooking leftover raw fish...")
                     helper.moveTo(characterName, workshop.x, workshop.y)
 
                     val updatedChar = helper.refreshCharacter(characterName)
-                    val updatedCraftable = helper.findCraftableRefinements(updatedChar, task.skill)
+                    val updatedCookable = helper.findCraftableRefinements(updatedChar, "fishing")
+                        .filter { (item, _) -> item.craft?.items?.size == 1 }
 
-                    for ((item, maxQty) in updatedCraftable) {
-                        onStatus("Crafting ${maxQty}x ${item.name}...")
+                    for ((item, maxQty) in updatedCookable) {
+                        onStatus("Cooking ${maxQty}x ${item.name}...")
                         helper.craft(characterName, item.code, maxQty)
                     }
                 }

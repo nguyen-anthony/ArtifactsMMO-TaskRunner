@@ -112,6 +112,24 @@ class TaskManager(
     }
 
     /**
+     * Get items that can be crafted with a given skill, filtered by character's skill level.
+     * Used by the gathering wizard to show "Specific Crafted Item" options.
+     */
+    suspend fun getAvailableCraftedItems(characterName: String, skill: String): List<Item> {
+        val char = client.characters.getCharacter(characterName)
+        val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
+        return helper.getAvailableCraftedItems(skill, skillLevel)
+    }
+
+    /**
+     * Resolve a crafted item to its gatherable resource source(s).
+     * Returns null if the item cannot be obtained through gathering.
+     */
+    suspend fun findTaskItemSource(itemCode: String): ActionHelper.TaskItemSource? {
+        return helper.findTaskItemSource(itemCode)
+    }
+
+    /**
      * Get available monsters based on character's combat level.
      */
     suspend fun getAvailableMonsters(characterName: String): List<Monster> {

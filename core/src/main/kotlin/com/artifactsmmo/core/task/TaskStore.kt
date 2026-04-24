@@ -21,7 +21,9 @@ data class StoredTask(
     val skill: String? = null,
     @SerialName("resource_code") val resourceCode: String? = null,
     @SerialName("resource_name") val resourceName: String? = null,
-    @SerialName("on_full_inventory") val onFullInventory: String? = null,
+    @SerialName("target_item_code") val targetItemCode: String? = null,
+    @SerialName("target_item_name") val targetItemName: String? = null,
+    @SerialName("cook_before_deposit") val cookBeforeDeposit: Boolean? = null,
     @SerialName("monster_code") val monsterCode: String? = null,
     @SerialName("monster_name") val monsterName: String? = null,
     @SerialName("item_code") val itemCode: String? = null,
@@ -105,7 +107,9 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 skill = task.skill,
                 resourceCode = task.resourceCode,
                 resourceName = task.resourceName,
-                onFullInventory = task.onFullInventory.name
+                targetItemCode = task.targetItemCode,
+                targetItemName = task.targetItemName,
+                cookBeforeDeposit = task.cookBeforeDeposit
             )
             is TaskType.Fight -> StoredTask(
                 type = "fight",
@@ -160,9 +164,9 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 skill = stored.skill ?: "",
                 resourceCode = stored.resourceCode ?: "",
                 resourceName = stored.resourceName ?: "",
-                onFullInventory = stored.onFullInventory?.let {
-                    try { FullInventoryStrategy.valueOf(it) } catch (_: Exception) { FullInventoryStrategy.BANK_ONLY }
-                } ?: FullInventoryStrategy.BANK_ONLY
+                targetItemCode = stored.targetItemCode,
+                targetItemName = stored.targetItemName,
+                cookBeforeDeposit = stored.cookBeforeDeposit ?: false
             )
             "fight" -> TaskType.Fight(
                 monsterCode = stored.monsterCode ?: "",

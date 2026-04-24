@@ -1,16 +1,6 @@
 package com.artifactsmmo.core.task
 
 /**
- * How to handle a full inventory during a gathering task.
- */
-enum class FullInventoryStrategy {
-    /** Go to bank and deposit everything. */
-    BANK_ONLY,
-    /** Go to workshop, craft raw -> refined, then bank the results. */
-    CRAFT_THEN_BANK
-}
-
-/**
  * Whether a crafting task is for leveling (craft & recycle) or crafting specific items.
  */
 enum class CraftMode {
@@ -27,12 +17,16 @@ sealed class TaskType {
     /** Character is idle and not doing anything. */
     data object Idle : TaskType()
 
-    /** Gather a specific resource (mining, woodcutting, fishing). */
+    /** Gather a specific resource (mining, woodcutting, fishing, alchemy). */
     data class Gather(
         val skill: String,
         val resourceCode: String,
         val resourceName: String,
-        val onFullInventory: FullInventoryStrategy = FullInventoryStrategy.BANK_ONLY
+        /** If set, craft this specific item when inventory is full, then bank. */
+        val targetItemCode: String? = null,
+        val targetItemName: String? = null,
+        /** Fishing only: cook fish before depositing. */
+        val cookBeforeDeposit: Boolean = false
     ) : TaskType()
 
     /** Fight monsters at a specific location. */

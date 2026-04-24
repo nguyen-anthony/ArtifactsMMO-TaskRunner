@@ -727,6 +727,24 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     }
 
     /**
+     * Get all items that can be crafted with a given skill up to the character's skill level.
+     * Uses the /items API with craft_skill and max_level filters.
+     * Returns items sorted by level ascending.
+     */
+    suspend fun getAvailableCraftedItems(skill: String, skillLevel: Int): List<Item> {
+        val items = mutableListOf<Item>()
+        var page = 1
+        while (true) {
+            val result = client.content.getItems(craftSkill = skill, maxLevel = skillLevel, page = page, size = 100)
+            items.addAll(result.data)
+            if (page >= (result.pages ?: Int.MAX_VALUE)) break
+            if (result.data.size < 100) break
+            page++
+        }
+        return items.sortedBy { it.craft?.level ?: 0 }
+    }
+
+    /**
      * Get all monsters up to a given level.
      */
     suspend fun getAvailableMonsters(maxLevel: Int): List<com.artifactsmmo.client.models.Monster> {

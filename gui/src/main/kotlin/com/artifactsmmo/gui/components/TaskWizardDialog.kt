@@ -21,10 +21,10 @@ import androidx.compose.ui.unit.dp
 import com.artifactsmmo.client.models.CombatSimulationData
 import com.artifactsmmo.client.models.Monster
 import com.artifactsmmo.client.models.Resource
+import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.CraftMode
-import com.artifactsmmo.core.task.FullInventoryStrategy
 import com.artifactsmmo.core.task.TaskType
 import com.artifactsmmo.gui.state.AppState
 import kotlinx.coroutines.launch
@@ -36,12 +36,10 @@ private sealed class WizardStep {
 
     // Gather
     data object GatherSkill : WizardStep()
+    data class GatherMode(val skill: String) : WizardStep()
     data class GatherResource(val skill: String, val resources: List<Resource>) : WizardStep()
-    data class GatherStrategy(
-        val skill: String,
-        val resource: Resource,
-        val resources: List<Resource>
-    ) : WizardStep()
+    data class GatherCraftedItem(val skill: String, val items: List<Item>) : WizardStep()
+    data class FishingStrategy(val resource: Resource) : WizardStep()
 
     // Fight
     data class FightMonster(val monsters: List<Monster>) : WizardStep()
@@ -228,31 +226,96 @@ fun TaskWizardDialog(
                         is WizardStep.GatherSkill -> StepGatherSkill(
                             onBack = { step = WizardStep.SelectType },
                             onSkillSelected = { skill ->
-                                load("Loading $skill resources...") {
-                                    val resources = appState.taskManager.getAvailableResources(characterName, skill)
-                                    step = WizardStep.GatherResource(skill, resources)
+                                if (skill == "fishing") {
+                                    // Fishing goes straight to resource selection
+                                    load("Loading fishing spots...") {
+                                        val resources = appState.taskManager.getAvailableResources(characterName, skill)
+                                        step = WizardStep.GatherResource(skill, resources)
+                                    }
+                                } else {
+                                    // Mining, woodcutting, alchemy get a mode choice
+                                    step = WizardStep.GatherMode(skill)
+                                }
+                            }
+                        )
+
+                        is WizardStep.GatherMode -> StepGatherMode(
+                            step = s,
+                            onBack = { step = WizardStep.GatherSkill },
+                            onRawResources = {
+                                load("Loading ${s.skill} resources...") {
+                                    val resources = appState.taskManager.getAvailableResources(characterName, s.skill)
+                                    step = WizardStep.GatherResource(s.skill, resources)
+                                }
+                            },
+                            onCraftedItems = {
+                                load("Loading craftable items...") {
+                                    val items = appState.taskManager.getAvailableCraftedItems(characterName, s.skill)
+                                    step = WizardStep.GatherCraftedItem(s.skill, items)
                                 }
                             }
                         )
 
                         is WizardStep.GatherResource -> StepGatherResource(
                             step = s,
-                            onBack = { step = WizardStep.GatherSkill },
+                            onBack = {
+                                step = if (s.skill == "fishing") WizardStep.GatherSkill
+                                       else WizardStep.GatherMode(s.skill)
+                            },
                             onResourceSelected = { resource ->
-                                step = WizardStep.GatherStrategy(s.skill, resource, s.resources)
+                                if (s.skill == "fishing") {
+                                    step = WizardStep.FishingStrategy(resource)
+                                } else {
+                                    // Raw resources: gather and bank only
+                                    assign(
+                                        TaskType.Gather(
+                                            skill = s.skill,
+                                            resourceCode = resource.code,
+                                            resourceName = resource.name
+                                        )
+                                    )
+                                }
                             }
                         )
 
-                        is WizardStep.GatherStrategy -> StepGatherStrategy(
+                        is WizardStep.GatherCraftedItem -> StepGatherCraftedItem(
                             step = s,
-                            onBack = { step = WizardStep.GatherResource(s.skill, s.resources) },
-                            onConfirm = { strategy ->
+                            onBack = { step = WizardStep.GatherMode(s.skill) },
+                            onItemSelected = { item ->
+                                load("Resolving resource locations...") {
+                                    val source = appState.taskManager.findTaskItemSource(item.code)
+                                    if (source == null) {
+                                        error = "Could not find a gatherable resource for ${item.name}"
+                                        return@load
+                                    }
+                                    assign(
+                                        TaskType.Gather(
+                                            skill = s.skill,
+                                            resourceCode = source.resourceCode,
+                                            resourceName = source.resourceName,
+                                            targetItemCode = item.code,
+                                            targetItemName = item.name
+                                        )
+                                    )
+                                }
+                            }
+                        )
+
+                        is WizardStep.FishingStrategy -> StepFishingStrategy(
+                            step = s,
+                            onBack = {
+                                load("Loading fishing spots...") {
+                                    val resources = appState.taskManager.getAvailableResources(characterName, "fishing")
+                                    step = WizardStep.GatherResource("fishing", resources)
+                                }
+                            },
+                            onConfirm = { cook ->
                                 assign(
                                     TaskType.Gather(
-                                        skill = s.skill,
+                                        skill = "fishing",
                                         resourceCode = s.resource.code,
                                         resourceName = s.resource.name,
-                                        onFullInventory = strategy
+                                        cookBeforeDeposit = cook
                                     )
                                 )
                             }
@@ -667,15 +730,15 @@ private fun StepGatherResource(
     }
 }
 
-// ── Step: Gather — select strategy ────────────────────────────────────────────
+// ── Step: Gather — select mode (raw vs crafted) ──────────────────────────────
 
 @Composable
-private fun StepGatherStrategy(
-    step: WizardStep.GatherStrategy,
+private fun StepGatherMode(
+    step: WizardStep.GatherMode,
     onBack: () -> Unit,
-    onConfirm: (FullInventoryStrategy) -> Unit
+    onRawResources: () -> Unit,
+    onCraftedItems: () -> Unit
 ) {
-    var selected by remember { mutableStateOf(FullInventoryStrategy.BANK_ONLY) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -683,7 +746,98 @@ private fun StepGatherStrategy(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "Gathering: ${step.resource.name}",
+            text = "${step.skill.replaceFirstChar { it.uppercase() }} — what do you want to collect?",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        WizardButton(
+            "Raw Resources",
+            "Gather raw materials and deposit to bank",
+            onClick = onRawResources
+        )
+        WizardButton(
+            "Specific Crafted Item",
+            "Gather ingredients, craft a specific item, then bank",
+            onClick = onCraftedItems
+        )
+        TextButton(onClick = onBack) { Text("← Back") }
+    }
+}
+
+// ── Step: Gather — select crafted item ────────────────────────────────────────
+
+@Composable
+private fun StepGatherCraftedItem(
+    step: WizardStep.GatherCraftedItem,
+    onBack: () -> Unit,
+    onItemSelected: (Item) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(
+                text = "Select item to craft (${step.skill.replaceFirstChar { it.uppercase() }}):",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (step.items.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No craftable items available at your level.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                items(step.items) { item ->
+                    val craftLevel = item.craft?.level ?: 0
+                    val ingredients = item.craft?.items?.joinToString("  •  ") { "${it.quantity}× ${it.code}" } ?: ""
+                    ListItem(
+                        headlineContent = {
+                            Text(item.name, fontWeight = FontWeight.Medium)
+                        },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    "Craft Lv.$craftLevel",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    ingredients,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        modifier = Modifier.clickable { onItemSelected(item) }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+        WizardNavRow(onBack = onBack)
+    }
+}
+
+// ── Step: Fishing — cook or deposit raw ───────────────────────────────────────
+
+@Composable
+private fun StepFishingStrategy(
+    step: WizardStep.FishingStrategy,
+    onBack: () -> Unit,
+    onConfirm: (Boolean) -> Unit
+) {
+    var cook by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Fishing: ${step.resource.name}",
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold
         )
@@ -693,18 +847,18 @@ private fun StepGatherStrategy(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         WizardRadioCard(
-            title = "Bank Only",
-            subtitle = "Go to bank and deposit all items",
-            selected = selected == FullInventoryStrategy.BANK_ONLY,
-            onClick = { selected = FullInventoryStrategy.BANK_ONLY }
+            title = "Deposit Raw",
+            subtitle = "Go to bank and deposit raw fish",
+            selected = !cook,
+            onClick = { cook = false }
         )
         WizardRadioCard(
-            title = "Craft then Bank",
-            subtitle = "Refine raw materials at a workshop first, then deposit",
-            selected = selected == FullInventoryStrategy.CRAFT_THEN_BANK,
-            onClick = { selected = FullInventoryStrategy.CRAFT_THEN_BANK }
+            title = "Cook then Deposit",
+            subtitle = "Cook fish at a workshop first, then deposit",
+            selected = cook,
+            onClick = { cook = true }
         )
-        WizardNavRow(onBack = onBack, confirmLabel = "Confirm", onConfirm = { onConfirm(selected) })
+        WizardNavRow(onBack = onBack, confirmLabel = "Confirm", onConfirm = { onConfirm(cook) })
     }
 }
 

@@ -5,10 +5,15 @@ import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.SimpleItem
 
 /**
- * Executes gathering task loops (mining, woodcutting, fishing).
+ * Executes gathering task loops (mining, woodcutting, fishing, alchemy).
  *
  * Loop: ensure tool equipped -> check for tool upgrade -> move to resource -> gather ->
- *       when inventory full -> handle (bank or craft-then-bank) -> return to resource
+ *       when inventory full -> handle based on task config -> return to resource
+ *
+ * Three modes:
+ *  - Raw deposit: gather and bank (default)
+ *  - Specific crafted item (targetItemCode set): gather ingredients, craft target, bank
+ *  - Cook before deposit (fishing only): gather fish, cook, bank
  */
 class GatheringExecutor(private val helper: ActionHelper) {
 
@@ -47,18 +52,29 @@ class GatheringExecutor(private val helper: ActionHelper) {
             char = tryUpgradeTool(characterName, char, task.skill, onStatus)
         }
 
+        // For specific crafted items, we need to gather from the right resource.
+        // The resourceCode in the task may be a raw ingredient code rather than a resource code.
+        // We need to find the resource that drops the needed ingredients.
+        val (resourceCode, resourceName) = if (task.targetItemCode != null) {
+            val resolved = findNextResourceToGather(char, task, onStatus)
+            (resolved?.first ?: task.resourceCode) to (resolved?.second ?: task.resourceName)
+        } else {
+            task.resourceCode to task.resourceName
+        }
+
         // Find resource location and move there
-        val resourceMap = helper.findNearest(char, "resource", task.resourceCode)
-            ?: return StepResult.Error("No ${task.resourceCode} locations found on map")
+        val resourceMap = helper.findNearest(char, "resource", resourceCode)
+            ?: return StepResult.Error("No $resourceCode locations found on map")
 
         if (!helper.isAt(char, resourceMap.x, resourceMap.y)) {
-            onStatus("Moving to ${task.resourceName}...")
+            onStatus("Moving to $resourceName...")
             char = helper.moveTo(characterName, resourceMap.x, resourceMap.y)
         }
 
         // Gather
         val totalItems = char.inventory.sumOf { it.quantity }
-        onStatus("Gathering ${task.resourceName}... (Inv: $totalItems/${char.inventoryMaxItems})")
+        val targetLabel = if (task.targetItemName != null) " for ${task.targetItemName}" else ""
+        onStatus("Gathering $resourceName$targetLabel... (Inv: $totalItems/${char.inventoryMaxItems})")
 
         return try {
             val result = helper.gather(characterName)
@@ -74,74 +90,207 @@ class GatheringExecutor(private val helper: ActionHelper) {
     }
 
     /**
-     * Run once when a gather task starts (CRAFT_THEN_BANK only).
-     * Checks the bank for leftover raw materials that can be crafted into
-     * refined items, withdraws them, crafts, and deposits the results.
+     * Run once when a gather task starts.
+     * For specific crafted item tasks: checks the bank for leftover raw materials
+     * that can be crafted into the target item, withdraws them, crafts, and deposits.
+     * For cook-before-deposit tasks: checks bank for leftover raw fish, cooks, deposits.
      */
     suspend fun prepareGatherTask(
         characterName: String,
         task: TaskType.Gather,
         onStatus: (String) -> Unit
     ) {
-        if (task.onFullInventory != FullInventoryStrategy.CRAFT_THEN_BANK) return
+        if (task.targetItemCode != null) {
+            prepareTargetItemTask(characterName, task, onStatus)
+        } else if (task.cookBeforeDeposit) {
+            prepareCookTask(characterName, onStatus)
+        }
+        // Raw deposit mode: nothing to prepare
+    }
+
+    /**
+     * Prepare a specific crafted item task: check bank for leftover ingredients,
+     * withdraw, craft, and deposit.
+     */
+    private suspend fun prepareTargetItemTask(
+        characterName: String,
+        task: TaskType.Gather,
+        onStatus: (String) -> Unit
+    ) {
+        val targetItem = try {
+            helper.getItem(task.targetItemCode!!)
+        } catch (_: Exception) { return }
+
+        val craft = targetItem.craft ?: return
+        val workshopSkill = craft.skill ?: return
+
+        // Check if bank has all ingredients for at least one craft
+        val maxCraftable = craft.items.minOfOrNull { ingredient ->
+            helper.getBankItemQuantity(ingredient.code) / ingredient.quantity
+        } ?: 0
+
+        if (maxCraftable <= 0) return
 
         val char = helper.refreshCharacter(characterName)
-        val bankCraftable = try {
-            helper.findCraftableRefinementsFromBank(char, task.skill)
-        } catch (_: Exception) {
+        val currentItems = char.inventory.sumOf { it.quantity }
+        val withdrawList = craft.items.map { SimpleItem(it.code, it.quantity * maxCraftable) }
+        val withdrawTotal = withdrawList.sumOf { it.quantity }
+
+        if (currentItems + withdrawTotal > char.inventoryMaxItems) {
+            onStatus("Not enough inventory space to process bank leftovers for ${targetItem.name}, skipping")
             return
         }
 
-        if (bankCraftable.isEmpty()) return
+        onStatus("Withdrawing $withdrawTotal raw materials from bank for ${targetItem.name}...")
+        helper.bankWithdrawItems(characterName, withdrawList)
 
-        val workshopSkill = when (task.skill) {
-            "mining" -> "mining"
-            "woodcutting" -> "woodcutting"
-            "fishing" -> "cooking"
-            "alchemy" -> "alchemy"
-            else -> return
+        val workshop = helper.findNearestWorkshop(helper.refreshCharacter(characterName), workshopSkill)
+        if (workshop == null) {
+            helper.bankDepositItems(characterName, withdrawList)
+            return
         }
 
-        for ((item, maxQty, withdrawList) in bankCraftable) {
-            // Check how much inventory space we have
+        onStatus("Crafting ${maxCraftable}x ${targetItem.name} from bank leftovers...")
+        helper.moveTo(characterName, workshop.x, workshop.y)
+        helper.craft(characterName, targetItem.code, maxCraftable)
+
+        // Deposit crafted items
+        val updatedChar = helper.refreshCharacter(characterName)
+        val toDeposit = updatedChar.inventory
+            .filter { slot -> slot.quantity > 0 }
+            .mapNotNull { slot ->
+                val type = helper.getItemType(slot.code)
+                if (type == "resource" || type == "consumable") SimpleItem(slot.code, slot.quantity) else null
+            }
+
+        if (toDeposit.isNotEmpty()) {
+            onStatus("Depositing crafted ${targetItem.name}...")
+            helper.bankDepositItems(characterName, toDeposit)
+        }
+    }
+
+    /**
+     * Prepare a cook-before-deposit task: check bank for leftover raw fish,
+     * cook simple recipes, and deposit.
+     */
+    private suspend fun prepareCookTask(
+        characterName: String,
+        onStatus: (String) -> Unit
+    ) {
+        val char = helper.refreshCharacter(characterName)
+        val cookable = helper.findCraftableRefinements(char, "fishing")
+            .filter { (item, _) -> item.craft?.items?.size == 1 } // Simple single-ingredient recipes only
+
+        if (cookable.isEmpty()) return
+
+        // Check bank for raw fish
+        val bankCookable = helper.findCraftableRefinementsFromBank(char, "fishing")
+            .filter { (item, _, _) -> item.craft?.items?.size == 1 }
+
+        if (bankCookable.isEmpty()) return
+
+        for ((item, maxQty, withdrawList) in bankCookable) {
             val currentItems = helper.refreshCharacter(characterName).inventory.sumOf { it.quantity }
             val maxItems = helper.refreshCharacter(characterName).inventoryMaxItems
             val withdrawTotal = withdrawList.sumOf { it.quantity }
 
             if (currentItems + withdrawTotal > maxItems) {
-                // Not enough space — craft in batches or skip
-                onStatus("Not enough inventory space to process bank leftovers for ${item.name}, skipping")
+                onStatus("Not enough inventory space to cook bank leftovers for ${item.name}, skipping")
                 continue
             }
 
-            onStatus("Withdrawing ${withdrawTotal} raw materials from bank for ${item.name}...")
+            onStatus("Withdrawing $withdrawTotal raw fish from bank for ${item.name}...")
             helper.bankWithdrawItems(characterName, withdrawList)
 
-            val workshop = helper.findNearestWorkshop(helper.refreshCharacter(characterName), workshopSkill)
+            val workshop = helper.findNearestWorkshop(helper.refreshCharacter(characterName), "cooking")
             if (workshop == null) {
-                // Can't find workshop, deposit back
                 helper.bankDepositItems(characterName, withdrawList)
                 continue
             }
 
-            onStatus("Crafting ${maxQty}x ${item.name} from bank leftovers...")
+            onStatus("Cooking ${maxQty}x ${item.name} from bank leftovers...")
             helper.moveTo(characterName, workshop.x, workshop.y)
             helper.craft(characterName, item.code, maxQty)
 
-            // Deposit the crafted items (resource type only)
             val updatedChar = helper.refreshCharacter(characterName)
             val toDeposit = updatedChar.inventory
                 .filter { slot -> slot.quantity > 0 }
                 .mapNotNull { slot ->
                     val type = helper.getItemType(slot.code)
-                    if (type == "resource") SimpleItem(slot.code, slot.quantity) else null
+                    if (type == "resource" || type == "consumable") SimpleItem(slot.code, slot.quantity) else null
                 }
 
             if (toDeposit.isNotEmpty()) {
-                onStatus("Depositing crafted ${item.name}...")
+                onStatus("Depositing cooked ${item.name}...")
                 helper.bankDepositItems(characterName, toDeposit)
             }
         }
+    }
+
+    /**
+     * For specific crafted item tasks with multiple ingredients, determine which
+     * resource to gather next based on what's needed vs what's in inventory.
+     *
+     * Strategy: calculate how many crafts fit in the remaining inventory space,
+     * then determine the target quantity for each ingredient. Gather each ingredient
+     * to its target before switching to the next — avoids constant back-and-forth.
+     *
+     * Returns (resourceCode, resourceName) to gather from, or null to use the default.
+     */
+    private suspend fun findNextResourceToGather(
+        char: Character,
+        task: TaskType.Gather,
+        onStatus: (String) -> Unit
+    ): Pair<String, String>? {
+        val targetItem = try {
+            helper.getItem(task.targetItemCode!!)
+        } catch (_: Exception) { return null }
+
+        val craft = targetItem.craft ?: return null
+        if (craft.items.size <= 1) return null // Single ingredient, use default resourceCode
+
+        // Use findTaskItemSource to resolve all ingredients to their resource nodes
+        val source = try {
+            helper.findTaskItemSource(task.targetItemCode!!)
+        } catch (_: Exception) { return null }
+
+        if (source == null || source.allIngredients.size <= 1) return null
+
+        // Calculate how many crafts we can fit in the inventory.
+        // Total ingredients per craft = sum of all rawPerCraft values.
+        val totalPerCraft = source.allIngredients.sumOf { it.rawPerCraft }
+        val currentItems = char.inventory.sumOf { it.quantity }
+        val freeSlots = char.inventoryMaxItems - currentItems
+        // Include what we already have toward the batch
+        val alreadyHave = source.allIngredients.sumOf { ingredient ->
+            helper.getItemQuantity(char, ingredient.rawItemCode)
+        }
+        val totalCapacity = freeSlots + alreadyHave
+        val batchCrafts = maxOf(1, totalCapacity / totalPerCraft)
+
+        // Determine target quantity for each ingredient in this batch
+        // Then find the first ingredient that hasn't reached its target yet
+        for (ingredient in source.allIngredients) {
+            val target = ingredient.rawPerCraft * batchCrafts
+            val have = helper.getItemQuantity(char, ingredient.rawItemCode)
+            if (have < target) {
+                return ingredient.resourceCode to ingredient.resourceName
+            }
+        }
+
+        // All ingredients at target — shouldn't happen (inventory would be full),
+        // but fall back to the ingredient with the lowest ratio
+        var mostNeededResource: Pair<String, String>? = null
+        var lowestRatio = Double.MAX_VALUE
+        for (ingredient in source.allIngredients) {
+            val have = helper.getItemQuantity(char, ingredient.rawItemCode)
+            val ratio = have.toDouble() / ingredient.rawPerCraft
+            if (ratio < lowestRatio) {
+                lowestRatio = ratio
+                mostNeededResource = ingredient.resourceCode to ingredient.resourceName
+            }
+        }
+        return mostNeededResource
     }
 
     /**
@@ -219,94 +368,176 @@ class GatheringExecutor(private val helper: ActionHelper) {
         return char
     }
 
+    /**
+     * Handle a full inventory based on the task configuration.
+     */
     private suspend fun handleFullInventory(
         characterName: String,
         task: TaskType.Gather,
         onStatus: (String) -> Unit
     ): StepResult {
-        when (task.onFullInventory) {
-            FullInventoryStrategy.BANK_ONLY -> {
-                onStatus("Banking items...")
-                val char = helper.refreshCharacter(characterName)
-                val safeTypes = setOf("resource", "consumable", "currency")
-                val itemsToDeposit = mutableListOf<com.artifactsmmo.client.models.SimpleItem>()
-                for (slot in char.inventory) {
-                    if (slot.quantity <= 0) continue
-                    val type = helper.getItemType(slot.code)
-                    if (type in safeTypes) {
-                        itemsToDeposit.add(com.artifactsmmo.client.models.SimpleItem(slot.code, slot.quantity))
-                    }
-                }
-                if (itemsToDeposit.isNotEmpty()) {
-                    helper.bankDepositItems(characterName, itemsToDeposit)
-                }
-                return StepResult.Banked
-            }
-            FullInventoryStrategy.CRAFT_THEN_BANK -> {
-                val char = helper.refreshCharacter(characterName)
+        return when {
+            // Specific crafted item: craft the target item, then bank
+            task.targetItemCode != null -> handleCraftTargetItem(characterName, task, onStatus)
+            // Fishing with cook: cook simple fish recipes, then bank
+            task.cookBeforeDeposit -> handleCookThenBank(characterName, onStatus)
+            // Default: just bank everything
+            else -> handleBankOnly(characterName, onStatus)
+        }
+    }
 
-                // Find craftable refinements from current inventory
-                val craftable = helper.findCraftableRefinements(char, task.skill)
-                var totalCrafted = 0
-
-                // Collect raw ingredient codes from recipes we're about to craft,
-                // so we can keep leftovers instead of depositing them
-                val rawIngredientCodes = mutableSetOf<String>()
-
-                if (craftable.isNotEmpty()) {
-                    // Collect ingredient codes
-                    for ((item, _) in craftable) {
-                        item.craft?.items?.forEach { rawIngredientCodes.add(it.code) }
-                    }
-
-                    // Move to workshop
-                    val workshopSkill = when (task.skill) {
-                        "mining" -> "mining"
-                        "woodcutting" -> "woodcutting"
-                        "fishing" -> "cooking"
-                        "alchemy" -> "alchemy"
-                        else -> task.skill
-                    }
-                    val workshop = helper.findNearestWorkshop(char, workshopSkill)
-                    if (workshop != null) {
-                        onStatus("Moving to ${workshopSkill} workshop to craft...")
-                        helper.moveTo(characterName, workshop.x, workshop.y)
-
-                        // Re-check what's craftable after moving (character state may have changed)
-                        val updatedChar = helper.refreshCharacter(characterName)
-                        val updatedCraftable = helper.findCraftableRefinements(updatedChar, task.skill)
-
-                        for ((item, maxQty) in updatedCraftable) {
-                            onStatus("Crafting ${maxQty}x ${item.name}...")
-                            helper.craft(characterName, item.code, maxQty)
-                            totalCrafted += maxQty
-                        }
-                    }
-                }
-
-                // Bank resources and consumables, EXCEPT leftover raw ingredients
-                val updatedChar = helper.refreshCharacter(characterName)
-                val safeTypes2 = setOf("resource", "consumable", "currency")
-                val itemsToDeposit = mutableListOf<com.artifactsmmo.client.models.SimpleItem>()
-                for (slot in updatedChar.inventory) {
-                    if (slot.quantity <= 0) continue
-                    if (slot.code in rawIngredientCodes) continue
-                    val type = helper.getItemType(slot.code)
-                    if (type in safeTypes2) {
-                        itemsToDeposit.add(com.artifactsmmo.client.models.SimpleItem(slot.code, slot.quantity))
-                    }
-                }
-
-                if (itemsToDeposit.isNotEmpty()) {
-                    onStatus("Banking items (keeping leftover raw materials)...")
-                    helper.bankDepositItems(characterName, itemsToDeposit)
-                } else {
-                    onStatus("Nothing to bank, keeping leftovers")
-                }
-
-                return if (totalCrafted > 0) StepResult.CraftedAndBanked(totalCrafted) else StepResult.Banked
+    /**
+     * Bank only: deposit all resources, consumables, and currency.
+     */
+    private suspend fun handleBankOnly(
+        characterName: String,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        onStatus("Banking items...")
+        val char = helper.refreshCharacter(characterName)
+        val safeTypes = setOf("resource", "consumable", "currency")
+        val itemsToDeposit = mutableListOf<SimpleItem>()
+        for (slot in char.inventory) {
+            if (slot.quantity <= 0) continue
+            val type = helper.getItemType(slot.code)
+            if (type in safeTypes) {
+                itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
             }
         }
+        if (itemsToDeposit.isNotEmpty()) {
+            helper.bankDepositItems(characterName, itemsToDeposit)
+        }
+        return StepResult.Banked
+    }
+
+    /**
+     * Craft a specific target item from inventory ingredients, then bank everything.
+     */
+    private suspend fun handleCraftTargetItem(
+        characterName: String,
+        task: TaskType.Gather,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        val targetItem = try {
+            helper.getItem(task.targetItemCode!!)
+        } catch (_: Exception) {
+            // Can't look up target item, just bank
+            return handleBankOnly(characterName, onStatus)
+        }
+
+        val craft = targetItem.craft
+        val workshopSkill = craft?.skill
+        if (craft == null || workshopSkill == null) {
+            return handleBankOnly(characterName, onStatus)
+        }
+
+        val char = helper.refreshCharacter(characterName)
+
+        // Calculate how many we can craft from current inventory
+        val maxCraftable = craft.items.minOfOrNull { ingredient ->
+            helper.getItemQuantity(char, ingredient.code) / ingredient.quantity
+        } ?: 0
+
+        var totalCrafted = 0
+
+        // Collect raw ingredient codes so we can keep leftovers
+        val rawIngredientCodes = craft.items.map { it.code }.toSet()
+
+        if (maxCraftable > 0) {
+            val workshop = helper.findNearestWorkshop(char, workshopSkill)
+            if (workshop != null) {
+                onStatus("Moving to $workshopSkill workshop to craft ${targetItem.name}...")
+                helper.moveTo(characterName, workshop.x, workshop.y)
+
+                // Re-check after moving
+                val updatedChar = helper.refreshCharacter(characterName)
+                val actualCraftable = craft.items.minOfOrNull { ingredient ->
+                    helper.getItemQuantity(updatedChar, ingredient.code) / ingredient.quantity
+                } ?: 0
+
+                if (actualCraftable > 0) {
+                    onStatus("Crafting ${actualCraftable}x ${targetItem.name}...")
+                    helper.craft(characterName, targetItem.code, actualCraftable)
+                    totalCrafted = actualCraftable
+                }
+            }
+        }
+
+        // Bank everything EXCEPT leftover raw ingredients (keep them for next cycle)
+        val updatedChar = helper.refreshCharacter(characterName)
+        val safeTypes = setOf("resource", "consumable", "currency")
+        val itemsToDeposit = mutableListOf<SimpleItem>()
+        for (slot in updatedChar.inventory) {
+            if (slot.quantity <= 0) continue
+            if (slot.code in rawIngredientCodes) continue // Keep leftovers
+            val type = helper.getItemType(slot.code)
+            if (type in safeTypes) {
+                itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
+            }
+        }
+
+        if (itemsToDeposit.isNotEmpty()) {
+            onStatus("Banking items (keeping leftover raw materials)...")
+            helper.bankDepositItems(characterName, itemsToDeposit)
+        } else {
+            onStatus("Nothing to bank, keeping leftovers")
+        }
+
+        return if (totalCrafted > 0) StepResult.CraftedAndBanked(totalCrafted) else StepResult.Banked
+    }
+
+    /**
+     * Cook simple fish recipes (single-ingredient only), then bank everything.
+     */
+    private suspend fun handleCookThenBank(
+        characterName: String,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        val char = helper.refreshCharacter(characterName)
+
+        // Find simple cookable items (single ingredient) from inventory
+        val cookable = helper.findCraftableRefinements(char, "fishing")
+            .filter { (item, _) -> item.craft?.items?.size == 1 }
+
+        var totalCrafted = 0
+
+        if (cookable.isNotEmpty()) {
+            val workshop = helper.findNearestWorkshop(char, "cooking")
+            if (workshop != null) {
+                onStatus("Moving to cooking workshop...")
+                helper.moveTo(characterName, workshop.x, workshop.y)
+
+                // Re-check after moving
+                val updatedChar = helper.refreshCharacter(characterName)
+                val updatedCookable = helper.findCraftableRefinements(updatedChar, "fishing")
+                    .filter { (item, _) -> item.craft?.items?.size == 1 }
+
+                for ((item, maxQty) in updatedCookable) {
+                    onStatus("Cooking ${maxQty}x ${item.name}...")
+                    helper.craft(characterName, item.code, maxQty)
+                    totalCrafted += maxQty
+                }
+            }
+        }
+
+        // Bank everything
+        val updatedChar = helper.refreshCharacter(characterName)
+        val safeTypes = setOf("resource", "consumable", "currency")
+        val itemsToDeposit = mutableListOf<SimpleItem>()
+        for (slot in updatedChar.inventory) {
+            if (slot.quantity <= 0) continue
+            val type = helper.getItemType(slot.code)
+            if (type in safeTypes) {
+                itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
+            }
+        }
+
+        if (itemsToDeposit.isNotEmpty()) {
+            onStatus("Banking items...")
+            helper.bankDepositItems(characterName, itemsToDeposit)
+        }
+
+        return if (totalCrafted > 0) StepResult.CraftedAndBanked(totalCrafted) else StepResult.Banked
     }
 }
 

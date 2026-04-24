@@ -419,22 +419,15 @@ class TerminalUI(
         terminal.println()
         terminal.println(bold("When inventory is full:"))
         terminal.println("  ${cyan("1")} - Bank only (deposit all items)")
-        terminal.println("  ${cyan("2")} - Craft then bank (refine raw materials first, then bank)")
         terminal.println()
 
         terminal.print(bold(green("> ")))
-        val stratInput = withContext(Dispatchers.IO) { reader.readLine() }?.trim() ?: return null
-
-        val strategy = when (stratInput) {
-            "2" -> FullInventoryStrategy.CRAFT_THEN_BANK
-            else -> FullInventoryStrategy.BANK_ONLY
-        }
+        withContext(Dispatchers.IO) { reader.readLine() }?.trim() ?: return null
 
         return TaskType.Gather(
             skill = skill,
             resourceCode = resource.code,
-            resourceName = resource.name,
-            onFullInventory = strategy
+            resourceName = resource.name
         )
     }
 
