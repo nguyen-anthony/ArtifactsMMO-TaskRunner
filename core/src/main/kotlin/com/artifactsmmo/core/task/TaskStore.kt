@@ -29,7 +29,7 @@ data class StoredTask(
     @SerialName("drop_strategies") val dropStrategies: Map<String, String>? = null,
     @SerialName("item_code") val itemCode: String? = null,
     @SerialName("item_name") val itemName: String? = null,
-    @SerialName("craft_mode") val craftMode: String? = null, // "LEVELING", "SPECIFIC"
+    @SerialName("craft_mode") val craftMode: String? = null, // "RECYCLE", "BANK"
     @SerialName("target_quantity") val targetQuantity: Int? = null,
     @SerialName("crafted_so_far") val craftedSoFar: Int? = null,
     @SerialName("task_master_type") val taskMasterType: String? = null, // "items", "monsters"
@@ -184,8 +184,8 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 itemCode = stored.itemCode ?: "",
                 itemName = stored.itemName ?: "",
                 mode = stored.craftMode?.let {
-                    try { CraftMode.valueOf(it) } catch (_: Exception) { CraftMode.SPECIFIC }
-                } ?: CraftMode.SPECIFIC,
+                    try { CraftMode.valueOf(it) } catch (_: Exception) { CraftMode.BANK }
+                } ?: CraftMode.BANK,
                 targetQuantity = stored.targetQuantity ?: 0,
                 craftedSoFar = stored.craftedSoFar ?: 0
             )

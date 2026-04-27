@@ -380,8 +380,9 @@ class CharacterTaskRunner(
                         updateStatus { it.copy(statusMessage = msg) }
                     }
                     is TaskType.Craft -> {
-                        // Build an updated task with current craftedSoFar for specific mode
-                        val craftTask = if (task.mode == CraftMode.SPECIFIC) {
+                        // Inject current craftedSoFar for both BANK and RECYCLE modes
+                        // (RECYCLE uses it to detect the first batch and cap at targetQuantity)
+                        val craftTask = if (task.mode == CraftMode.BANK || task.mode == CraftMode.RECYCLE) {
                             task.copy(craftedSoFar = craftedSoFar)
                         } else task
 

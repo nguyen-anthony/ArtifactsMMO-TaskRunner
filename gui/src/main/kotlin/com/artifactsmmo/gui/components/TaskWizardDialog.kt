@@ -90,19 +90,23 @@ private sealed class WizardStep {
 
     // Craft
     data object CraftCategory : WizardStep()
-    data class CraftModeStep(val category: String, val isOther: Boolean) : WizardStep()
     data class CraftItem(
         val category: String,
         val isOther: Boolean,
-        val mode: CraftMode,
         val items: List<ActionHelper.CraftableItemInfo>
     ) : WizardStep()
     data class CraftQty(
         val category: String,
         val isOther: Boolean,
-        val mode: CraftMode,
         val info: ActionHelper.CraftableItemInfo,
         val allItems: List<ActionHelper.CraftableItemInfo>
+    ) : WizardStep()
+    /** Bank vs Recycle choice — only shown for weaponcrafting/gearcrafting/jewelrycrafting. */
+    data class CraftDisposition(
+        val category: String,
+        val info: ActionHelper.CraftableItemInfo,
+        val allItems: List<ActionHelper.CraftableItemInfo>,
+        val qty: Int
     ) : WizardStep()
 
     // Task Master
@@ -479,64 +483,57 @@ fun TaskWizardDialog(
                         is WizardStep.CraftCategory -> StepCraftCategory(
                             onBack = { step = WizardStep.SelectType },
                             onCategorySelected = { category, isOther ->
-                                if (isOther) {
-                                    load("Loading craftable items...") {
-                                        val items = appState.taskManager.getAvailableMiscCraftingItems(characterName)
-                                        step = WizardStep.CraftItem(category, true, CraftMode.SPECIFIC, items)
-                                    }
-                                } else {
-                                    step = WizardStep.CraftModeStep(category, false)
-                                }
-                            }
-                        )
-
-                        is WizardStep.CraftModeStep -> StepCraftMode(
-                            step = s,
-                            onBack = { step = WizardStep.CraftCategory },
-                            onModeSelected = { mode ->
                                 load("Loading craftable items...") {
-                                    val items = appState.taskManager.getAvailableCraftingItems(characterName, s.category)
-                                    step = WizardStep.CraftItem(s.category, s.isOther, mode, items)
+                                    val items = if (isOther)
+                                        appState.taskManager.getAvailableMiscCraftingItems(characterName)
+                                    else
+                                        appState.taskManager.getAvailableCraftingItems(characterName, category)
+                                    step = WizardStep.CraftItem(category, isOther, items)
                                 }
                             }
                         )
 
                         is WizardStep.CraftItem -> StepCraftItem(
                             step = s,
-                            onBack = {
-                                step = if (s.isOther) WizardStep.CraftCategory
-                                       else WizardStep.CraftModeStep(s.category, s.isOther)
-                            },
+                            onBack = { step = WizardStep.CraftCategory },
                             onItemSelected = { info ->
-                                if (s.mode == CraftMode.SPECIFIC) {
-                                    step = WizardStep.CraftQty(s.category, s.isOther, s.mode, info, s.items)
-                                } else {
-                                    val actualSkill = if (s.isOther) info.item.craft?.skill ?: "cooking" else s.category
-                                    assign(
-                                        TaskType.Craft(
-                                            skill = actualSkill,
-                                            itemCode = info.item.code,
-                                            itemName = info.item.name,
-                                            mode = CraftMode.LEVELING,
-                                            targetQuantity = 0
-                                        )
-                                    )
-                                }
+                                step = WizardStep.CraftQty(s.category, s.isOther, info, s.items)
                             }
                         )
 
                         is WizardStep.CraftQty -> StepCraftQty(
                             step = s,
-                            onBack = { step = WizardStep.CraftItem(s.category, s.isOther, s.mode, s.allItems) },
+                            onBack = { step = WizardStep.CraftItem(s.category, s.isOther, s.allItems) },
                             onConfirm = { qty ->
-                                val actualSkill = if (s.isOther) s.info.item.craft?.skill ?: "cooking" else s.category
+                                if (s.isOther) {
+                                    // Other (cooking/refining/etc.) always banks — no Recycle option
+                                    val actualSkill = s.info.item.craft?.skill ?: "cooking"
+                                    assign(
+                                        TaskType.Craft(
+                                            skill = actualSkill,
+                                            itemCode = s.info.item.code,
+                                            itemName = s.info.item.name,
+                                            mode = CraftMode.BANK,
+                                            targetQuantity = qty
+                                        )
+                                    )
+                                } else {
+                                    step = WizardStep.CraftDisposition(s.category, s.info, s.allItems, qty)
+                                }
+                            }
+                        )
+
+                        is WizardStep.CraftDisposition -> StepCraftDisposition(
+                            step = s,
+                            onBack = { step = WizardStep.CraftQty(s.category, false, s.info, s.allItems) },
+                            onDispositionSelected = { mode ->
                                 assign(
                                     TaskType.Craft(
-                                        skill = actualSkill,
+                                        skill = s.category,
                                         itemCode = s.info.item.code,
                                         itemName = s.info.item.name,
-                                        mode = CraftMode.SPECIFIC,
-                                        targetQuantity = qty
+                                        mode = mode,
+                                        targetQuantity = s.qty
                                     )
                                 )
                             }
@@ -1240,38 +1237,6 @@ private fun StepCraftCategory(
     }
 }
 
-// ── Step: Craft — select mode ─────────────────────────────────────────────────
-
-@Composable
-private fun StepCraftMode(
-    step: WizardStep.CraftModeStep,
-    onBack: () -> Unit,
-    onModeSelected: (CraftMode) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = "Category: ${step.category.replaceFirstChar { it.uppercase() }}",
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            text = "Crafting purpose:",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        WizardButton("Leveling", "Craft & recycle repeatedly for XP",
-            onClick = { onModeSelected(CraftMode.LEVELING) })
-        WizardButton("Specific Items", "Craft a set quantity and deposit to bank",
-            onClick = { onModeSelected(CraftMode.SPECIFIC) })
-        TextButton(onClick = onBack) { Text("← Back") }
-    }
-}
-
 // ── Step: Craft — select item ─────────────────────────────────────────────────
 
 @Composable
@@ -1280,13 +1245,12 @@ private fun StepCraftItem(
     onBack: () -> Unit,
     onItemSelected: (ActionHelper.CraftableItemInfo) -> Unit
 ) {
-    val label     = if (step.isOther) "misc" else step.category
-    val modeLabel = if (step.mode == CraftMode.LEVELING) " — Leveling" else ""
+    val label = if (step.isOther) "misc" else step.category
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text(
-                text = "${label.replaceFirstChar { it.uppercase() }}$modeLabel — select an item:",
+                text = "${label.replaceFirstChar { it.uppercase() }} — select an item:",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1381,7 +1345,7 @@ private fun StepCraftQty(
         )
         WizardNavRow(
             onBack = onBack,
-            confirmLabel = "Confirm",
+            confirmLabel = if (step.isOther) "Confirm" else "Next",
             onConfirm = {
                 val qty = qtyText.trim().toIntOrNull()
                 when {
@@ -1390,6 +1354,49 @@ private fun StepCraftQty(
                 }
             }
         )
+    }
+}
+
+// ── Step: Craft — Bank vs Recycle ─────────────────────────────────────────────
+
+@Composable
+private fun StepCraftDisposition(
+    step: WizardStep.CraftDisposition,
+    onBack: () -> Unit,
+    onDispositionSelected: (CraftMode) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = step.info.item.name,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Quantity: ${step.qty}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "What to do with crafted items?",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        WizardButton(
+            title = "Bank",
+            subtitle = "Craft ${step.qty}× ${step.info.item.name}, then deposit to bank",
+            onClick = { onDispositionSelected(CraftMode.BANK) }
+        )
+        WizardButton(
+            title = "Recycle",
+            subtitle = "Craft & recycle repeatedly for XP until materials run out",
+            onClick = { onDispositionSelected(CraftMode.RECYCLE) }
+        )
+        TextButton(onClick = onBack) { Text("← Back") }
     }
 }
 

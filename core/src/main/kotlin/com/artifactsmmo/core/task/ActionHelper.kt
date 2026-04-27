@@ -539,14 +539,13 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
         if (ownedCodes.isEmpty()) return null
 
-        // Use the higher of overall character level and skill level — tool usability is gated
-        // by the gathering skill level (e.g. miningLevel), not just overall combat level.
+        // Tool usability is gated by the gathering skill level (e.g. miningLevel) alone —
+        // a high character level does not allow equipping a tool above the skill's level.
         val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
-        val effectiveLevel = maxOf(char.level, skillLevel)
 
-        // Get all weapons up to effective level from cache
+        // Get all weapons up to the skill level from cache
         val allTools = contentCache.getItemsByType("weapon")
-            .filter { it.level <= effectiveLevel && isToolForSkill(it, skill) }
+            .filter { it.level <= skillLevel && isToolForSkill(it, skill) }
 
         // Filter to items the character actually has (inventory + currently equipped)
         val ownedTools = allTools.filter { it.code in ownedCodes }
@@ -594,13 +593,12 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      * in the bank. Returns the best one, or null if none found.
      */
     suspend fun findReadyMadeToolInBank(char: Character, skill: String): ToolUpgradeInfo? {
-        // Use the higher of overall character level and skill level (tool usability is skill-gated)
+        // Tool usability is gated by the gathering skill level alone.
         val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
-        val effectiveLevel = maxOf(char.level, skillLevel)
 
-        // Get all tools for this skill up to the effective level from cache
+        // Get all tools for this skill up to the skill level from cache
         val allTools = contentCache.getItemsByType("weapon")
-            .filter { it.level <= effectiveLevel && isToolForSkill(it, skill) }
+            .filter { it.level <= skillLevel && isToolForSkill(it, skill) }
 
         // Determine current best tool level (equipped or in inventory)
         val currentBest = findBestToolInInventory(char, skill)
@@ -646,13 +644,12 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      * craftable upgrade and the ingredients to withdraw.
      */
     suspend fun findBestCraftableToolFromBank(char: Character, skill: String): ToolUpgradeInfo? {
-        // Use the higher of overall character level and skill level (tool usability is skill-gated)
+        // Tool usability is gated by the gathering skill level alone.
         val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
-        val effectiveLevel = maxOf(char.level, skillLevel)
 
-        // Get all tools for this skill up to the effective level from cache
+        // Get all tools for this skill up to the skill level from cache
         val allTools = contentCache.getItemsByType("weapon")
-            .filter { it.level <= effectiveLevel && isToolForSkill(it, skill) }
+            .filter { it.level <= skillLevel && isToolForSkill(it, skill) }
 
         // Determine current best tool level (equipped or in inventory)
         val currentBest = findBestToolInInventory(char, skill)

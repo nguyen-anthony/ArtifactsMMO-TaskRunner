@@ -6,9 +6,10 @@ import com.artifactsmmo.client.models.SimpleItem
  * Executes crafting task loops (weaponcrafting, gearcrafting, jewelrycrafting, misc).
  *
  * Two modes:
- * - LEVELING: craft items and recycle them at the same workshop for XP. Uses recycled
- *   materials to supplement bank withdrawals. Loops until no more materials available.
- * - SPECIFIC: craft a target quantity of items and deposit them to the bank.
+ * - RECYCLE: withdraw from bank and craft the user-chosen quantity, recycle all of them
+ *   immediately at the workshop, then use the recovered materials to craft again — repeat
+ *   entirely from inventory with no further bank trips until no materials remain.
+ * - BANK: craft a target quantity of items and deposit them to the bank.
  *   Loops until target reached or out of materials.
  *
  * Both modes:
@@ -21,7 +22,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
     /**
      * Execute a single step of the crafting loop.
      * A "step" may involve: withdrawing materials, moving to workshop, crafting a batch,
-     * and recycling (leveling) or depositing (specific).
+     * and recycling (RECYCLE) or depositing (BANK).
      */
     suspend fun executeStep(
         characterName: String,
@@ -39,10 +40,14 @@ class CraftingExecutor(private val helper: ActionHelper) {
         val recipe = targetItem.craft
             ?: return StepResult.Error("Item ${task.itemCode} has no crafting recipe")
 
-        // Calculate how many we can craft from inventory + bank
+        // Calculate how many we can craft from available materials.
+        // RECYCLE subsequent batches (craftedSoFar > 0): only inventory — no bank access.
+        // All other cases: inventory + bank.
+        val useInventoryOnly = task.mode == CraftMode.RECYCLE && task.craftedSoFar > 0
+
         val ingredientAvailability = recipe.items.map { ingredient ->
             val invQty = helper.getItemQuantity(char, ingredient.code)
-            val bankQty = helper.getBankItemQuantity(ingredient.code)
+            val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
             IngredientInfo(ingredient.code, ingredient.quantity, invQty, bankQty)
         }
 
@@ -53,22 +58,25 @@ class CraftingExecutor(private val helper: ActionHelper) {
             return StepResult.OutOfMaterials
         }
 
-        // For SPECIFIC mode, cap at remaining quantity
-        val remaining = if (task.mode == CraftMode.SPECIFIC) {
-            task.targetQuantity - task.craftedSoFar
-        } else {
-            Int.MAX_VALUE
-        }
-
-        if (remaining <= 0) {
-            return StepResult.CraftTaskComplete
+        // Determine how many to craft this batch:
+        // - BANK: cap at remaining quantity needed; complete when target reached
+        // - RECYCLE: cap the very first batch at targetQuantity; all subsequent batches are
+        //   unlimited (they run on recovered materials until nothing is left)
+        val remaining = when (task.mode) {
+            CraftMode.BANK -> {
+                val r = task.targetQuantity - task.craftedSoFar
+                if (r <= 0) return StepResult.CraftTaskComplete
+                r
+            }
+            CraftMode.RECYCLE -> {
+                if (task.craftedSoFar == 0) task.targetQuantity else Int.MAX_VALUE
+            }
         }
 
         // Calculate batch size based on inventory capacity
         val totalIngredientsPerCraft = recipe.items.sumOf { it.quantity }
         val currentInvItems = char.inventory.sumOf { it.quantity }
         val freeSlots = char.inventoryMaxItems - currentInvItems
-        // How many crafts fit in available inventory space (considering we need to hold ingredients)
         val batchByInventory = if (totalIngredientsPerCraft > 0) {
             maxOf(1, freeSlots / totalIngredientsPerCraft)
         } else 1
@@ -88,8 +96,8 @@ class CraftingExecutor(private val helper: ActionHelper) {
             }
         }
 
-        // Withdraw from bank if needed
-        if (toWithdraw.isNotEmpty()) {
+        // Withdraw from bank if needed (skipped in RECYCLE subsequent batches — no bank trips)
+        if (!useInventoryOnly && toWithdraw.isNotEmpty()) {
             onStatus("Withdrawing materials from bank...")
             helper.bankWithdrawItems(characterName, toWithdraw)
         }
@@ -122,15 +130,16 @@ class CraftingExecutor(private val helper: ActionHelper) {
         helper.craft(characterName, task.itemCode, actualBatch)
 
         return when (task.mode) {
-            CraftMode.LEVELING -> handleLevelingPostCraft(characterName, task, actualBatch, onStatus)
-            CraftMode.SPECIFIC -> handleSpecificPostCraft(characterName, task, actualBatch, onStatus)
+            CraftMode.RECYCLE -> handleRecyclePostCraft(characterName, task, actualBatch, onStatus)
+            CraftMode.BANK    -> handleBankPostCraft(characterName, task, actualBatch, onStatus)
         }
     }
 
     /**
-     * After crafting in LEVELING mode: recycle the crafted items at the same workshop.
+     * After crafting in RECYCLE mode: recycle the crafted items at the same workshop.
+     * Recovered materials stay in inventory and feed the next batch automatically.
      */
-    private suspend fun handleLevelingPostCraft(
+    private suspend fun handleRecyclePostCraft(
         characterName: String,
         task: TaskType.Craft,
         craftedCount: Int,
@@ -150,15 +159,14 @@ class CraftingExecutor(private val helper: ActionHelper) {
     }
 
     /**
-     * After crafting in SPECIFIC mode: deposit crafted items to bank.
+     * After crafting in BANK mode: deposit crafted items to bank.
      */
-    private suspend fun handleSpecificPostCraft(
+    private suspend fun handleBankPostCraft(
         characterName: String,
         task: TaskType.Craft,
         craftedCount: Int,
         onStatus: (String) -> Unit
     ): StepResult {
-        // Deposit the crafted items to the bank
         val char = helper.refreshCharacter(characterName)
         val craftedQty = helper.getItemQuantity(char, task.itemCode)
         if (craftedQty > 0) {

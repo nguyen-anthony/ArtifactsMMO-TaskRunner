@@ -340,11 +340,23 @@ class TaskMasterExecutor(
         val craftsFit        = if (rawPerCraftTotal > 0) (freeSlots / rawPerCraftTotal).coerceAtLeast(1) else 1
         val craftsTarget     = craftsNeeded.coerceAtMost(craftsFit)
 
-        // ── Withdraw banked ingredients before deciding what to gather ──
-        // If any ingredient has stock in the bank that we're short on, retrieve it first
-        // so we don't re-gather something we've already collected.
-        if (source.needsCrafting) {
-            val toWithdraw = ingredients.mapNotNull { ing ->
+        // ── Combined bank trip: deposit side-drop junk + withdraw needed ingredients ──
+        // Side drops (gems, shells, algae, sap, etc.) accumulate in inventory across gather/craft
+        // cycles and are never consumed by the task. Deposit them whenever we visit the bank, or
+        // proactively once they occupy enough slots to threaten inventory capacity.
+        val ingredientCodes = ingredients.map { it.rawItemCode }.toSet()
+        val junkToDeposit = buildList {
+            for (slot in currentChar.inventory) {
+                if (slot.quantity > 0 &&
+                    slot.code != taskItemCode &&
+                    slot.code !in ingredientCodes &&
+                    helper.shouldDepositItem(currentChar, slot.code)
+                ) add(SimpleItem(slot.code, slot.quantity))
+            }
+        }
+
+        val toWithdraw = if (source.needsCrafting) {
+            ingredients.mapNotNull { ing ->
                 val have    = helper.getItemQuantity(currentChar, ing.rawItemCode)
                 val need    = ing.rawPerCraft * craftsTarget
                 val inBank  = helper.getBankItemQuantity(ing.rawItemCode)
@@ -352,10 +364,25 @@ class TaskMasterExecutor(
                 val qty     = deficit.coerceAtMost(inBank)
                 if (qty > 0) SimpleItem(ing.rawItemCode, qty) else null
             }
+        } else emptyList()
+
+        // Make a bank trip if we have ingredients to withdraw, OR junk is occupying enough
+        // slots to meaningfully crowd out task materials (threshold: 5 slots or less free
+        // than one craft's worth of raw items).
+        val junkSlotCount = junkToDeposit.sumOf { it.quantity }
+        val needsBankTrip = toWithdraw.isNotEmpty() ||
+            (junkSlotCount >= 5) ||
+            (junkSlotCount > 0 && freeSlots < rawPerCraftTotal)
+
+        if (needsBankTrip) {
+            if (junkToDeposit.isNotEmpty()) {
+                onStatus("Depositing side drops: ${junkToDeposit.joinToString { "${it.quantity}x ${it.code}" }}...")
+                currentChar = helper.bankDepositItems(characterName, junkToDeposit)
+                freeSlots = currentChar.inventoryMaxItems - currentChar.inventory.sumOf { it.quantity }
+            }
             if (toWithdraw.isNotEmpty()) {
                 onStatus("Withdrawing banked ingredients: ${toWithdraw.joinToString { "${it.quantity}x ${it.code}" }}...")
                 currentChar = helper.bankWithdrawItems(characterName, toWithdraw)
-                // Recalculate free slots now that inventory has changed
                 freeSlots = currentChar.inventoryMaxItems - currentChar.inventory.sumOf { it.quantity }
             }
         }

@@ -1,13 +1,13 @@
 package com.artifactsmmo.core.task
 
 /**
- * Whether a crafting task is for leveling (craft & recycle) or crafting specific items.
+ * What to do with items after crafting.
  */
 enum class CraftMode {
-    /** Craft and recycle repeatedly for XP. */
-    LEVELING,
-    /** Craft a specific quantity and deposit to bank. */
-    SPECIFIC
+    /** Craft the initial quantity, recycle for recovered materials, repeat until nothing left. */
+    RECYCLE,
+    /** Craft a target quantity and deposit to bank. */
+    BANK
 }
 
 /**

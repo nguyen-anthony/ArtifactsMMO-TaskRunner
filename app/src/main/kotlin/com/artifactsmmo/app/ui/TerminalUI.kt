@@ -134,7 +134,7 @@ class TerminalUI(
                             is TaskType.Gather -> green("${task.skill}: ${task.resourceName}")
                             is TaskType.Fight -> red("Fight: ${task.monsterName}")
                             is TaskType.Craft -> {
-                                val modeStr = if (task.mode == CraftMode.LEVELING) "level" else {
+                                val modeStr = if (task.mode == CraftMode.RECYCLE) "recycle" else {
                                     "${task.craftedSoFar}/${task.targetQuantity}"
                                 }
                                 yellow("${task.skill}: ${task.itemName} ($modeStr)")
@@ -573,30 +573,6 @@ class TerminalUI(
         val isOther = catIndex == 3
         val selectedSkill = craftSkills[catIndex] // "weaponcrafting", "gearcrafting", "jewelrycrafting", or "other"
 
-        // For weaponcrafting/gearcrafting/jewelrycrafting: ask leveling vs specific
-        // For "other": always specific mode (no recycling misc items)
-        val mode: CraftMode
-        if (isOther) {
-            mode = CraftMode.SPECIFIC
-        } else {
-            terminal.println()
-            terminal.println(bold("Crafting purpose:"))
-            terminal.println("  ${cyan("1")} - Leveling (craft & recycle for XP)")
-            terminal.println("  ${cyan("2")} - Craft specific item(s)")
-            terminal.println("  ${cyan("b")} - Back")
-            terminal.println()
-
-            terminal.print(bold(green("> ")))
-            val modeInput = withContext(Dispatchers.IO) { reader.readLine() }?.trim()?.lowercase() ?: return null
-
-            mode = when (modeInput) {
-                "1" -> CraftMode.LEVELING
-                "2" -> CraftMode.SPECIFIC
-                "b" -> return null
-                else -> { terminal.println(red("Invalid choice.")); return null }
-            }
-        }
-
         // Fetch available craftable items from bank + inventory
         terminal.println(gray("Checking available materials..."))
         val craftableItems = try {
@@ -651,26 +627,45 @@ class TerminalUI(
             selectedSkill
         }
 
-        // For SPECIFIC mode: ask quantity
-        val targetQuantity: Int
-        if (mode == CraftMode.SPECIFIC) {
-            terminal.println()
-            terminal.println(bold("How many to craft? (max ${selectedItem.maxCraftable})"))
-            terminal.print(bold(green("> ")))
-            val qtyInput = withContext(Dispatchers.IO) { reader.readLine() }?.trim() ?: return null
+        // Ask quantity (all categories)
+        terminal.println()
+        terminal.println(bold("How many to craft? (max ${selectedItem.maxCraftable})"))
+        terminal.print(bold(green("> ")))
+        val qtyInput = withContext(Dispatchers.IO) { reader.readLine() }?.trim() ?: return null
 
-            if (qtyInput.lowercase() == "b") return null
-            val qty = qtyInput.toIntOrNull()
-            if (qty == null || qty <= 0) {
-                terminal.println(red("Invalid quantity."))
-                return null
-            }
-            targetQuantity = minOf(qty, selectedItem.maxCraftable)
-            if (targetQuantity < qty) {
-                terminal.println(yellow("Capped at $targetQuantity (max available from materials)."))
-            }
+        if (qtyInput.lowercase() == "b") return null
+        val qty = qtyInput.toIntOrNull()
+        if (qty == null || qty <= 0) {
+            terminal.println(red("Invalid quantity."))
+            return null
+        }
+        val targetQuantity = minOf(qty, selectedItem.maxCraftable)
+        if (targetQuantity < qty) {
+            terminal.println(yellow("Capped at $targetQuantity (max available from materials)."))
+        }
+
+        // For weaponcrafting/gearcrafting/jewelrycrafting: ask Bank or Recycle
+        // For "other": always bank (no recycling misc items)
+        val mode: CraftMode
+        if (isOther) {
+            mode = CraftMode.BANK
         } else {
-            targetQuantity = 0 // Not used for leveling mode
+            terminal.println()
+            terminal.println(bold("What to do with crafted items?"))
+            terminal.println("  ${cyan("1")} - Bank (deposit crafted items)")
+            terminal.println("  ${cyan("2")} - Recycle (craft & recycle for XP)")
+            terminal.println("  ${cyan("b")} - Back")
+            terminal.println()
+
+            terminal.print(bold(green("> ")))
+            val modeInput = withContext(Dispatchers.IO) { reader.readLine() }?.trim()?.lowercase() ?: return null
+
+            mode = when (modeInput) {
+                "1" -> CraftMode.BANK
+                "2" -> CraftMode.RECYCLE
+                "b" -> return null
+                else -> { terminal.println(red("Invalid choice.")); return null }
+            }
         }
 
         return TaskType.Craft(
@@ -702,7 +697,7 @@ class TerminalUI(
     private suspend fun assignCraftingTask(characterName: String) {
         val task = buildCraftingTask(characterName) ?: return
         taskManager.assignTask(characterName, task)
-        val modeStr = if (task.mode == CraftMode.LEVELING) "leveling" else "craft ${task.targetQuantity}x"
+        val modeStr = if (task.mode == CraftMode.RECYCLE) "recycle" else "craft ${task.targetQuantity}x"
         terminal.println(green("Assigned ${characterName} to $modeStr ${task.itemName} (${task.skill})."))
         terminal.println()
     }
@@ -766,7 +761,7 @@ class TerminalUI(
             is TaskType.Gather -> "Gathering ${task.resourceName} (${task.skill})"
             is TaskType.Fight -> "Fighting ${task.monsterName}"
             is TaskType.Craft -> {
-                val modeStr = if (task.mode == CraftMode.LEVELING) "leveling" else "${task.craftedSoFar}/${task.targetQuantity}"
+                val modeStr = if (task.mode == CraftMode.RECYCLE) "recycle" else "${task.craftedSoFar}/${task.targetQuantity}"
                 "Crafting ${task.itemName} ($modeStr) [${task.skill}]"
             }
             is TaskType.TaskMaster       -> "Task Master (${task.type})"
