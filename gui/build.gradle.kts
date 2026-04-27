@@ -32,8 +32,9 @@ dependencies {
 
 // Stamp the version into version.properties at build time so the app can read it at runtime.
 tasks.named<ProcessResources>("processResources") {
+    val version = appVersion // Capture the value in task configuration scope
     filesMatching("version.properties") {
-        expand("appVersion" to appVersion)
+        expand("appVersion" to version)
     }
 }
 
