@@ -37,9 +37,9 @@ private sealed class WizardStep {
 
     // Gather
     data object GatherSkill : WizardStep()
-    data class GatherMode(val skill: String) : WizardStep()
+    data class GatherMode(val skill: String, val maxSkillLevel: Int) : WizardStep()
     data class GatherResource(val skill: String, val resources: List<Resource>) : WizardStep()
-    data class GatherCraftedItem(val skill: String, val items: List<Item>) : WizardStep()
+    data class GatherCraftedItem(val skill: String, val items: List<Item>, val maxSkillLevel: Int) : WizardStep()
     data class FishingStrategy(val resource: Resource) : WizardStep()
 
     // Fight
@@ -89,24 +89,27 @@ private sealed class WizardStep {
     ) : WizardStep()
 
     // Craft
-    data object CraftCategory : WizardStep()
+    data class CraftCategory(val skillLevels: Map<String, Int>) : WizardStep()
     data class CraftItem(
         val category: String,
         val isOther: Boolean,
-        val items: List<ActionHelper.CraftableItemInfo>
+        val items: List<ActionHelper.CraftableItemInfo>,
+        val skillLevels: Map<String, Int>
     ) : WizardStep()
     data class CraftQty(
         val category: String,
         val isOther: Boolean,
         val info: ActionHelper.CraftableItemInfo,
-        val allItems: List<ActionHelper.CraftableItemInfo>
+        val allItems: List<ActionHelper.CraftableItemInfo>,
+        val skillLevels: Map<String, Int>
     ) : WizardStep()
     /** Bank vs Recycle choice — only shown for weaponcrafting/gearcrafting/jewelrycrafting. */
     data class CraftDisposition(
         val category: String,
         val info: ActionHelper.CraftableItemInfo,
         val allItems: List<ActionHelper.CraftableItemInfo>,
-        val qty: Int
+        val qty: Int,
+        val skillLevels: Map<String, Int>
     ) : WizardStep()
 
     // Task Master
@@ -221,7 +224,14 @@ fun TaskWizardDialog(
                                     step = WizardStep.FightMonster(monsters)
                                 }
                             },
-                            onCraft = { step = WizardStep.CraftCategory },
+                            onCraft = {
+                                load("Loading skill levels...") {
+                                    val char = appState.taskManager.getCharacterDetails(characterName)
+                                    val skills = listOf("weaponcrafting", "gearcrafting", "jewelrycrafting", "cooking", "mining", "woodcutting", "alchemy")
+                                    val levels = skills.associateWith { com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, it) ?: 0 }
+                                    step = WizardStep.CraftCategory(levels)
+                                }
+                            },
                             onTaskMaster = {
                                 load("Checking active tasks...") {
                                     val char = appState.taskManager.getCharacterDetails(characterName)
@@ -245,7 +255,11 @@ fun TaskWizardDialog(
                                     }
                                 } else {
                                     // Mining, woodcutting, alchemy get a mode choice
-                                    step = WizardStep.GatherMode(skill)
+                                    load("Loading skill info...") {
+                                        val char = appState.taskManager.getCharacterDetails(characterName)
+                                        val skillLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, skill) ?: 0
+                                        step = WizardStep.GatherMode(skill, skillLevel)
+                                    }
                                 }
                             }
                         )
@@ -259,10 +273,10 @@ fun TaskWizardDialog(
                                     step = WizardStep.GatherResource(s.skill, resources)
                                 }
                             },
-                            onCraftedItems = {
-                                load("Loading craftable items...") {
-                                    val items = appState.taskManager.getAvailableCraftedItems(characterName, s.skill)
-                                    step = WizardStep.GatherCraftedItem(s.skill, items)
+                            onCraftedItems = { minLevel, maxLevel ->
+                                load("Loading craftable items (Lv.$minLevel–$maxLevel)...") {
+                                    val (items, skillLevel) = appState.taskManager.getAvailableCraftedItems(characterName, s.skill, minLevel, maxLevel)
+                                    step = WizardStep.GatherCraftedItem(s.skill, items, skillLevel)
                                 }
                             }
                         )
@@ -270,8 +284,7 @@ fun TaskWizardDialog(
                         is WizardStep.GatherResource -> StepGatherResource(
                             step = s,
                             onBack = {
-                                step = if (s.skill == "fishing") WizardStep.GatherSkill
-                                       else WizardStep.GatherMode(s.skill)
+                                step = WizardStep.GatherSkill
                             },
                             onResourceSelected = { resource ->
                                 if (s.skill == "fishing") {
@@ -291,7 +304,7 @@ fun TaskWizardDialog(
 
                         is WizardStep.GatherCraftedItem -> StepGatherCraftedItem(
                             step = s,
-                            onBack = { step = WizardStep.GatherMode(s.skill) },
+                            onBack = { step = WizardStep.GatherMode(s.skill, s.maxSkillLevel) },
                             onItemSelected = { item ->
                                 load("Resolving resource locations...") {
                                     val source = appState.taskManager.findTaskItemSource(item.code)
@@ -481,29 +494,30 @@ fun TaskWizardDialog(
                         )
 
                         is WizardStep.CraftCategory -> StepCraftCategory(
+                            step = s,
                             onBack = { step = WizardStep.SelectType },
-                            onCategorySelected = { category, isOther ->
-                                load("Loading craftable items...") {
+                            onCategorySelected = { category, isOther, minLevel, maxLevel ->
+                                load("Loading craftable items (Lv.$minLevel–$maxLevel)...") {
                                     val items = if (isOther)
-                                        appState.taskManager.getAvailableMiscCraftingItems(characterName)
+                                        appState.taskManager.getAvailableMiscCraftingItems(characterName, minLevel, maxLevel)
                                     else
-                                        appState.taskManager.getAvailableCraftingItems(characterName, category)
-                                    step = WizardStep.CraftItem(category, isOther, items)
+                                        appState.taskManager.getAvailableCraftingItems(characterName, category, minLevel, maxLevel)
+                                    step = WizardStep.CraftItem(category, isOther, items, s.skillLevels)
                                 }
                             }
                         )
 
                         is WizardStep.CraftItem -> StepCraftItem(
                             step = s,
-                            onBack = { step = WizardStep.CraftCategory },
+                            onBack = { step = WizardStep.CraftCategory(s.skillLevels) },
                             onItemSelected = { info ->
-                                step = WizardStep.CraftQty(s.category, s.isOther, info, s.items)
+                                step = WizardStep.CraftQty(s.category, s.isOther, info, s.items, s.skillLevels)
                             }
                         )
 
                         is WizardStep.CraftQty -> StepCraftQty(
                             step = s,
-                            onBack = { step = WizardStep.CraftItem(s.category, s.isOther, s.allItems) },
+                            onBack = { step = WizardStep.CraftItem(s.category, s.isOther, s.allItems, s.skillLevels) },
                             onConfirm = { qty ->
                                 if (s.isOther) {
                                     // Other (cooking/refining/etc.) always banks — no Recycle option
@@ -518,14 +532,14 @@ fun TaskWizardDialog(
                                         )
                                     )
                                 } else {
-                                    step = WizardStep.CraftDisposition(s.category, s.info, s.allItems, qty)
+                                    step = WizardStep.CraftDisposition(s.category, s.info, s.allItems, qty, s.skillLevels)
                                 }
                             }
                         )
 
                         is WizardStep.CraftDisposition -> StepCraftDisposition(
                             step = s,
-                            onBack = { step = WizardStep.CraftQty(s.category, false, s.info, s.allItems) },
+                            onBack = { step = WizardStep.CraftQty(s.category, false, s.info, s.allItems, s.skillLevels) },
                             onDispositionSelected = { mode ->
                                 assign(
                                     TaskType.Craft(
@@ -779,13 +793,18 @@ private fun StepGatherResource(
 
 // ── Step: Gather — select mode (raw vs crafted) ──────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StepGatherMode(
     step: WizardStep.GatherMode,
     onBack: () -> Unit,
     onRawResources: () -> Unit,
-    onCraftedItems: () -> Unit
+    onCraftedItems: (minLevel: Int, maxLevel: Int) -> Unit
 ) {
+    var levelRange by remember(step.skill) {
+        mutableStateOf(1f..step.maxSkillLevel.toFloat().coerceAtLeast(1f))
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -802,10 +821,33 @@ private fun StepGatherMode(
             "Gather raw materials and deposit to bank",
             onClick = onRawResources
         )
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+        // Craft level range filter
+        Text(
+            text = "Crafted Item Level Range",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium
+        )
+        if (step.maxSkillLevel > 1) {
+            Text(
+                text = "Lv.${levelRange.start.toInt()} – Lv.${levelRange.endInclusive.toInt()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            RangeSlider(
+                value = levelRange,
+                onValueChange = { levelRange = it },
+                valueRange = 1f..step.maxSkillLevel.toFloat(),
+                steps = (step.maxSkillLevel - 2).coerceAtLeast(0),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
         WizardButton(
             "Specific Crafted Item",
             "Gather ingredients, craft a specific item, then bank",
-            onClick = onCraftedItems
+            onClick = { onCraftedItems(levelRange.start.toInt(), levelRange.endInclusive.toInt()) }
         )
         TextButton(onClick = onBack) { Text("← Back") }
     }
@@ -822,7 +864,7 @@ private fun StepGatherCraftedItem(
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text(
-                text = "Select item to craft (${step.skill.replaceFirstChar { it.uppercase() }}):",
+                text = "Select item to craft (${step.skill.replaceFirstChar { it.uppercase() }}, ${step.items.size} items):",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -834,7 +876,7 @@ private fun StepGatherCraftedItem(
                     .padding(20.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No craftable items available at your level.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No craftable items in this level range.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
@@ -1212,11 +1254,18 @@ private fun StepFightSim(
 
 // ── Step: Craft — select category ─────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StepCraftCategory(
+    step: WizardStep.CraftCategory,
     onBack: () -> Unit,
-    onCategorySelected: (category: String, isOther: Boolean) -> Unit
+    onCategorySelected: (category: String, isOther: Boolean, minLevel: Int, maxLevel: Int) -> Unit
 ) {
+    val overallMax = step.skillLevels.values.maxOrNull()?.coerceAtLeast(1) ?: 1
+    var levelRange by remember {
+        mutableStateOf(1f..overallMax.toFloat())
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1228,11 +1277,31 @@ private fun StepCraftCategory(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        WizardButton("Weaponcrafting",   onClick = { onCategorySelected("weaponcrafting",  false) })
-        WizardButton("Gearcrafting",     onClick = { onCategorySelected("gearcrafting",    false) })
-        WizardButton("Jewelrycrafting",  onClick = { onCategorySelected("jewelrycrafting", false) })
+
+        // Level range filter
+        if (overallMax > 1) {
+            Text(
+                text = "Craft level range: ${levelRange.start.toInt()} – ${levelRange.endInclusive.toInt()}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            RangeSlider(
+                value = levelRange,
+                onValueChange = { levelRange = it },
+                valueRange = 1f..overallMax.toFloat(),
+                steps = (overallMax - 2).coerceAtLeast(0),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        WizardButton("Weaponcrafting",   "Lv.${step.skillLevels["weaponcrafting"] ?: 0}",
+            onClick = { onCategorySelected("weaponcrafting",  false, levelRange.start.toInt(), levelRange.endInclusive.toInt()) })
+        WizardButton("Gearcrafting",     "Lv.${step.skillLevels["gearcrafting"] ?: 0}",
+            onClick = { onCategorySelected("gearcrafting",    false, levelRange.start.toInt(), levelRange.endInclusive.toInt()) })
+        WizardButton("Jewelrycrafting",  "Lv.${step.skillLevels["jewelrycrafting"] ?: 0}",
+            onClick = { onCategorySelected("jewelrycrafting", false, levelRange.start.toInt(), levelRange.endInclusive.toInt()) })
         WizardButton("Other", "Cooking, refining, alchemy, etc.",
-            onClick = { onCategorySelected("other", true) })
+            onClick = { onCategorySelected("other", true, levelRange.start.toInt(), levelRange.endInclusive.toInt()) })
         TextButton(onClick = onBack) { Text("← Back") }
     }
 }
@@ -1246,12 +1315,18 @@ private fun StepCraftItem(
     onItemSelected: (ActionHelper.CraftableItemInfo) -> Unit
 ) {
     val label = if (step.isOther) "misc" else step.category
+    val craftableCount = step.items.count { it.maxCraftable > 0 }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text(
                 text = "${label.replaceFirstChar { it.uppercase() }} — select an item:",
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "$craftableCount of ${step.items.size} craftable with current materials",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -1263,7 +1338,7 @@ private fun StepCraftItem(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    "No items can be crafted with available materials.",
+                    "No items in this level range.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1271,26 +1346,45 @@ private fun StepCraftItem(
             LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
                 items(step.items) { info ->
                     val craftLevel   = info.item.craft?.level ?: 0
-                    val ingredients  = info.ingredients.joinToString("  •  ") { "${it.quantity}× ${it.code}" }
+                    val canCraft     = info.maxCraftable > 0
                     val skillLabel   = if (step.isOther) "  [${info.item.craft?.skill ?: "?"}]" else ""
+
+                    // Build ingredient display with have/need counts
+                    val ingredientText = info.ingredients.joinToString("  •  ") { ing ->
+                        val have = info.ingredientAvailable[ing.code] ?: 0
+                        val need = ing.quantity
+                        "${ing.code} ${have}/${need}"
+                    }
+
                     ListItem(
                         headlineContent = {
-                            Text(info.item.name, fontWeight = FontWeight.Medium)
+                            Text(
+                                info.item.name,
+                                fontWeight = FontWeight.Medium,
+                                color = if (canCraft) MaterialTheme.colorScheme.onSurface
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
                         },
                         supportingContent = {
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
-                                    "Lv.$craftLevel  •  max ${info.maxCraftable}$skillLabel",
-                                    style = MaterialTheme.typography.bodySmall
+                                    if (canCraft) "Lv.$craftLevel  •  can craft ${info.maxCraftable}$skillLabel"
+                                    else "Lv.$craftLevel  •  missing materials$skillLabel",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (canCraft) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
                                 )
                                 Text(
-                                    ingredients,
+                                    ingredientText,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.let {
+                                        if (canCraft) it else it.copy(alpha = 0.5f)
+                                    }
                                 )
                             }
                         },
-                        modifier = Modifier.clickable { onItemSelected(info) }
+                        modifier = if (canCraft) Modifier.clickable { onItemSelected(info) }
+                                   else Modifier.alpha(0.6f)
                     )
                     HorizontalDivider()
                 }

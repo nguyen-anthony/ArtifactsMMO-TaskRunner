@@ -114,11 +114,13 @@ class TaskManager(
     /**
      * Get items that can be crafted with a given skill, filtered by character's skill level.
      * Used by the gathering wizard to show "Specific Crafted Item" options.
+     * Returns the list of items and the character's skill level.
      */
-    suspend fun getAvailableCraftedItems(characterName: String, skill: String): List<Item> {
+    suspend fun getAvailableCraftedItems(characterName: String, skill: String, minLevel: Int? = null, maxLevel: Int? = null): Pair<List<Item>, Int> {
         val char = client.characters.getCharacter(characterName)
         val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
-        return helper.getAvailableCraftedItems(skill, skillLevel)
+        val effectiveMax = maxLevel?.coerceAtMost(skillLevel) ?: skillLevel
+        return Pair(helper.getAvailableCraftedItems(skill, effectiveMax, minLevel), skillLevel)
     }
 
     /**
@@ -162,17 +164,17 @@ class TaskManager(
     /**
      * Get available items that can be crafted with a specific skill from inventory + bank.
      */
-    suspend fun getAvailableCraftingItems(characterName: String, skill: String): List<ActionHelper.CraftableItemInfo> {
+    suspend fun getAvailableCraftingItems(characterName: String, skill: String, minLevel: Int? = null, maxLevel: Int? = null): List<ActionHelper.CraftableItemInfo> {
         val char = client.characters.getCharacter(characterName)
-        return helper.getAvailableCraftingItems(char, skill)
+        return helper.getAvailableCraftingItems(char, skill, minLevel, maxLevel)
     }
 
     /**
      * Get available misc (non-weapon/gear/jewelry) craftable items from inventory + bank.
      */
-    suspend fun getAvailableMiscCraftingItems(characterName: String): List<ActionHelper.CraftableItemInfo> {
+    suspend fun getAvailableMiscCraftingItems(characterName: String, minLevel: Int? = null, maxLevel: Int? = null): List<ActionHelper.CraftableItemInfo> {
         val char = client.characters.getCharacter(characterName)
-        return helper.getAvailableMiscCraftingItems(char)
+        return helper.getAvailableMiscCraftingItems(char, minLevel, maxLevel)
     }
 
     /**

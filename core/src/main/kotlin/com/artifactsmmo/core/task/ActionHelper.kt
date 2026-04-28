@@ -242,44 +242,53 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     // ── Crafting item discovery ──
 
     /**
-     * Info about an item that can be crafted from available materials (inventory + bank).
+     * Info about a craftable item, including material availability.
      */
     data class CraftableItemInfo(
         val item: Item,
         val maxCraftable: Int,
-        val ingredients: List<SimpleItem>
+        val ingredients: List<SimpleItem>,
+        /** How many of each ingredient the player has (inventory + bank), keyed by item code. */
+        val ingredientAvailable: Map<String, Int> = emptyMap()
     )
 
     /**
      * Find items craftable with a specific skill from inventory + bank materials.
      * Returns list sorted by craft level descending (higher level = more XP).
      */
-    suspend fun getAvailableCraftingItems(char: Character, skill: String): List<CraftableItemInfo> {
+    suspend fun getAvailableCraftingItems(char: Character, skill: String, minLevel: Int? = null, maxLevel: Int? = null): List<CraftableItemInfo> {
         val craftableItems = contentCache.getItemsBySkill(skill)
 
         val skillLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, skill) ?: 0
+        val effectiveMax = maxLevel?.coerceAtMost(skillLevel) ?: skillLevel
+        val effectiveMin = minLevel ?: 0
 
         val results = mutableListOf<CraftableItemInfo>()
         for (item in craftableItems) {
             val craft = item.craft ?: continue
-            if ((craft.level ?: 0) > skillLevel) continue
+            val craftLvl = craft.level ?: 0
+            if (craftLvl > effectiveMax) continue
+            if (craftLvl < effectiveMin) continue
 
+            val available = mutableMapOf<String, Int>()
             val maxCraftable = craft.items.minOfOrNull { ingredient ->
                 val invQty = getItemQuantity(char, ingredient.code)
                 val bankQty = getBankItemQuantity(ingredient.code)
-                (invQty + bankQty) / ingredient.quantity
+                val total = invQty + bankQty
+                available[ingredient.code] = total
+                total / ingredient.quantity
             } ?: 0
 
-            if (maxCraftable > 0) {
-                results.add(CraftableItemInfo(
-                    item = item,
-                    maxCraftable = maxCraftable,
-                    ingredients = craft.items
-                ))
-            }
+            results.add(CraftableItemInfo(
+                item = item,
+                maxCraftable = maxCraftable,
+                ingredients = craft.items,
+                ingredientAvailable = available
+            ))
         }
 
-        return results.sortedByDescending { it.item.craft?.level ?: 0 }
+        // Craftable items first (sorted by level desc), then uncraftable (sorted by level desc)
+        return results.sortedWith(compareByDescending<CraftableItemInfo> { it.maxCraftable > 0 }.thenByDescending { it.item.craft?.level ?: 0 })
     }
 
     /**
@@ -287,37 +296,44 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      * Excludes weaponcrafting, gearcrafting, and jewelrycrafting.
      * Returns list sorted by craft skill then craft level descending.
      */
-    suspend fun getAvailableMiscCraftingItems(char: Character): List<CraftableItemInfo> {
+    suspend fun getAvailableMiscCraftingItems(char: Character, minLevel: Int? = null, maxLevel: Int? = null): List<CraftableItemInfo> {
         val excludedSkills = setOf("weaponcrafting", "gearcrafting", "jewelrycrafting")
         val miscSkills = listOf("cooking", "mining", "woodcutting", "alchemy")
 
         val results = mutableListOf<CraftableItemInfo>()
         for (skill in miscSkills) {
             val skillLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, skill) ?: 0
+            val effectiveMax = maxLevel?.coerceAtMost(skillLevel) ?: skillLevel
+            val effectiveMin = minLevel ?: 0
 
             val craftableItems = contentCache.getItemsBySkill(skill)
 
             for (item in craftableItems) {
                 val craft = item.craft ?: continue
-                if ((craft.level ?: 0) > skillLevel) continue
+                val craftLvl = craft.level ?: 0
+                if (craftLvl > effectiveMax) continue
+                if (craftLvl < effectiveMin) continue
 
+                val available = mutableMapOf<String, Int>()
                 val maxCraftable = craft.items.minOfOrNull { ingredient ->
                     val invQty = getItemQuantity(char, ingredient.code)
                     val bankQty = getBankItemQuantity(ingredient.code)
-                    (invQty + bankQty) / ingredient.quantity
+                    val total = invQty + bankQty
+                    available[ingredient.code] = total
+                    total / ingredient.quantity
                 } ?: 0
 
-                if (maxCraftable > 0) {
-                    results.add(CraftableItemInfo(
-                        item = item,
-                        maxCraftable = maxCraftable,
-                        ingredients = craft.items
-                    ))
-                }
+                results.add(CraftableItemInfo(
+                    item = item,
+                    maxCraftable = maxCraftable,
+                    ingredients = craft.items,
+                    ingredientAvailable = available
+                ))
             }
         }
 
-        return results.sortedByDescending { it.item.craft?.level ?: 0 }
+        // Craftable items first (sorted by level desc), then uncraftable (sorted by level desc)
+        return results.sortedWith(compareByDescending<CraftableItemInfo> { it.maxCraftable > 0 }.thenByDescending { it.item.craft?.level ?: 0 })
     }
 
     // ── Consumables ──
@@ -728,11 +744,11 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      * Uses the /items API with craft_skill and max_level filters.
      * Returns items sorted by level ascending.
      */
-    suspend fun getAvailableCraftedItems(skill: String, skillLevel: Int): List<Item> {
+    suspend fun getAvailableCraftedItems(skill: String, skillLevel: Int, minLevel: Int? = null): List<Item> {
         val items = mutableListOf<Item>()
         var page = 1
         while (true) {
-            val result = client.content.getItems(craftSkill = skill, maxLevel = skillLevel, page = page, size = 100)
+            val result = client.content.getItems(craftSkill = skill, minLevel = minLevel, maxLevel = skillLevel, page = page, size = 100)
             items.addAll(result.data)
             if (page >= (result.pages ?: Int.MAX_VALUE)) break
             if (result.data.size < 100) break
