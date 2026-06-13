@@ -1421,7 +1421,12 @@ private fun StepCraftQty(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        val ingredients = step.info.ingredients.joinToString("  •  ") { "${it.quantity}× ${it.code}" }
+        val npcByCode = step.info.npcPurchasesNeeded.associateBy { it.itemCode }
+        val ingredients = step.info.ingredients.joinToString("  •  ") { ingredient ->
+            val npc = npcByCode[ingredient.code]
+            if (npc != null) "${ingredient.quantity}× ${ingredient.code} (NPC: ${npc.costLabel})"
+            else "${ingredient.quantity}× ${ingredient.code}"
+        }
         Text(
             text = "Ingredients: $ingredients",
             style = MaterialTheme.typography.bodySmall,

@@ -4,6 +4,7 @@ import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.ArtifactsApiException
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.MapInfo
+import com.artifactsmmo.client.models.NPCItem
 import com.artifactsmmo.client.models.SimpleItem
 import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.utils.CharacterUtils
@@ -249,11 +250,19 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         val maxCraftable: Int,
         val ingredients: List<SimpleItem>,
         /** How many of each ingredient the player has (inventory + bank), keyed by item code. */
-        val ingredientAvailable: Map<String, Int> = emptyMap()
+        val ingredientAvailable: Map<String, Int> = emptyMap(),
+        /**
+         * NPC purchases required to craft one batch when inventory + bank alone are insufficient.
+         * Empty when all ingredients are available from inventory/bank.
+         * Each entry describes a single ingredient that must be bought from an NPC.
+         */
+        val npcPurchasesNeeded: List<NpcPurchaseInfo> = emptyList()
     )
 
     /**
      * Find items craftable with a specific skill from inventory + bank materials.
+     * Also considers ingredients purchasable from NPCs (any currency) when inventory + bank
+     * are insufficient, provided the character can afford them.
      * Returns list sorted by craft level descending (higher level = more XP).
      */
     suspend fun getAvailableCraftingItems(char: Character, skill: String, minLevel: Int? = null, maxLevel: Int? = null): List<CraftableItemInfo> {
@@ -270,20 +279,14 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             if (craftLvl > effectiveMax) continue
             if (craftLvl < effectiveMin) continue
 
-            val available = mutableMapOf<String, Int>()
-            val maxCraftable = craft.items.minOfOrNull { ingredient ->
-                val invQty = getItemQuantity(char, ingredient.code)
-                val bankQty = getBankItemQuantity(ingredient.code)
-                val total = invQty + bankQty
-                available[ingredient.code] = total
-                total / ingredient.quantity
-            } ?: 0
+            val (maxCraftable, available, npcPurchases) = resolveIngredientAvailability(char, craft.items)
 
             results.add(CraftableItemInfo(
                 item = item,
                 maxCraftable = maxCraftable,
                 ingredients = craft.items,
-                ingredientAvailable = available
+                ingredientAvailable = available,
+                npcPurchasesNeeded = npcPurchases
             ))
         }
 
@@ -294,6 +297,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     /**
      * Find miscellaneous craftable items from inventory + bank materials.
      * Excludes weaponcrafting, gearcrafting, and jewelrycrafting.
+     * Also considers ingredients purchasable from NPCs when inventory + bank are insufficient.
      * Returns list sorted by craft skill then craft level descending.
      */
     suspend fun getAvailableMiscCraftingItems(char: Character, minLevel: Int? = null, maxLevel: Int? = null): List<CraftableItemInfo> {
@@ -314,26 +318,109 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
                 if (craftLvl > effectiveMax) continue
                 if (craftLvl < effectiveMin) continue
 
-                val available = mutableMapOf<String, Int>()
-                val maxCraftable = craft.items.minOfOrNull { ingredient ->
-                    val invQty = getItemQuantity(char, ingredient.code)
-                    val bankQty = getBankItemQuantity(ingredient.code)
-                    val total = invQty + bankQty
-                    available[ingredient.code] = total
-                    total / ingredient.quantity
-                } ?: 0
+                val (maxCraftable, available, npcPurchases) = resolveIngredientAvailability(char, craft.items)
 
                 results.add(CraftableItemInfo(
                     item = item,
                     maxCraftable = maxCraftable,
                     ingredients = craft.items,
-                    ingredientAvailable = available
+                    ingredientAvailable = available,
+                    npcPurchasesNeeded = npcPurchases
                 ))
             }
         }
 
         // Craftable items first (sorted by level desc), then uncraftable (sorted by level desc)
         return results.sortedWith(compareByDescending<CraftableItemInfo> { it.maxCraftable > 0 }.thenByDescending { it.item.craft?.level ?: 0 })
+    }
+
+    /**
+     * Resolve how many of a recipe can be crafted given inventory, bank, and NPC shop stock.
+     *
+     * Returns a Triple of:
+     *  1. maxCraftable — limiting reagent count across all sources (0 if any ingredient is
+     *     unaffordable or unavailable)
+     *  2. available     — map of ingredient code → total quantity from inventory + bank
+     *  3. npcPurchases — NPC purchase descriptors for ingredients that have a deficit
+     *     covered by an NPC shop (only populated when NPC purchasing is needed)
+     */
+    private suspend fun resolveIngredientAvailability(
+        char: Character,
+        ingredients: List<SimpleItem>
+    ): Triple<Int, Map<String, Int>, List<NpcPurchaseInfo>> {
+        val available = mutableMapOf<String, Int>()
+        val npcPurchases = mutableListOf<NpcPurchaseInfo>()
+
+        // Per-ingredient limiting factor (floor-divided by qty-per-craft)
+        val perIngredientMax = ingredients.map { ingredient ->
+            val invQty  = getItemQuantity(char, ingredient.code)
+            val bankQty = getBankItemQuantity(ingredient.code)
+            val ownedTotal = invQty + bankQty
+            available[ingredient.code] = ownedTotal
+
+            val ownedCrafts = ownedTotal / ingredient.quantity
+
+            // Check NPC sources for any shortfall
+            if (ownedCrafts >= 1) {
+                // Enough owned — no NPC purchase needed for this ingredient
+                ownedCrafts
+            } else {
+                // Deficit — look up NPC sources
+                val npcSources = try {
+                    contentCache.getNpcItemsByCode(ingredient.code)
+                } catch (_: Exception) { emptyList() }
+
+                val buyableSource = npcSources.firstOrNull { npcItem ->
+                    val price = npcItem.buyPrice ?: return@firstOrNull false
+                    val totalCost = price * ingredient.quantity
+                    if (npcItem.currency == "gold") {
+                        char.gold >= totalCost
+                    } else {
+                        // Non-gold currency: check inventory + bank combined
+                        val inInventory = getItemQuantity(char, npcItem.currency)
+                        val inBank = getBankItemQuantity(npcItem.currency)
+                        (inInventory + inBank) >= totalCost
+                    }
+                }
+
+                if (buyableSource != null) {
+                    val price = buyableSource.buyPrice!!
+
+                    // Calculate how many crafts we can afford via NPC purchase
+                    val currencyAvailable = if (buyableSource.currency == "gold") {
+                        char.gold
+                    } else {
+                        getItemQuantity(char, buyableSource.currency) +
+                        getBankItemQuantity(buyableSource.currency)
+                    }
+                    // How many of this ingredient we can buy = floor(currencyAvailable / priceEach)
+                    // How many crafts that supports = floor(buyable / ingredient.quantity)
+                    val buyableQty    = currencyAvailable / price
+                    val totalAffordable = ownedTotal + buyableQty
+                    val affordableCrafts = totalAffordable / ingredient.quantity
+
+                    // Only need to purchase the deficit above what we already own
+                    val purchaseQty = (affordableCrafts * ingredient.quantity) - ownedTotal
+
+                    npcPurchases.add(
+                        NpcPurchaseInfo(
+                            npcCode        = buyableSource.npc,
+                            itemCode       = ingredient.code,
+                            currency       = buyableSource.currency,
+                            priceEach      = price,
+                            quantityNeeded = purchaseQty.coerceAtLeast(0)
+                        )
+                    )
+                    affordableCrafts
+                } else {
+                    // Can't obtain this ingredient at all
+                    0
+                }
+            }
+        }
+
+        val maxCraftable = perIngredientMax.minOrNull() ?: 0
+        return Triple(maxCraftable, available, npcPurchases)
     }
 
     // ── Consumables ──
@@ -513,6 +600,132 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             page++
         }
         return bestFood
+    }
+
+    // ── NPC purchasing ──
+
+    /**
+     * Information about an NPC that sells a specific item.
+     *
+     * [currency] mirrors [NPCItem.currency] — may be "gold" or an item code such as
+     * "tasks_coin", meaning the cost is paid with that inventory item rather than gold.
+     */
+    data class NpcPurchaseInfo(
+        val npcCode: String,
+        val itemCode: String,
+        /** Currency used to pay: "gold" or an item code (e.g. "tasks_coin"). */
+        val currency: String,
+        val priceEach: Int,
+        val quantityNeeded: Int
+    ) {
+        /** Human-readable cost string, e.g. "500 gold each" or "1 tasks_coin each". */
+        val costLabel: String get() = "$priceEach $currency each"
+    }
+
+    /**
+     * Find all NPCs that sell [itemCode] and return a [NpcPurchaseInfo] entry per NPC.
+     * Returns an empty list if no NPC sells this item.
+     */
+    suspend fun findNpcSources(itemCode: String, quantityNeeded: Int = 1): List<NpcPurchaseInfo> {
+        val npcItems = contentCache.getNpcItemsByCode(itemCode)
+        return npcItems.mapNotNull { npcItem ->
+            val price = npcItem.buyPrice ?: return@mapNotNull null
+            NpcPurchaseInfo(
+                npcCode       = npcItem.npc,
+                itemCode      = itemCode,
+                currency      = npcItem.currency,
+                priceEach     = price,
+                quantityNeeded = quantityNeeded
+            )
+        }
+    }
+
+    /**
+     * Check whether the character can afford a given NPC purchase.
+     *
+     * - If [currency] is "gold": checks [Character.gold].
+     * - Otherwise: checks inventory + bank combined for the currency item
+     *   (non-gold currencies like tasks_coin are treated as items that may be in the bank).
+     */
+    suspend fun canAffordNpcPurchase(char: Character, purchase: NpcPurchaseInfo): Boolean {
+        val totalCost = purchase.priceEach * purchase.quantityNeeded
+        return if (purchase.currency == "gold") {
+            char.gold >= totalCost
+        } else {
+            val inInventory = getItemQuantity(char, purchase.currency)
+            val inBank = getBankItemQuantity(purchase.currency)
+            (inInventory + inBank) >= totalCost
+        }
+    }
+
+    /**
+     * Move to the nearest map tile for [npcCode], buy [quantity] of [itemCode] from the NPC,
+     * wait for the action cooldown, and return the updated [Character].
+     *
+     * For non-gold currency the caller is responsible for ensuring the currency item is already
+     * in the character's inventory before calling this function.
+     *
+     * Throws [IllegalStateException] if the NPC tile is not in the map cache (e.g. the tile
+     * requires an achievement the character has not yet unlocked — conditional tiles are
+     * excluded from the cache during pre-warm).
+     */
+    suspend fun npcBuy(
+        characterName: String,
+        npcCode: String,
+        itemCode: String,
+        quantity: Int
+    ): Character {
+        var char = refreshCharacter(characterName)
+
+        // Move to the NPC tile if not already there.
+        // findNearest returns null for conditional (locked) tiles since they are excluded
+        // from the map cache — treat that as "NPC not accessible".
+        val npcTile = findNearest(char, "npc", npcCode)
+            ?: throw IllegalStateException(
+                "NPC '$npcCode' is not accessible — its map tile may require an achievement unlock"
+            )
+
+        if (!isAt(char, npcTile.x, npcTile.y)) {
+            char = moveTo(characterName, npcTile.x, npcTile.y)
+        }
+
+        return try {
+            val result = client.npc.buyItem(characterName, itemCode, quantity)
+            waitForCooldown(result.cooldown.totalSeconds)
+            result.character
+        } catch (e: ArtifactsApiException) {
+            if (e.errorCode == 496) {
+                throw IllegalStateException(
+                    "NPC '$npcCode' rejected purchase of '$itemCode' — condition not met (error 496). " +
+                    "The character may be missing a required achievement."
+                )
+            }
+            throw e
+        }
+    }
+
+    /**
+     * Ensure that a non-gold NPC currency item is in the character's inventory.
+     * Checks inventory first; if absent, attempts to withdraw from bank.
+     * Returns true if the required quantity is (or was made) available in inventory.
+     */
+    suspend fun ensureNpcCurrencyInInventory(
+        characterName: String,
+        currency: String,
+        quantityNeeded: Int
+    ): Boolean {
+        if (currency == "gold") return true // gold is always on-hand
+
+        val char = refreshCharacter(characterName)
+        val inInventory = getItemQuantity(char, currency)
+        if (inInventory >= quantityNeeded) return true
+
+        val stillNeeded = quantityNeeded - inInventory
+        val inBank = getBankItemQuantity(currency)
+        if (inBank < stillNeeded) return false
+
+        bankWithdrawItems(characterName, listOf(SimpleItem(currency, stillNeeded)))
+        return true
     }
 
     // ── Equipping ──
@@ -1051,6 +1264,130 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             iterations = iterations
         )
         return client.simulation.simulateFight(request)
+    }
+
+    /**
+     * Find the best combat weapon available to the character for fighting a specific monster.
+     *
+     * Strategy (two-phase):
+     *
+     * Phase 1 — Elemental scoring (no API calls):
+     *   For each owned combat weapon, compute an elemental score:
+     *     score = Σ (weaponAttackElement * -monsterResistanceElement)
+     *   Negative monster resistance (vulnerability) multiplies the weapon's attack in that
+     *   element positively, boosting the score. Positive resistance reduces it.
+     *   Weapons are then ranked by a combined key of (level, elementalScore) and the top 3
+     *   candidates are selected for simulation.
+     *
+     * Phase 2 — Simulation (up to 3 API calls):
+     *   Run simulateFightWithSlotOverrides() for each candidate and pick the highest win rate.
+     *   Returns null (no swap) if simulation is unavailable or current weapon is already best.
+     */
+    suspend fun findBestCombatWeapon(
+        char: Character,
+        monsterCode: String
+    ): EquipAction? {
+        // All weapons in cache, filtered to character's level, excluding gathering tools
+        val allWeapons = try {
+            contentCache.getItemsByType("weapon").filter {
+                it.level <= char.level && it.subtype != "tool"
+            }
+        } catch (_: Exception) { return null }
+
+        if (allWeapons.isEmpty()) return null
+
+        // Fetch monster resistances for elemental scoring
+        val monster = try {
+            client.content.getMonster(monsterCode)
+        } catch (_: Exception) { null }
+
+        // Build inventory + bank availability map for weapons
+        val inventoryCodes = char.inventory
+            .filter { it.quantity > 0 }
+            .associate { it.code to "inventory" }
+
+        val bankCodes = mutableMapOf<String, String>() // code -> "bank"
+        var bankPage = 1
+        while (true) {
+            val result = try {
+                client.bank.getBankItems(page = bankPage, size = 100)
+            } catch (_: Exception) { break }
+            for (item in result.data) {
+                if (item.quantity > 0) bankCodes[item.code] = "bank"
+            }
+            if (bankPage >= (result.pages ?: Int.MAX_VALUE)) break
+            if (result.data.size < 100) break
+            bankPage++
+        }
+
+        // Include currently equipped weapon even if it's not in inventory
+        val currentWeaponCode = char.weaponSlot.takeIf { it.isNotEmpty() }
+
+        // Build candidate list: owned weapons (inventory or bank) + current weapon
+        val ownedCandidates = allWeapons.filter { weapon ->
+            weapon.code in inventoryCodes ||
+            weapon.code in bankCodes ||
+            weapon.code == currentWeaponCode
+        }
+
+        if (ownedCandidates.isEmpty()) return null
+
+        // ── Phase 1: elemental scoring ────────────────────────────────────────
+        // For each weapon, compute how well its elemental attacks exploit the
+        // monster's resistances. score = Σ attack_element * (-res_element).
+        // A monster with res_fire = -30 is vulnerable to fire, so a fire weapon
+        // gets +30 * attackFire added to its score.
+        fun elementalScore(weapon: Item): Int {
+            if (monster == null) return 0
+            val effectMap = weapon.effects.associate { it.code to it.value }
+            val fireContrib  = (effectMap["attack_fire"]  ?: 0) * (-monster.resFire)
+            val earthContrib = (effectMap["attack_earth"] ?: 0) * (-monster.resEarth)
+            val waterContrib = (effectMap["attack_water"] ?: 0) * (-monster.resWater)
+            val airContrib   = (effectMap["attack_air"]   ?: 0) * (-monster.resAir)
+            return fireContrib + earthContrib + waterContrib + airContrib
+        }
+
+        // Rank candidates: primary sort by elemental score descending,
+        // secondary by item level descending. Take top 3 for simulation.
+        val candidates = ownedCandidates
+            .sortedWith(compareByDescending<Item> { elementalScore(it) }.thenByDescending { it.level })
+            .take(3)
+
+        // ── Phase 2: simulation ───────────────────────────────────────────────
+        var bestCode: String? = null
+        var bestWinRate = -1.0
+
+        for (weapon in candidates) {
+            val winRate = try {
+                simulateFightWithSlotOverrides(
+                    char = char,
+                    monsterCode = monsterCode,
+                    slotOverrides = mapOf("weapon" to weapon.code),
+                    iterations = 20
+                ).winrate
+            } catch (_: Exception) {
+                // Simulation unavailable — bail out entirely, don't swap anything
+                return null
+            }
+
+            if (winRate > bestWinRate) {
+                bestWinRate = winRate
+                bestCode = weapon.code
+            }
+        }
+
+        if (bestCode == null) return null
+
+        // Only suggest a swap if the best weapon differs from what's currently equipped
+        if (bestCode == currentWeaponCode) return null
+
+        val source = when {
+            bestCode in inventoryCodes -> "inventory"
+            bestCode in bankCodes      -> "bank"
+            else                       -> return null // shouldn't happen
+        }
+
+        return EquipAction(slot = "weapon", itemCode = bestCode, source = source)
     }
 
     /**

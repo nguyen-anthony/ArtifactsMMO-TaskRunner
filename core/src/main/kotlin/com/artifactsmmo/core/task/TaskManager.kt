@@ -33,8 +33,17 @@ class TaskManager(
      * Initialize runners for all characters. Restores saved tasks if available.
      */
     suspend fun initialize(): List<String> {
+        // Fetch the account's completed achievements so conditional map tiles (e.g. tasks_trader)
+        // are included in the map cache when the account has the required achievement unlocked.
+        val completedAchievements = try {
+            val details = client.account.getMyDetails()
+            client.account.getCompletedAchievementCodes(details.username)
+        } catch (_: Exception) {
+            emptySet() // Graceful fallback — conditional tiles will be excluded
+        }
+
         // Pre-warm the map cache before restoring tasks so findNearest* calls are ready
-        contentCache.preWarmMaps()
+        contentCache.preWarmMaps(completedAchievements)
 
         val characters = client.characters.getMyCharacters()
         for (char in characters) {

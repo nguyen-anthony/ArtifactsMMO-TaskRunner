@@ -192,6 +192,24 @@ class TaskMasterExecutor(
 
             if (winRate >= 0.90) {
                 onStatus("Win rate acceptable, proceeding with $monsterCode task")
+
+                // Optimise weapon for this monster before entering the fight loop
+                onStatus("Checking best weapon for $monsterCode...")
+                val weaponSwap = try {
+                    helper.findBestCombatWeapon(helper.refreshCharacter(characterName), monsterCode)
+                } catch (_: Exception) { null }
+
+                if (weaponSwap != null) {
+                    onStatus("Switching to ${weaponSwap.itemCode} (better vs $monsterCode)...")
+                    try {
+                        helper.retrieveAndEquipItems(characterName, listOf(weaponSwap))
+                    } catch (_: Exception) {
+                        onStatus("Weapon swap failed, continuing with current weapon")
+                    }
+                } else {
+                    onStatus("Current weapon is optimal for $monsterCode")
+                }
+
                 return StepResult.Waiting
             }
 

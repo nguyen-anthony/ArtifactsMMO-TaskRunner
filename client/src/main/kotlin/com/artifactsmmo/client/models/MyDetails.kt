@@ -14,3 +14,16 @@ data class MyDetails(
     @SerialName("achievements_points") val achievementsPoints: Int = 0,
     @SerialName("created_at") val createdAt: String? = null
 )
+
+/**
+ * A single achievement entry returned by GET /accounts/{username}/achievements.
+ * Only [code] and [completedAt] are needed for access-condition checks.
+ */
+@Serializable
+data class Achievement(
+    val code: String,
+    /** Non-null when the achievement has been completed. */
+    @SerialName("completed_at") val completedAt: String? = null
+) {
+    val isCompleted: Boolean get() = completedAt != null
+}

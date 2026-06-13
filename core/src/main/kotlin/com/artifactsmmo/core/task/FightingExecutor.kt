@@ -27,6 +27,13 @@ class FightingExecutor(private val helper: ActionHelper) {
     private val monsterCookableCache = mutableMapOf<String, List<ActionHelper.CookableDropInfo>>()
 
     /**
+     * Tracks which monster code the weapon has already been optimised for in this
+     * executor instance. Reset to null when the monster target changes so a fresh
+     * weapon-selection pass runs for every new monster.
+     */
+    private var weaponOptimisedForMonster: String? = null
+
+    /**
      * Execute a single iteration of the fight loop.
      */
     suspend fun executeStep(
@@ -35,6 +42,24 @@ class FightingExecutor(private val helper: ActionHelper) {
         onStatus: (String) -> Unit
     ): StepResult {
         var char = helper.refreshCharacter(characterName)
+
+        // ── One-time weapon optimisation per monster target ──
+        // Runs once when a new monster code is encountered, then skips on every
+        // subsequent iteration to avoid per-fight overhead.
+        if (weaponOptimisedForMonster != task.monsterCode) {
+            weaponOptimisedForMonster = task.monsterCode
+            onStatus("Checking best weapon for ${task.monsterName}...")
+            val weaponSwap = try {
+                helper.findBestCombatWeapon(char, task.monsterCode)
+            } catch (_: Exception) { null }
+
+            if (weaponSwap != null) {
+                onStatus("Switching to ${weaponSwap.itemCode} (better vs ${task.monsterName})...")
+                char = helper.retrieveAndEquipItems(characterName, listOf(weaponSwap))
+            } else {
+                onStatus("Current weapon is optimal for ${task.monsterName}")
+            }
+        }
 
         // Discover cookable drops for this monster (cached after first call)
         val allCookableDrops = getCookableDrops(task.monsterCode, char)
@@ -59,8 +84,8 @@ class FightingExecutor(private val helper: ActionHelper) {
             return handleFullInventory(characterName, cookAndUseDrops, cookAndBankDrops, bankRawDrops, foodCodes, onStatus)
         }
 
-        // Check HP - heal if below 50%
-        if (!CharacterUtils.hasEnoughHP(char, 0.5)) {
+        // Check HP - heal if below 75%
+        if (!CharacterUtils.hasEnoughHP(char, 0.75)) {
             return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
         }
 
@@ -183,7 +208,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         for (info in cookAndUseDrops) {
             val bankQty = helper.getBankItemQuantity(info.cookedCode)
             if (bankQty > 0) {
-                val withdrawQty = minOf(bankQty, 25)
+                val withdrawQty = minOf(bankQty, 50)
                 onStatus("Withdrawing ${withdrawQty}x ${info.cookedCode} from bank...")
                 helper.bankWithdrawItems(characterName, listOf(SimpleItem(info.cookedCode, withdrawQty)))
 
@@ -199,7 +224,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         val bankFood = helper.findBestFoodInBank(char)
         if (bankFood != null) {
             val (foodCode, healAmount, bankQty) = bankFood
-            val withdrawQty = minOf(bankQty, 25)
+            val withdrawQty = minOf(bankQty, 40)
             onStatus("Withdrawing ${withdrawQty}x $foodCode from bank...")
             helper.bankWithdrawItems(characterName, listOf(SimpleItem(foodCode, withdrawQty)))
 
@@ -273,7 +298,7 @@ class FightingExecutor(private val helper: ActionHelper) {
 
         // Build deposit list
         val itemsToDeposit = mutableListOf<SimpleItem>()
-        val foodToKeep = 25 // Keep up to this many cooked food items (COOK_AND_USE only)
+        val foodToKeep = 40 // Keep up to this many cooked food items (COOK_AND_USE only)
 
         for (slot in char.inventory) {
             if (slot.quantity <= 0) continue

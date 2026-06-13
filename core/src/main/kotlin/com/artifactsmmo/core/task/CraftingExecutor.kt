@@ -51,11 +51,114 @@ class CraftingExecutor(private val helper: ActionHelper) {
             IngredientInfo(ingredient.code, ingredient.quantity, invQty, bankQty)
         }
 
-        val maxCraftableTotal = ingredientAvailability.minOf { (it.invQty + it.bankQty) / it.qtyPerCraft }
+        var maxCraftableTotal = ingredientAvailability.minOf { (it.invQty + it.bankQty) / it.qtyPerCraft }
 
         if (maxCraftableTotal <= 0) {
-            onStatus("No materials available for ${task.itemName}")
-            return StepResult.OutOfMaterials
+            // Before giving up, check if any missing ingredients can be bought from an NPC.
+            // First pass: determine how many crafts are affordable via NPC sources.
+            data class NpcCandidate(
+                val purchase: ActionHelper.NpcPurchaseInfo,
+                val affordableCrafts: Int
+            )
+            val npcCandidates = mutableListOf<NpcCandidate>()
+
+            for (ingredient in recipe.items) {
+                val invQty  = helper.getItemQuantity(char, ingredient.code)
+                val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
+                val owned   = invQty + bankQty
+                if (owned >= ingredient.quantity) continue // already have enough of this one
+
+                val sources = try {
+                    helper.findNpcSources(ingredient.code)
+                } catch (_: Exception) { emptyList() }
+
+                // Pick the first affordable source and compute how many crafts it supports
+                val source = sources.firstOrNull { s ->
+                    helper.canAffordNpcPurchase(char, s.copy(quantityNeeded = ingredient.quantity - owned))
+                }
+                if (source == null) {
+                    onStatus("No materials available for ${task.itemName}")
+                    return StepResult.OutOfMaterials
+                }
+
+                // How many of this ingredient we can buy with available currency
+                val currencyAvailable = if (source.currency == "gold") {
+                    char.gold
+                } else {
+                    helper.getItemQuantity(char, source.currency) +
+                    helper.getBankItemQuantity(source.currency)
+                }
+                val buyableQty       = currencyAvailable / source.priceEach
+                val totalAffordable  = owned + buyableQty
+                val affordableCrafts = totalAffordable / ingredient.quantity
+
+                npcCandidates.add(NpcCandidate(
+                    purchase = source.copy(quantityNeeded = 0), // quantity set in second pass
+                    affordableCrafts = affordableCrafts
+                ))
+            }
+
+            if (npcCandidates.isEmpty()) {
+                onStatus("No materials available for ${task.itemName}")
+                return StepResult.OutOfMaterials
+            }
+
+            // maxCraftableTotal is now bounded by what NPC purchases can cover
+            maxCraftableTotal = npcCandidates.minOf { it.affordableCrafts }
+            if (maxCraftableTotal <= 0) {
+                onStatus("Cannot afford NPC materials for ${task.itemName}")
+                return StepResult.OutOfMaterials
+            }
+
+            // Second pass: compute the actual batch size, then buy exactly that much
+            val remaining = when (task.mode) {
+                CraftMode.BANK    -> (task.targetQuantity - task.craftedSoFar).coerceAtLeast(1)
+                CraftMode.RECYCLE -> if (task.craftedSoFar == 0) task.targetQuantity else Int.MAX_VALUE
+            }
+            val totalIngredientsPerCraft = recipe.items.sumOf { it.quantity }
+            val freeSlots = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
+            val batchByInventory = if (totalIngredientsPerCraft > 0) maxOf(1, freeSlots / totalIngredientsPerCraft) else 1
+            val batchSize = minOf(maxCraftableTotal, remaining, batchByInventory)
+
+            for (candidate in npcCandidates) {
+                val ingredient = recipe.items.first { it.code == candidate.purchase.itemCode }
+                val invQty  = helper.getItemQuantity(char, ingredient.code)
+                val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
+                val owned   = invQty + bankQty
+                val purchaseQty = (batchSize * ingredient.quantity) - owned
+
+                if (purchaseQty <= 0) continue
+
+                val purchase = candidate.purchase.copy(quantityNeeded = purchaseQty)
+
+                if (purchase.currency != "gold") {
+                    val totalCurrencyNeeded = purchase.priceEach * purchase.quantityNeeded
+                    val ok = helper.ensureNpcCurrencyInInventory(characterName, purchase.currency, totalCurrencyNeeded)
+                    if (!ok) {
+                        onStatus("Not enough ${purchase.currency} to buy ${purchase.itemCode} from NPC")
+                        return StepResult.OutOfMaterials
+                    }
+                }
+                onStatus("Buying ${purchase.quantityNeeded}x ${purchase.itemCode} from NPC ${purchase.npcCode} (${purchase.costLabel})...")
+                try {
+                    helper.npcBuy(characterName, purchase.npcCode, purchase.itemCode, purchase.quantityNeeded)
+                } catch (e: IllegalStateException) {
+                    onStatus("Cannot buy ${purchase.itemCode}: ${e.message}")
+                    return StepResult.OutOfMaterials
+                }
+            }
+
+            // Re-evaluate after purchases — update maxCraftableTotal for batch sizing below
+            val updatedChar = helper.refreshCharacter(characterName)
+            maxCraftableTotal = recipe.items.minOf { ingredient ->
+                val invQty  = helper.getItemQuantity(updatedChar, ingredient.code)
+                val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
+                (invQty + bankQty) / ingredient.quantity
+            }
+            if (maxCraftableTotal <= 0) {
+                onStatus("No materials available for ${task.itemName} even after NPC purchase")
+                return StepResult.OutOfMaterials
+            }
         }
 
         // Determine how many to craft this batch:
