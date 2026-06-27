@@ -23,7 +23,7 @@ class SimulationService(client: HttpClient) : BaseApiService(client) {
      */
     suspend fun simulateFight(request: CombatSimulationRequest): CombatSimulationData {
         val bodyJson = json.encodeToString(CombatSimulationRequest.serializer(), request)
-        return post<ApiResponse<CombatSimulationData>>("/simulation/fight_simulation") {
+        return post<ApiResponse<CombatSimulationData>>("/simulation/fight") {
             setBody(TextContent(bodyJson, ContentType.Application.Json))
         }.data
     }

@@ -64,19 +64,33 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
     }
 
     /**
-     * Equip an item
+     * Equip one or more items
      */
     suspend fun equip(characterName: String, itemCode: String, slot: String, quantity: Int = 1): EquipmentData {
-        val body = EquipRequest(code = itemCode, slot = slot, quantity = quantity)
+        val body = listOf(EquipmentRequest(code = itemCode, slot = slot, quantity = quantity))
         return post<ApiResponse<EquipmentData>>("/my/$characterName/action/equip", body).data
+    }
+
+    /**
+     * Equip multiple items at once
+     */
+    suspend fun equipMultiple(characterName: String, items: List<EquipmentRequest>): EquipmentData {
+        return post<ApiResponse<EquipmentData>>("/my/$characterName/action/equip", items).data
     }
 
     /**
      * Unequip an item
      */
     suspend fun unequip(characterName: String, slot: String, quantity: Int = 1): EquipmentData {
-        val body = UnequipRequest(slot = slot, quantity = quantity)
+        val body = listOf(UnequipmentRequest(slot = slot, quantity = quantity))
         return post<ApiResponse<EquipmentData>>("/my/$characterName/action/unequip", body).data
+    }
+
+    /**
+     * Unequip multiple items at once
+     */
+    suspend fun unequipMultiple(characterName: String, items: List<UnequipmentRequest>): EquipmentData {
+        return post<ApiResponse<EquipmentData>>("/my/$characterName/action/unequip", items).data
     }
 
     /**

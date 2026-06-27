@@ -33,7 +33,20 @@ data class EquipRequest(
 )
 
 @Serializable
+data class EquipmentRequest(
+    val code: String,
+    val slot: String,
+    val quantity: Int = 1
+)
+
+@Serializable
 data class UnequipRequest(
+    val slot: String,
+    val quantity: Int = 1
+)
+
+@Serializable
+data class UnequipmentRequest(
     val slot: String,
     val quantity: Int = 1
 )
