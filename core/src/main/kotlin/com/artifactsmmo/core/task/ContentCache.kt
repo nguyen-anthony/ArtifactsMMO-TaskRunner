@@ -96,14 +96,71 @@ class ContentCache(private val contentService: ContentService) {
     /**
      * Find the nearest map tile matching [contentType] and optionally [contentCode]
      * using Manhattan distance. Returns null if no match or maps not yet loaded.
+     *
+     * By default only tiles on the overworld layer are searched. Pass [layer] to
+     * restrict results to a specific layer (e.g. "underground" or "interior").
+     * Pass null to search all layers.
      */
-    fun findNearest(char: Character, contentType: String, contentCode: String? = null): MapInfo? {
+    fun findNearest(
+        char: Character,
+        contentType: String,
+        contentCode: String? = null,
+        layer: String? = "overworld"
+    ): MapInfo? {
         return allMaps
             .filter { map ->
                 val content = map.interactions.content
                 content != null &&
                 content.type == contentType &&
-                (contentCode == null || content.code == contentCode)
+                (contentCode == null || content.code == contentCode) &&
+                (layer == null || map.layer == layer)
+            }
+            .minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
+    }
+
+    /**
+     * Find the overworld transition tile that leads to [targetLayer] and whose destination
+     * coordinates are closest (by Manhattan distance) to [destX]/[destY] on that layer.
+     *
+     * When multiple transitions lead to the same layer (e.g. two separate interior
+     * entrances), this selects the one that deposits the character nearest to the actual
+     * target, avoiding wrong-building situations.
+     *
+     * When [destX]/[destY] are null (destination unknown), falls back to the transition
+     * tile nearest to the character by Manhattan distance.
+     */
+    fun findTransitionTile(
+        char: Character,
+        targetLayer: String,
+        destX: Int? = null,
+        destY: Int? = null
+    ): MapInfo? {
+        val candidates = allMaps.filter { map ->
+            map.layer == "overworld" &&
+            map.interactions.transition?.layer == targetLayer
+        }
+        return if (destX != null && destY != null) {
+            // Pick the transition whose destination lands closest to the target tile
+            candidates.minByOrNull { map ->
+                val tx = map.interactions.transition!!.x
+                val ty = map.interactions.transition!!.y
+                abs(tx - destX) + abs(ty - destY)
+            }
+        } else {
+            // No destination known — nearest transition tile to the character
+            candidates.minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
+        }
+    }
+
+    /**
+     * Find the nearest overworld tile that has a transition back to the overworld — i.e.
+     * the exit tile when the character is currently inside a sub-layer.
+     */
+    fun findExitTransitionTile(char: Character): MapInfo? {
+        return allMaps
+            .filter { map ->
+                map.layer == char.layer &&
+                map.interactions.transition?.layer == "overworld"
             }
             .minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
     }
@@ -115,6 +172,19 @@ class ContentCache(private val contentService: ContentService) {
 
     fun findNearestTasksMaster(char: Character, type: String): MapInfo? =
         findNearest(char, "tasks_master", type)
+
+    /**
+     * Find the nearest map tile of [contentType]/[contentCode] on any layer (overworld,
+     * underground, or interior). Returns the tile along with the layer it lives on so
+     * callers can decide whether a map transition is required.
+     */
+    fun findNearestAnyLayer(
+        char: Character,
+        contentType: String,
+        contentCode: String? = null
+    ): MapInfo? {
+        return findNearest(char, contentType, contentCode, layer = null)
+    }
 
     // ── Item queries (suspend, cached) ────────────────────────────────────────
 

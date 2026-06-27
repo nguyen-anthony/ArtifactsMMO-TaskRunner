@@ -89,13 +89,13 @@ class FightingExecutor(private val helper: ActionHelper) {
             return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
         }
 
-        // Find monster location and move there
+        // Find monster location and move there (handles underground/interior transitions)
         val monsterMap = helper.findNearest(char, "monster", task.monsterCode)
             ?: return StepResult.Error("No ${task.monsterCode} locations found on map")
 
-        if (!helper.isAt(char, monsterMap.x, monsterMap.y)) {
+        if (!helper.isAt(char, monsterMap.x, monsterMap.y) || char.layer != monsterMap.layer) {
             onStatus("Moving to ${task.monsterName}...")
-            char = helper.moveTo(characterName, monsterMap.x, monsterMap.y)
+            char = helper.navigateToTile(characterName, monsterMap)
         }
 
         onStatus("Fighting ${task.monsterName}... (HP: ${char.hp}/${char.maxHp})")
@@ -190,7 +190,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 onStatus("Cooking ${craftQty}x ${info.cookedCode} (from ${craftQty * info.rawPerCraft}x ${info.rawCode})...")
                 val workshop = helper.findNearestWorkshop(char, "cooking")
                 if (workshop != null) {
-                    helper.moveTo(characterName, workshop.x, workshop.y)
+                    helper.navigateToTile(characterName, workshop)
                     helper.craft(characterName, info.cookedCode, craftQty)
 
                     // Now eat
@@ -224,7 +224,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         val bankFood = helper.findBestFoodInBank(char)
         if (bankFood != null) {
             val (foodCode, healAmount, bankQty) = bankFood
-            val withdrawQty = minOf(bankQty, 40)
+            val withdrawQty = minOf(bankQty, 25)
             onStatus("Withdrawing ${withdrawQty}x $foodCode from bank...")
             helper.bankWithdrawItems(characterName, listOf(SimpleItem(foodCode, withdrawQty)))
 
@@ -273,7 +273,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 val workshop = helper.findNearestWorkshop(char, "cooking")
                 if (workshop != null) {
                     onStatus("Moving to cooking workshop...")
-                    helper.moveTo(characterName, workshop.x, workshop.y)
+                    helper.navigateToTile(characterName, workshop)
                     char = helper.refreshCharacter(characterName)
 
                     for (info in dropsToCook) {
@@ -298,7 +298,7 @@ class FightingExecutor(private val helper: ActionHelper) {
 
         // Build deposit list
         val itemsToDeposit = mutableListOf<SimpleItem>()
-        val foodToKeep = 40 // Keep up to this many cooked food items (COOK_AND_USE only)
+        val foodToKeep = 25 // Keep up to this many cooked food items (COOK_AND_USE only)
 
         for (slot in char.inventory) {
             if (slot.quantity <= 0) continue

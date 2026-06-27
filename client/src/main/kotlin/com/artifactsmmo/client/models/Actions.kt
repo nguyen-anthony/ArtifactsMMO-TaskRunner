@@ -243,3 +243,11 @@ data class TaskCancelResponseData(
     val character: Character
 )
 
+/** Response for /my/{name}/action/transition */
+@Serializable
+data class CharacterTransitionData(
+    val cooldown: Cooldown,
+    val destination: MapInfo,
+    val character: Character
+)
+

@@ -62,13 +62,13 @@ class GatheringExecutor(private val helper: ActionHelper) {
             task.resourceCode to task.resourceName
         }
 
-        // Find resource location and move there
+        // Find resource location and move there (handles underground/interior transitions)
         val resourceMap = helper.findNearest(char, "resource", resourceCode)
             ?: return StepResult.Error("No $resourceCode locations found on map")
 
-        if (!helper.isAt(char, resourceMap.x, resourceMap.y)) {
+        if (!helper.isAt(char, resourceMap.x, resourceMap.y) || char.layer != resourceMap.layer) {
             onStatus("Moving to $resourceName...")
-            char = helper.moveTo(characterName, resourceMap.x, resourceMap.y)
+            char = helper.navigateToTile(characterName, resourceMap)
         }
 
         // Gather
@@ -151,7 +151,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
         }
 
         onStatus("Crafting ${maxCraftable}x ${targetItem.name} from bank leftovers...")
-        helper.moveTo(characterName, workshop.x, workshop.y)
+        helper.navigateToTile(characterName, workshop)
         helper.craft(characterName, targetItem.code, maxCraftable)
 
         // Deposit crafted items
@@ -209,7 +209,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             }
 
             onStatus("Cooking ${maxQty}x ${item.name} from bank leftovers...")
-            helper.moveTo(characterName, workshop.x, workshop.y)
+            helper.navigateToTile(characterName, workshop)
             helper.craft(characterName, item.code, maxQty)
 
             val updatedChar = helper.refreshCharacter(characterName)
@@ -352,7 +352,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
         }
 
         onStatus("Crafting ${upgrade.tool.name} at ${upgrade.craftSkill} workshop...")
-        char = helper.moveTo(characterName, workshop.x, workshop.y)
+        char = helper.navigateToTile(characterName, workshop)
         helper.craft(characterName, upgrade.tool.code, 1)
 
         // Unequip current weapon if any
@@ -447,7 +447,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             val workshop = helper.findNearestWorkshop(char, workshopSkill)
             if (workshop != null) {
                 onStatus("Moving to $workshopSkill workshop to craft ${targetItem.name}...")
-                helper.moveTo(characterName, workshop.x, workshop.y)
+                helper.navigateToTile(characterName, workshop)
 
                 // Re-check after moving
                 val updatedChar = helper.refreshCharacter(characterName)
@@ -505,7 +505,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             val workshop = helper.findNearestWorkshop(char, "cooking")
             if (workshop != null) {
                 onStatus("Moving to cooking workshop...")
-                helper.moveTo(characterName, workshop.x, workshop.y)
+                helper.navigateToTile(characterName, workshop)
 
                 // Re-check after moving
                 val updatedChar = helper.refreshCharacter(characterName)

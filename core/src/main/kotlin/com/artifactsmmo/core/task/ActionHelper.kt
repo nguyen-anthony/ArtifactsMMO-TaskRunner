@@ -68,17 +68,83 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         return char.x == x && char.y == y
     }
 
+    /**
+     * Navigate to a map tile, handling layer transitions transparently.
+     *
+     * The game has three layers: "overworld" (the default), "underground", and "interior".
+     * Resources, monsters, and other content may exist on any layer. Travelling between
+     * layers requires:
+     *   1. Moving to the transition tile on the current layer.
+     *   2. POSTing to /action/transition to cross to the other layer.
+     *   3. Moving to the final destination on the target layer.
+     *
+     * This method handles all three steps automatically:
+     * - If [targetMap] is on the same layer as the character → plain [moveTo].
+     * - If the character is on a sub-layer (underground/interior) but the target is
+     *   on a different layer → find and use the exit transition first to return to
+     *   the overworld, then navigate from there.
+     * - If the target is on a sub-layer → find the overworld transition tile leading
+     *   to that layer, move there, cross, then move to the final destination.
+     *
+     * Returns the updated [Character] after all movement and transitions are complete.
+     */
+    suspend fun navigateToTile(name: String, targetMap: MapInfo): Character {
+        var char = refreshCharacter(name)
+        val targetLayer = targetMap.layer
+
+        // ── Step 1: If on a sub-layer and the target is not on the same layer,
+        //            exit back to the overworld first ──────────────────────────
+        if (char.layer != "overworld" && char.layer != targetLayer) {
+            val exitTile = contentCache.findExitTransitionTile(char)
+                ?: throw IllegalStateException(
+                    "Cannot navigate: character is on layer '${char.layer}' with no exit transition"
+                )
+            char = moveTo(name, exitTile.x, exitTile.y)
+            char = useTransition(name)
+        }
+
+        // ── Step 2: If the target is on a sub-layer, cross to it ─────────────
+        if (targetLayer != "overworld" && char.layer == "overworld") {
+            val entryTile = contentCache.findTransitionTile(char, targetLayer, targetMap.x, targetMap.y)
+                ?: throw IllegalStateException(
+                    "Cannot navigate: no accessible overworld transition tile leads to layer '$targetLayer'"
+                )
+            char = moveTo(name, entryTile.x, entryTile.y)
+            char = useTransition(name)
+        }
+
+        // ── Step 3: Move to the final destination on the correct layer ────────
+        if (!isAt(char, targetMap.x, targetMap.y)) {
+            char = moveTo(name, targetMap.x, targetMap.y)
+        }
+
+        return char
+    }
+
+    /**
+     * Use the map transition on the tile the character is currently standing on.
+     * The character must already be on a tile that has a [MapTransition].
+     */
+    private suspend fun useTransition(name: String): Character {
+        val result = client.actions.transition(name)
+        waitForCooldown(result.cooldown.totalSeconds)
+        return result.character
+    }
+
     // ── Map queries ──
 
     /**
-     * Find the nearest map tile of a given content type/code to the character.
+     * Find the nearest map tile of a given content type/code to the character,
+     * searching across all layers (overworld, underground, interior).
+     * Callers should use [navigateToTile] to travel to the result, which handles
+     * layer transitions automatically.
      */
     suspend fun findNearest(
         char: Character,
         contentType: String,
         contentCode: String? = null
     ): MapInfo? {
-        return contentCache.findNearest(char, contentType, contentCode)
+        return contentCache.findNearestAnyLayer(char, contentType, contentCode)
     }
 
     /**
@@ -115,12 +181,13 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      * Move to the nearest bank and deposit safe items from inventory.
      * Only deposits resources and consumables — never tools, weapons, gear, or other equipment.
      * Returns updated character after banking.
+     * Handles sub-layer exits transparently (underground/interior → overworld → bank).
      */
     suspend fun bankDepositAll(name: String): Character {
         var char = refreshCharacter(name)
 
         val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-        char = moveTo(name, bank.x, bank.y)
+        char = navigateToTile(name, bank)
 
         // Only deposit resources and consumables; keep everything else (weapons, tools, gear, etc.)
         val safeTypes = setOf("resource", "consumable", "currency")
@@ -182,13 +249,14 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
     /**
      * Move to nearest bank and deposit specific items.
+     * Handles sub-layer exits transparently (underground/interior → overworld → bank).
      */
     suspend fun bankDepositItems(name: String, items: List<SimpleItem>): Character {
         if (items.isEmpty()) return refreshCharacter(name)
 
         var char = refreshCharacter(name)
         val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-        char = moveTo(name, bank.x, bank.y)
+        char = navigateToTile(name, bank)
 
         val result = client.bank.depositItems(name, items)
         waitForCooldown(result.cooldown.totalSeconds)
@@ -451,7 +519,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
         var char = refreshCharacter(name)
         val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-        char = moveTo(name, bank.x, bank.y)
+        char = navigateToTile(name, bank)
 
         val result = client.bank.withdrawItems(name, items)
         waitForCooldown(result.cooldown.totalSeconds)
@@ -1276,11 +1344,14 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      *     score = Σ (weaponAttackElement * -monsterResistanceElement)
      *   Negative monster resistance (vulnerability) multiplies the weapon's attack in that
      *   element positively, boosting the score. Positive resistance reduces it.
-     *   Weapons are then ranked by a combined key of (level, elementalScore) and the top 3
-     *   candidates are selected for simulation.
+     *   Weapons are then ranked by elemental score descending. Level is used only as a
+     *   tiebreaker between weapons with the same elemental score, and the top 3 candidates
+     *   are selected for simulation.
      *
      * Phase 2 — Simulation (up to 3 API calls):
-     *   Run simulateFightWithSlotOverrides() for each candidate and pick the highest win rate.
+     *   Run simulateFightWithSlotOverrides() for each candidate.
+     *   Primary ranking: highest win rate.
+     *   Tiebreaker: lowest average turns (faster kills = less HP lost per fight).
      *   Returns null (no swap) if simulation is unavailable or current weapon is already best.
      */
     suspend fun findBestCombatWeapon(
@@ -1334,60 +1405,74 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
         // ── Phase 1: elemental scoring ────────────────────────────────────────
         // For each weapon, compute how well its elemental attacks exploit the
-        // monster's resistances. score = Σ attack_element * (-res_element).
-        // A monster with res_fire = -30 is vulnerable to fire, so a fire weapon
-        // gets +30 * attackFire added to its score.
+        // monster's resistances.
+        //
+        // Score = Σ attack_element * -(res_element - meanRes)
+        //
+        // Subtracting the mean resistance before scoring means the formula only captures
+        // *relative* elemental advantage — how much better/worse a weapon's element fares
+        // compared to a neutral element against this monster. This avoids penalising
+        // high-damage weapons when all resistances are uniformly positive (e.g. sheep with
+        // +10 on every element would otherwise score every weapon negatively and rank
+        // lower-damage weapons ahead of stronger ones). When all resistances are equal the
+        // mean-subtracted score is 0 for every weapon, so the level tiebreaker correctly
+        // promotes the highest-level (highest-damage) option.
         fun elementalScore(weapon: Item): Int {
             if (monster == null) return 0
+            val meanRes = (monster.resFire + monster.resEarth + monster.resWater + monster.resAir) / 4.0
             val effectMap = weapon.effects.associate { it.code to it.value }
-            val fireContrib  = (effectMap["attack_fire"]  ?: 0) * (-monster.resFire)
-            val earthContrib = (effectMap["attack_earth"] ?: 0) * (-monster.resEarth)
-            val waterContrib = (effectMap["attack_water"] ?: 0) * (-monster.resWater)
-            val airContrib   = (effectMap["attack_air"]   ?: 0) * (-monster.resAir)
-            return fireContrib + earthContrib + waterContrib + airContrib
+            val fireContrib  = (effectMap["attack_fire"]  ?: 0) * (-(monster.resFire  - meanRes))
+            val earthContrib = (effectMap["attack_earth"] ?: 0) * (-(monster.resEarth - meanRes))
+            val waterContrib = (effectMap["attack_water"] ?: 0) * (-(monster.resWater - meanRes))
+            val airContrib   = (effectMap["attack_air"]   ?: 0) * (-(monster.resAir   - meanRes))
+            return (fireContrib + earthContrib + waterContrib + airContrib).toInt()
         }
 
         // Rank candidates: primary sort by elemental score descending,
-        // secondary by item level descending. Take top 3 for simulation.
+        // secondary by item level descending (tiebreaker only). Take top 3 for simulation.
         val candidates = ownedCandidates
             .sortedWith(compareByDescending<Item> { elementalScore(it) }.thenByDescending { it.level })
             .take(3)
 
         // ── Phase 2: simulation ───────────────────────────────────────────────
-        var bestCode: String? = null
-        var bestWinRate = -1.0
+        data class SimResult(val code: String, val winRate: Double, val avgTurns: Double)
+
+        val simResults = mutableListOf<SimResult>()
 
         for (weapon in candidates) {
-            val winRate = try {
+            val sim = try {
                 simulateFightWithSlotOverrides(
                     char = char,
                     monsterCode = monsterCode,
                     slotOverrides = mapOf("weapon" to weapon.code),
-                    iterations = 20
-                ).winrate
+                    iterations = 30
+                )
             } catch (_: Exception) {
                 // Simulation unavailable — bail out entirely, don't swap anything
                 return null
             }
+            val avgTurns = if (sim.results.isNotEmpty())
+                sim.results.sumOf { it.turns }.toDouble() / sim.results.size
+            else Double.MAX_VALUE
 
-            if (winRate > bestWinRate) {
-                bestWinRate = winRate
-                bestCode = weapon.code
-            }
+            simResults += SimResult(weapon.code, sim.winrate, avgTurns)
         }
 
-        if (bestCode == null) return null
+        // Pick best: highest win rate, then lowest average turns as tiebreaker
+        val best = simResults
+            .sortedWith(compareByDescending<SimResult> { it.winRate }.thenBy { it.avgTurns })
+            .firstOrNull() ?: return null
 
         // Only suggest a swap if the best weapon differs from what's currently equipped
-        if (bestCode == currentWeaponCode) return null
+        if (best.code == currentWeaponCode) return null
 
         val source = when {
-            bestCode in inventoryCodes -> "inventory"
-            bestCode in bankCodes      -> "bank"
-            else                       -> return null // shouldn't happen
+            best.code in inventoryCodes -> "inventory"
+            best.code in bankCodes      -> "bank"
+            else                        -> return null // shouldn't happen
         }
 
-        return EquipAction(slot = "weapon", itemCode = bestCode, source = source)
+        return EquipAction(slot = "weapon", itemCode = best.code, source = source)
     }
 
     /**

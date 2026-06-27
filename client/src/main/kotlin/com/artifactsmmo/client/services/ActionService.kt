@@ -26,6 +26,14 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
     }
 
     /**
+     * Execute a map transition — moves the character from the current layer to another via
+     * a transition tile. The character must already be standing on a tile that has a transition.
+     */
+    suspend fun transition(characterName: String): CharacterTransitionData {
+        return post<ApiResponse<CharacterTransitionData>>("/my/$characterName/action/transition").data
+    }
+
+    /**
      * Start a fight with a monster
      */
     suspend fun fight(characterName: String, participants: List<String> = emptyList()): CharacterFightData {

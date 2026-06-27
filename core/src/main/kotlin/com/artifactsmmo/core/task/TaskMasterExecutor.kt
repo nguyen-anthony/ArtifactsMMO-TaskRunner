@@ -444,13 +444,13 @@ class TaskMasterExecutor(
             currentChar = tryUpgradeTool(characterName, currentChar, ing.gatherSkill, onStatus)
         }
 
-        // ── Move to resource and gather ──
+        // ── Move to resource and gather (handles underground/interior transitions) ──
         val resourceMap = helper.findNearest(currentChar, "resource", ing.resourceCode)
             ?: return StepResult.Error("No ${ing.resourceCode} locations found on map")
 
-        if (!helper.isAt(currentChar, resourceMap.x, resourceMap.y)) {
+        if (!helper.isAt(currentChar, resourceMap.x, resourceMap.y) || currentChar.layer != resourceMap.layer) {
             onStatus("Moving to ${ing.resourceName}...")
-            currentChar = helper.moveTo(characterName, resourceMap.x, resourceMap.y)
+            currentChar = helper.navigateToTile(characterName, resourceMap)
         }
 
         // Build a progress string that covers all ingredients for multi-ingredient recipes
