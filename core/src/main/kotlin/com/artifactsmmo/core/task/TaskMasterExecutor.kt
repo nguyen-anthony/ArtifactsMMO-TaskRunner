@@ -718,15 +718,19 @@ class TaskMasterExecutor(
         return StepResult.TaskMasterTaskCancelled
     }
 
-    // ── Tool Upgrade (reused from GatheringExecutor pattern) ──
+    // ── Tool Upgrade ──
 
+    /**
+     * Check if a better ready-made tool is available in the bank and equip it.
+     * Craftable tool upgrades are intentionally not checked here — tool crafting
+     * is handled by the dedicated crafter character, not by task-master characters.
+     */
     private suspend fun tryUpgradeTool(
         characterName: String,
         currentChar: Character,
         skill: String,
         onStatus: (String) -> Unit
     ): Character {
-        // Check for ready-made tool in bank first
         val readyMade = try {
             helper.findReadyMadeToolInBank(currentChar, skill)
         } catch (_: Exception) { null }
@@ -751,32 +755,6 @@ class TaskMasterExecutor(
             return char
         }
 
-        // Check for craftable upgrade
-        val upgrade = try {
-            helper.findBestCraftableToolFromBank(currentChar, skill)
-        } catch (_: Exception) { null } ?: return currentChar
-
-        onStatus("Upgrade available: ${upgrade.tool.name}! Withdrawing materials...")
-        var char = helper.bankWithdrawItems(characterName, upgrade.ingredients)
-
-        val workshop = helper.findNearestWorkshop(char, upgrade.craftSkill)
-        if (workshop == null) {
-            onStatus("No ${upgrade.craftSkill} workshop found, skipping upgrade")
-            helper.bankDepositItems(characterName, upgrade.ingredients)
-            return helper.refreshCharacter(characterName)
-        }
-
-        onStatus("Crafting ${upgrade.tool.name} at ${upgrade.craftSkill} workshop...")
-        char = helper.moveTo(characterName, workshop.x, workshop.y)
-        helper.craft(characterName, upgrade.tool.code, 1)
-
-        char = helper.refreshCharacter(characterName)
-        if (char.weaponSlot.isNotEmpty()) {
-            char = helper.unequip(characterName, "weapon")
-        }
-
-        char = helper.equip(characterName, upgrade.tool.code, "weapon")
-        onStatus("Equipped ${upgrade.tool.name}!")
-        return char
+        return currentChar
     }
 }

@@ -538,6 +538,55 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         }
     }
 
+    /**
+     * Fetch a single page of bank items (no item_code filter). Used by [CraftingExecutor]
+     * to build a full bank snapshot in one paginated sweep instead of one call per ingredient.
+     */
+    suspend fun getBankItems(page: Int = 1, size: Int = 100) =
+        client.bank.getBankItems(page = page, size = size)
+
+    // ── Bank snapshot cache ──
+
+    /**
+     * Short-lived in-memory snapshot of bank contents: item code → quantity.
+     *
+     * TTL of [BANK_SNAPSHOT_TTL_MS] (10 seconds). All bank-reading functions
+     * (tool upgrade checks, food search, weapon selection, crafting) share this
+     * snapshot so that multiple functions executing within the same logical step
+     * issue at most one paginated GET /my/bank/items sweep instead of one each.
+     *
+     * 10 seconds is safely shorter than any action cooldown, so the snapshot is
+     * always stale by the time the next task iteration starts.
+     */
+    private var bankSnapshot: Map<String, Int> = emptyMap()
+    private var bankSnapshotTimestamp: Long = 0L
+    private val BANK_SNAPSHOT_TTL_MS = 10_000L
+
+    /**
+     * Return the cached bank snapshot if it is still within [BANK_SNAPSHOT_TTL_MS],
+     * otherwise fetch all bank pages, update the snapshot, and return it.
+     */
+    suspend fun getOrRefreshBankSnapshot(): Map<String, Int> {
+        val now = System.currentTimeMillis()
+        if (now - bankSnapshotTimestamp < BANK_SNAPSHOT_TTL_MS) return bankSnapshot
+        val fresh = mutableMapOf<String, Int>()
+        var page = 1
+        while (true) {
+            val result = try {
+                client.bank.getBankItems(page = page, size = 100)
+            } catch (_: Exception) { break }
+            for (item in result.data) {
+                fresh[item.code] = (fresh[item.code] ?: 0) + item.quantity
+            }
+            if (page >= (result.pages ?: Int.MAX_VALUE)) break
+            if (result.data.size < 100) break
+            page++
+        }
+        bankSnapshot = fresh
+        bankSnapshotTimestamp = now
+        return bankSnapshot
+    }
+
     // ── Food / Cooking discovery ──
 
     /**
@@ -638,34 +687,22 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     suspend fun findBestFoodInBank(char: Character): Triple<String, Int, Int>? {
         var bestFood: Triple<String, Int, Int>? = null
 
-        // Page through all bank items
-        var page = 1
-        while (true) {
-            val bankPage = try {
-                client.bank.getBankItems(page = page, size = 100)
+        // Use shared bank snapshot instead of an independent paginated sweep.
+        val bankItems = getOrRefreshBankSnapshot()
+        for ((code, quantity) in bankItems) {
+            if (quantity <= 0) continue
+            val item = try {
+                contentCache.getItem(code)
             } catch (_: Exception) {
-                break
+                continue
             }
-
-            for (slot in bankPage.data) {
-                if (slot.quantity <= 0) continue
-                val item = try {
-                    contentCache.getItem(slot.code)
-                } catch (_: Exception) {
-                    continue
-                }
-                if (item.level > char.level) continue
-                val healEffect = item.effects.find { it.code == "heal" }
-                if (healEffect != null && healEffect.value > 0) {
-                    if (bestFood == null || healEffect.value > bestFood.second) {
-                        bestFood = Triple(slot.code, healEffect.value, slot.quantity)
-                    }
+            if (item.level > char.level) continue
+            val healEffect = item.effects.find { it.code == "heal" }
+            if (healEffect != null && healEffect.value > 0) {
+                if (bestFood == null || healEffect.value > bestFood.second) {
+                    bestFood = Triple(code, healEffect.value, quantity)
                 }
             }
-
-            if (page >= (bankPage.pages ?: Int.MAX_VALUE)) break
-            if (bankPage.data.size < 100) break
-            page++
         }
         return bestFood
     }
@@ -904,18 +941,13 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         } else null
         val currentBestLevel = maxOf(currentBest?.level ?: 0, currentEquipped?.level ?: 0)
 
-        // Get bank items
-        val bankItems = mutableMapOf<String, Int>()
-        var bankPage = 1
-        while (true) {
-            val result = client.bank.getBankItems(page = bankPage, size = 100)
-            for (item in result.data) {
-                bankItems[item.code] = (bankItems[item.code] ?: 0) + item.quantity
-            }
-            if (bankPage >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            bankPage++
-        }
+        // Early exit: if the character is already using the highest-level tool available
+        // for their current skill level, no upgrade is possible — skip the bank sweep.
+        val highestPossibleLevel = allTools.maxOfOrNull { it.level } ?: 0
+        if (currentBestLevel >= highestPossibleLevel) return null
+
+        // Use shared bank snapshot instead of an independent paginated sweep.
+        val bankItems = getOrRefreshBankSnapshot()
 
         // Find the best tool in the bank that's better than what we have
         val bestInBank = allTools
@@ -933,74 +965,6 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         )
     }
 
-    /**
-     * Find the best tool for a gathering skill that the character doesn't own but could
-     * craft using materials currently in the bank.
-     *
-     * Returns null if no upgrade is available, or a ToolUpgradeInfo with the best
-     * craftable upgrade and the ingredients to withdraw.
-     */
-    suspend fun findBestCraftableToolFromBank(char: Character, skill: String): ToolUpgradeInfo? {
-        // Tool usability is gated by the gathering skill level alone.
-        val skillLevel = CharacterUtils.getSkillLevel(char, skill) ?: 0
-
-        // Get all tools for this skill up to the skill level from cache
-        val allTools = contentCache.getItemsByType("weapon")
-            .filter { it.level <= skillLevel && isToolForSkill(it, skill) }
-
-        // Determine current best tool level (equipped or in inventory)
-        val currentBest = findBestToolInInventory(char, skill)
-        val currentEquipped = if (char.weaponSlot.isNotEmpty()) {
-            allTools.find { it.code == char.weaponSlot }
-        } else null
-        val currentBestLevel = maxOf(currentBest?.level ?: 0, currentEquipped?.level ?: 0)
-
-        // Filter to tools better than what we have, sorted best first
-        val upgradeCandidates = allTools
-            .filter { it.level > currentBestLevel }
-            .filter { it.craft != null }
-            .sortedByDescending { it.level }
-
-        // Get all bank items (paginated)
-        val bankItems = mutableMapOf<String, Int>()
-        var bankPage = 1
-        while (true) {
-            val result = client.bank.getBankItems(page = bankPage, size = 100)
-            for (item in result.data) {
-                bankItems[item.code] = (bankItems[item.code] ?: 0) + item.quantity
-            }
-            if (bankPage >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            bankPage++
-        }
-
-        // Check each candidate from best to worst
-        for (tool in upgradeCandidates) {
-            val craft = tool.craft ?: continue
-            val craftSkill = craft.skill ?: continue
-            val craftLevel = craft.level ?: 0
-
-            // Check if character has the crafting skill level
-            val charCraftLevel = com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, craftSkill) ?: 0
-            if (charCraftLevel < craftLevel) continue
-
-            // Check if bank has all ingredients
-            val hasAllIngredients = craft.items.all { ingredient ->
-                (bankItems[ingredient.code] ?: 0) >= ingredient.quantity
-            }
-
-            if (hasAllIngredients) {
-                return ToolUpgradeInfo(
-                    tool = tool,
-                    craftSkill = craftSkill,
-                    craftLevel = craftLevel,
-                    ingredients = craft.items.map { SimpleItem(it.code, it.quantity) }
-                )
-            }
-        }
-
-        return null
-    }
 
     // ── Content queries ──
 
@@ -1255,20 +1219,8 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         // Build inventory lookup
         val inventoryMap = char.inventory.associate { it.code to it.quantity }
 
-        // Build bank lookup (paginated)
-        val bankMap = mutableMapOf<String, Int>()
-        var bankPage = 1
-        while (true) {
-            val result = try {
-                client.bank.getBankItems(page = bankPage, size = 100)
-            } catch (_: Exception) { break }
-            for (item in result.data) {
-                bankMap[item.code] = (bankMap[item.code] ?: 0) + item.quantity
-            }
-            if (bankPage >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            bankPage++
-        }
+        // Build bank lookup using shared snapshot instead of an independent paginated sweep.
+        val bankMap = getOrRefreshBankSnapshot()
 
         // Build craftable lookup for this slot's craft skill
         val craftableMap = mutableMapOf<String, CraftableItemInfo>()
@@ -1377,19 +1329,10 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             .filter { it.quantity > 0 }
             .associate { it.code to "inventory" }
 
-        val bankCodes = mutableMapOf<String, String>() // code -> "bank"
-        var bankPage = 1
-        while (true) {
-            val result = try {
-                client.bank.getBankItems(page = bankPage, size = 100)
-            } catch (_: Exception) { break }
-            for (item in result.data) {
-                if (item.quantity > 0) bankCodes[item.code] = "bank"
-            }
-            if (bankPage >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            bankPage++
-        }
+        // Use shared bank snapshot instead of an independent paginated sweep.
+        val bankCodes = getOrRefreshBankSnapshot()
+            .filter { it.value > 0 }
+            .mapValues { "bank" }
 
         // Include currently equipped weapon even if it's not in inventory
         val currentWeaponCode = char.weaponSlot.takeIf { it.isNotEmpty() }
@@ -1678,10 +1621,11 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      * Returns null if the item cannot be obtained through gathering.
      */
     suspend fun findTaskItemSource(itemCode: String): TaskItemSource? {
-        // First: check if any resource directly drops this item
-        val directResources = client.content.getResources(drop = itemCode, size = 100)
-        if (directResources.data.isNotEmpty()) {
-            val resource = directResources.data.first()
+        // First: check if any resource directly drops this item.
+        // Result is cached in ContentCache for 24 hours — no live API call after first lookup.
+        val directResources = contentCache.getResourcesByDrop(itemCode)
+        if (directResources.isNotEmpty()) {
+            val resource = directResources.first()
             val ingredient = TaskItemIngredient(
                 rawItemCode  = itemCode,
                 rawPerCraft  = 1,
@@ -1701,17 +1645,18 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             )
         }
 
-        // Second: check if the item is crafted, and trace ALL raw ingredients
+        // Second: check if the item is crafted, and trace ALL raw ingredients.
         val item = contentCache.getItemOrNull(itemCode) ?: return null
         val craft = item.craft ?: return null
         val craftSkill = craft.skill ?: return null
 
-        // Collect every ingredient that is directly obtainable via a resource node
+        // Collect every ingredient that is directly obtainable via a resource node.
+        // Each getResourcesByDrop() call is cached — no repeated API calls per ingredient.
         val gatherableIngredients = mutableListOf<TaskItemIngredient>()
         for (ingredient in craft.items) {
-            val ingredientResources = client.content.getResources(drop = ingredient.code, size = 100)
-            if (ingredientResources.data.isNotEmpty()) {
-                val resource = ingredientResources.data.first()
+            val ingredientResources = contentCache.getResourcesByDrop(ingredient.code)
+            if (ingredientResources.isNotEmpty()) {
+                val resource = ingredientResources.first()
                 gatherableIngredients.add(
                     TaskItemIngredient(
                         rawItemCode  = ingredient.code,

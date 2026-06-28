@@ -294,9 +294,9 @@ class GatheringExecutor(private val helper: ActionHelper) {
     }
 
     /**
-     * Check if a better tool is available — either already in the bank (ready-made)
-     * or craftable from bank materials. Ready-made tools are checked first so that
-     * tools crafted by other characters are picked up immediately.
+     * Check if a better ready-made tool is available in the bank.
+     * Craftable tool upgrades are intentionally not checked here — tool crafting
+     * is handled by the dedicated crafter character, not by gathering characters.
      */
     private suspend fun tryUpgradeTool(
         characterName: String,
@@ -304,7 +304,6 @@ class GatheringExecutor(private val helper: ActionHelper) {
         skill: String,
         onStatus: (String) -> Unit
     ): Character {
-        // First: check if a better tool already exists in the bank
         val readyMade = try {
             helper.findReadyMadeToolInBank(currentChar, skill)
         } catch (_: Exception) { null }
@@ -330,42 +329,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             return char
         }
 
-        // Second: check if we can craft a better tool from bank materials
-        val upgrade = try {
-            helper.findBestCraftableToolFromBank(currentChar, skill)
-        } catch (_: Exception) {
-            null
-        } ?: return currentChar
-
-        onStatus("Upgrade available: ${upgrade.tool.name}! Withdrawing materials...")
-
-        // Withdraw ingredients from bank
-        var char = helper.bankWithdrawItems(characterName, upgrade.ingredients)
-
-        // Move to the crafting workshop
-        val workshop = helper.findNearestWorkshop(char, upgrade.craftSkill)
-        if (workshop == null) {
-            onStatus("No ${upgrade.craftSkill} workshop found, skipping upgrade")
-            // Deposit the ingredients back
-            helper.bankDepositItems(characterName, upgrade.ingredients)
-            return helper.refreshCharacter(characterName)
-        }
-
-        onStatus("Crafting ${upgrade.tool.name} at ${upgrade.craftSkill} workshop...")
-        char = helper.navigateToTile(characterName, workshop)
-        helper.craft(characterName, upgrade.tool.code, 1)
-
-        // Unequip current weapon if any
-        char = helper.refreshCharacter(characterName)
-        if (char.weaponSlot.isNotEmpty()) {
-            char = helper.unequip(characterName, "weapon")
-        }
-
-        // Equip the new tool
-        char = helper.equip(characterName, upgrade.tool.code, "weapon")
-        onStatus("Equipped ${upgrade.tool.name}!")
-
-        return char
+        return currentChar
     }
 
     /**

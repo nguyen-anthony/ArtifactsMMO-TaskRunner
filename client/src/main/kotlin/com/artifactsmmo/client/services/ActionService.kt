@@ -68,14 +68,30 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      */
     suspend fun equip(characterName: String, itemCode: String, slot: String, quantity: Int = 1): EquipmentData {
         val body = listOf(EquipmentRequest(code = itemCode, slot = slot, quantity = quantity))
-        return post<ApiResponse<EquipmentData>>("/my/$characterName/action/equip", body).data
+        val response = post<ApiResponse<EquipmentArrayData>>("/my/$characterName/action/equip", body).data
+        // Convert to EquipmentData for backward compatibility (use first item in the array)
+        val firstEquipment = response.equipment.firstOrNull()
+        return EquipmentData(
+            cooldown = response.cooldown,
+            slot = firstEquipment?.slot ?: slot,
+            item = firstEquipment?.item ?: Item(
+                name = "",
+                code = itemCode,
+                level = 0,
+                type = "",
+                subtype = "",
+                description = "",
+                tradeable = false
+            ),
+            character = response.character
+        )
     }
 
     /**
      * Equip multiple items at once
      */
-    suspend fun equipMultiple(characterName: String, items: List<EquipmentRequest>): EquipmentData {
-        return post<ApiResponse<EquipmentData>>("/my/$characterName/action/equip", items).data
+    suspend fun equipMultiple(characterName: String, items: List<EquipmentRequest>): EquipmentArrayData {
+        return post<ApiResponse<EquipmentArrayData>>("/my/$characterName/action/equip", items).data
     }
 
     /**
@@ -83,14 +99,30 @@ class ActionService(client: HttpClient) : BaseApiService(client) {
      */
     suspend fun unequip(characterName: String, slot: String, quantity: Int = 1): EquipmentData {
         val body = listOf(UnequipmentRequest(slot = slot, quantity = quantity))
-        return post<ApiResponse<EquipmentData>>("/my/$characterName/action/unequip", body).data
+        val response = post<ApiResponse<EquipmentArrayData>>("/my/$characterName/action/unequip", body).data
+        // Convert to EquipmentData for backward compatibility (use first item in the array)
+        val firstEquipment = response.equipment.firstOrNull()
+        return EquipmentData(
+            cooldown = response.cooldown,
+            slot = firstEquipment?.slot ?: slot,
+            item = firstEquipment?.item ?: Item(
+                name = "",
+                code = "",
+                level = 0,
+                type = "",
+                subtype = "",
+                description = "",
+                tradeable = false
+            ),
+            character = response.character
+        )
     }
 
     /**
      * Unequip multiple items at once
      */
-    suspend fun unequipMultiple(characterName: String, items: List<UnequipmentRequest>): EquipmentData {
-        return post<ApiResponse<EquipmentData>>("/my/$characterName/action/unequip", items).data
+    suspend fun unequipMultiple(characterName: String, items: List<UnequipmentRequest>): EquipmentArrayData {
+        return post<ApiResponse<EquipmentArrayData>>("/my/$characterName/action/unequip", items).data
     }
 
     /**

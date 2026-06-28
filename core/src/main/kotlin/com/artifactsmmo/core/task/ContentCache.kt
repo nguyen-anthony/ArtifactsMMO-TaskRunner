@@ -4,6 +4,7 @@ import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.MapInfo
 import com.artifactsmmo.client.models.NPCItem
+import com.artifactsmmo.client.models.Resource
 import com.artifactsmmo.client.services.ContentService
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
@@ -88,6 +89,17 @@ class ContentCache(private val contentService: ContentService) {
 
     private val itemsByTypeCache: Cache<String, List<Item>> = Caffeine.newBuilder()
         .maximumSize(50)
+        .expireAfterWrite(24, TimeUnit.HOURS)
+        .build()
+
+    /**
+     * Cache for resource lookups by drop code (item code → list of resources that drop it).
+     * Keyed by item code. 24-hour TTL — game content does not change within a session.
+     * Eliminates repeated GET /resources?drop=<code> calls from findTaskItemSource(),
+     * which previously fired on every tick of a TaskMaster items task.
+     */
+    private val resourcesByDropCache: Cache<String, List<Resource>> = Caffeine.newBuilder()
+        .maximumSize(200)
         .expireAfterWrite(24, TimeUnit.HOURS)
         .build()
 
@@ -239,8 +251,28 @@ class ContentCache(private val contentService: ContentService) {
         return items
     }
 
-    // ── NPC item cache (lazy, 24-hour TTL) ───────────────────────────────────
+    /**
+     * Return all resources that drop [dropCode] (all pages merged), hitting the cache first.
+     * Replaces direct GET /resources?drop=<code> calls in findTaskItemSource(), which fired
+     * on every TaskMaster items-task tick for the task item and each of its ingredients.
+     * After the first call per item code the result is free (pure in-memory) for 24 hours.
+     */
+    suspend fun getResourcesByDrop(dropCode: String): List<Resource> {
+        resourcesByDropCache.getIfPresent(dropCode)?.let { return it }
+        val resources = mutableListOf<Resource>()
+        var page = 1
+        while (true) {
+            val result = contentService.getResources(drop = dropCode, page = page, size = 100)
+            resources.addAll(result.data)
+            if (page >= (result.pages ?: Int.MAX_VALUE)) break
+            if (result.data.size < 100) break
+            page++
+        }
+        resourcesByDropCache.put(dropCode, resources)
+        return resources
+    }
 
+    // ── NPC item cache (lazy, 24-hour TTL) ───────────────────────────────────
     /**
      * Reverse-lookup map: item code → list of [NPCItem] entries from any NPC that sells it.
      * Populated lazily on first call to [getNpcItemsByCode] by fetching all NPCs then their

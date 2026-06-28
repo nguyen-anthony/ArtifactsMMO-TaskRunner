@@ -1,5 +1,6 @@
 package com.artifactsmmo.core.task
 
+import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.SimpleItem
 
 /**
@@ -29,7 +30,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
         task: TaskType.Craft,
         onStatus: (String) -> Unit
     ): StepResult {
-        val char = helper.refreshCharacter(characterName)
+        var char = helper.refreshCharacter(characterName)
 
         // Look up the recipe for the target item
         val targetItem = try {
@@ -45,9 +46,14 @@ class CraftingExecutor(private val helper: ActionHelper) {
         // All other cases: inventory + bank.
         val useInventoryOnly = task.mode == CraftMode.RECYCLE && task.craftedSoFar > 0
 
+        // Fix A: fetch all bank quantities in one paginated call instead of one call
+        // per ingredient. All getBankQty() lookups in this step read from this snapshot.
+        val bankSnapshot: Map<String, Int> = if (useInventoryOnly) emptyMap()
+                                             else loadBankSnapshot()
+
         val ingredientAvailability = recipe.items.map { ingredient ->
-            val invQty = helper.getItemQuantity(char, ingredient.code)
-            val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
+            val invQty  = helper.getItemQuantity(char, ingredient.code)
+            val bankQty = bankSnapshot[ingredient.code] ?: 0
             IngredientInfo(ingredient.code, ingredient.quantity, invQty, bankQty)
         }
 
@@ -64,7 +70,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
 
             for (ingredient in recipe.items) {
                 val invQty  = helper.getItemQuantity(char, ingredient.code)
-                val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
+                val bankQty = bankSnapshot[ingredient.code] ?: 0
                 val owned   = invQty + bankQty
                 if (owned >= ingredient.quantity) continue // already have enough of this one
 
@@ -86,7 +92,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
                     char.gold
                 } else {
                     helper.getItemQuantity(char, source.currency) +
-                    helper.getBankItemQuantity(source.currency)
+                    (bankSnapshot[source.currency] ?: 0)
                 }
                 val buyableQty       = currencyAvailable / source.priceEach
                 val totalAffordable  = owned + buyableQty
@@ -123,7 +129,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
             for (candidate in npcCandidates) {
                 val ingredient = recipe.items.first { it.code == candidate.purchase.itemCode }
                 val invQty  = helper.getItemQuantity(char, ingredient.code)
-                val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
+                val bankQty = bankSnapshot[ingredient.code] ?: 0
                 val owned   = invQty + bankQty
                 val purchaseQty = (batchSize * ingredient.quantity) - owned
 
@@ -148,11 +154,14 @@ class CraftingExecutor(private val helper: ActionHelper) {
                 }
             }
 
-            // Re-evaluate after purchases — update maxCraftableTotal for batch sizing below
-            val updatedChar = helper.refreshCharacter(characterName)
+            // Fix B: re-evaluate after NPC purchases using a fresh character fetch (necessary
+            // since gold/currency just changed) but re-read bank quantities from a refreshed
+            // snapshot rather than calling getBankItemQuantity() per ingredient.
+            char = helper.refreshCharacter(characterName)
+            val postNpcBankSnapshot = loadBankSnapshot()
             maxCraftableTotal = recipe.items.minOf { ingredient ->
-                val invQty  = helper.getItemQuantity(updatedChar, ingredient.code)
-                val bankQty = if (useInventoryOnly) 0 else helper.getBankItemQuantity(ingredient.code)
+                val invQty  = helper.getItemQuantity(char, ingredient.code)
+                val bankQty = postNpcBankSnapshot[ingredient.code] ?: 0
                 (invQty + bankQty) / ingredient.quantity
             }
             if (maxCraftableTotal <= 0) {
@@ -200,25 +209,26 @@ class CraftingExecutor(private val helper: ActionHelper) {
         }
 
         // Withdraw from bank if needed (skipped in RECYCLE subsequent batches — no bank trips)
+        // Fix B: bankWithdrawItems() returns an updated Character; carry it forward so the
+        // two refreshCharacter() calls that previously followed are no longer needed.
         if (!useInventoryOnly && toWithdraw.isNotEmpty()) {
             onStatus("Withdrawing materials from bank...")
-            helper.bankWithdrawItems(characterName, toWithdraw)
+            char = helper.bankWithdrawItems(characterName, toWithdraw)
         }
 
-        // Move to workshop
-        val updatedChar = helper.refreshCharacter(characterName)
-        val workshop = helper.findNearestWorkshop(updatedChar, task.skill)
+        // Move to workshop — use the character we already have (no extra refresh needed).
+        val workshop = helper.findNearestWorkshop(char, task.skill)
             ?: return StepResult.Error("No ${task.skill} workshop found")
 
-        if (!helper.isAt(updatedChar, workshop.x, workshop.y)) {
+        if (!helper.isAt(char, workshop.x, workshop.y)) {
             onStatus("Moving to ${task.skill} workshop...")
-            helper.moveTo(characterName, workshop.x, workshop.y)
+            char = helper.moveTo(characterName, workshop.x, workshop.y)
         }
 
-        // Recalculate actual craftable from current inventory (after withdrawal)
-        val charAtWorkshop = helper.refreshCharacter(characterName)
+        // Recalculate actual craftable from current inventory (after withdrawal + move).
+        // char is already up-to-date from the last action response — no refresh needed.
         val actualBatch = recipe.items.minOf { ingredient ->
-            helper.getItemQuantity(charAtWorkshop, ingredient.code) / ingredient.quantity
+            helper.getItemQuantity(char, ingredient.code) / ingredient.quantity
         }.let { maxFromInv ->
             minOf(maxFromInv, remaining)
         }
@@ -237,6 +247,13 @@ class CraftingExecutor(private val helper: ActionHelper) {
             CraftMode.BANK    -> handleBankPostCraft(characterName, task, actualBatch, onStatus)
         }
     }
+
+    /**
+     * Fetch all bank quantities in a single sweep, using the shared bank snapshot cache
+     * in ActionHelper. Multiple calls within the same 10-second window are free (in-memory).
+     */
+    private suspend fun loadBankSnapshot(): Map<String, Int> =
+        helper.getOrRefreshBankSnapshot()
 
     /**
      * After crafting in RECYCLE mode: recycle the crafted items at the same workshop.
@@ -263,6 +280,8 @@ class CraftingExecutor(private val helper: ActionHelper) {
 
     /**
      * After crafting in BANK mode: deposit crafted items to bank.
+     * Fix B: bankDepositItems() returns an updated Character from the action response,
+     * so the refreshCharacter() that preceded it has been removed.
      */
     private suspend fun handleBankPostCraft(
         characterName: String,
@@ -270,6 +289,9 @@ class CraftingExecutor(private val helper: ActionHelper) {
         craftedCount: Int,
         onStatus: (String) -> Unit
     ): StepResult {
+        // Re-fetch to get post-craft inventory state before depositing.
+        // This is the one refresh that remains necessary: the craft action response
+        // is consumed by helper.craft() internally and not threaded back here.
         val char = helper.refreshCharacter(characterName)
         val craftedQty = helper.getItemQuantity(char, task.itemCode)
         if (craftedQty > 0) {

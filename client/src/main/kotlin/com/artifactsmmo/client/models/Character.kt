@@ -173,6 +173,19 @@ data class EquipmentData(
 )
 
 @Serializable
+data class EquipmentChangeItem(
+    val slot: String,
+    val item: Item
+)
+
+@Serializable
+data class EquipmentArrayData(
+    val cooldown: Cooldown,
+    val equipment: List<EquipmentChangeItem>,
+    val character: Character
+)
+
+@Serializable
 data class UseItemData(
     val cooldown: Cooldown,
     val item: Item,

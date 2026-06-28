@@ -86,10 +86,10 @@ class AppState(val scope: CoroutineScope, private val apiToken: String) {
             }
         }
 
-        // Poll character details every 30 seconds
+        // Poll character details every 60 seconds
         scope.launch {
             while (isActive) {
-                delay(30_000)
+                delay(60_000)
                 refreshCharacterDetails(names)
             }
         }
