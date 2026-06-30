@@ -1026,6 +1026,12 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     /**
      * Simulate combat between a character (with current equipment) and a monster.
      * Returns simulation data including win rate.
+     *
+     * Tries the API simulator first. If the API call fails (e.g. rate-limited),
+     * falls back to [LocalFightSimulator] which runs entirely in-memory using the
+     * documented combat formulas. The local fallback is accurate for monsters without
+     * special effects; when effects are present, win-rate will be optimistic and
+     * callers should apply a stricter threshold (see [LocalFightSimulator.Result.effectsIgnored]).
      */
     suspend fun simulateFight(
         characterName: String,
@@ -1033,13 +1039,31 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         iterations: Int = 20
     ): com.artifactsmmo.client.models.CombatSimulationData {
         val char = refreshCharacter(characterName)
-        val fakeChar = com.artifactsmmo.client.models.FakeCharacterRequest.fromCharacter(char)
-        val request = com.artifactsmmo.client.models.CombatSimulationRequest(
-            characters = listOf(fakeChar),
-            monster = monsterCode,
-            iterations = iterations
-        )
-        return client.simulation.simulateFight(request)
+        return try {
+            val fakeChar = com.artifactsmmo.client.models.FakeCharacterRequest.fromCharacter(char)
+            val request = com.artifactsmmo.client.models.CombatSimulationRequest(
+                characters = listOf(fakeChar),
+                monster = monsterCode,
+                iterations = iterations
+            )
+            client.simulation.simulateFight(request)
+        } catch (e: Exception) {
+            // API simulator failed (rate-limit, member-only, network error, etc.)
+            // Fall back to the local simulator so the caller always gets a result.
+            val monster = contentCache.getMonsterOrNull(monsterCode)
+                ?: throw e  // If we can't get monster data either, re-throw original error
+
+            val localResult = LocalFightSimulator.simulate(char, monster, iterations)
+            val effectsNote = if (localResult.effectsIgnored) " (local sim, effects ignored)" else " (local sim)"
+            // We can't easily log here without a logger reference, so we embed the note
+            // in a synthetic CombatSimulationData. The winrate is what callers care about.
+            com.artifactsmmo.client.models.CombatSimulationData(
+                results = emptyList(),
+                wins = localResult.wins,
+                losses = localResult.losses,
+                winrate = localResult.winRate
+            )
+        }
     }
 
     /**

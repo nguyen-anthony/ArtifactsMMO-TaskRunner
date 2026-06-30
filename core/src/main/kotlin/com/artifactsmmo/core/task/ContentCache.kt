@@ -3,6 +3,7 @@ package com.artifactsmmo.core.task
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.MapInfo
+import com.artifactsmmo.client.models.Monster
 import com.artifactsmmo.client.models.NPCItem
 import com.artifactsmmo.client.models.Resource
 import com.artifactsmmo.client.services.ContentService
@@ -100,6 +101,16 @@ class ContentCache(private val contentService: ContentService) {
      */
     private val resourcesByDropCache: Cache<String, List<Resource>> = Caffeine.newBuilder()
         .maximumSize(200)
+        .expireAfterWrite(24, TimeUnit.HOURS)
+        .build()
+
+    /**
+     * Cache for monster lookups by code. 24-hour TTL.
+     * Used by the local fight simulator so it doesn't fire a GET /monsters/{code}
+     * on every simulation call.
+     */
+    private val monsterCache: Cache<String, Monster> = Caffeine.newBuilder()
+        .maximumSize(500)
         .expireAfterWrite(24, TimeUnit.HOURS)
         .build()
 
@@ -270,6 +281,19 @@ class ContentCache(private val contentService: ContentService) {
         }
         resourcesByDropCache.put(dropCode, resources)
         return resources
+    }
+
+    /** Fetch monster by [code], hitting the cache first. Throws on API failure. */
+    suspend fun getMonster(code: String): Monster {
+        monsterCache.getIfPresent(code)?.let { return it }
+        val monster = contentService.getMonster(code)
+        monsterCache.put(code, monster)
+        return monster
+    }
+
+    /** Like [getMonster] but returns null instead of throwing on failure. */
+    suspend fun getMonsterOrNull(code: String): Monster? {
+        return try { getMonster(code) } catch (_: Exception) { null }
     }
 
     // ── NPC item cache (lazy, 24-hour TTL) ───────────────────────────────────

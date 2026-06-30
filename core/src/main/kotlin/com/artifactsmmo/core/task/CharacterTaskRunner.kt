@@ -52,6 +52,12 @@ class CharacterTaskRunner(
     /** Mutable counter for specific-mode craft progress within the current task. */
     private var craftedSoFar: Int = 0
 
+    /** Consecutive fight losses without a win. Reset to 0 on any FightWon. */
+    private var consecutiveDeaths: Int = 0
+
+    /** Threshold of consecutive losses before stopping the fight loop (or cancelling a task master monster task). */
+    private val consecutiveDeathThreshold = 3
+
     /**
      * Assign a new task. Cancels the current task loop, runs cleanup for the
      * previous task, then starts the new one.
@@ -105,8 +111,10 @@ class CharacterTaskRunner(
                 recycleCount = 0,
                 bankTrips = 0,
                 tasksCompleted = 0,
-                lastError = null
+                lastError = null,
+                consecutiveDeaths = 0
             )}
+            consecutiveDeaths = 0
 
             // Refresh character level for display
             try {
@@ -429,7 +437,8 @@ class CharacterTaskRunner(
                     }
                     is StepResult.FightWon -> {
                         previousChar = result.character  // thread fight response character
-                        updateStatus { it.copy(fightCount = it.fightCount + 1, lastError = null) }
+                        consecutiveDeaths = 0
+                        updateStatus { it.copy(fightCount = it.fightCount + 1, lastError = null, consecutiveDeaths = 0) }
                     }
                     is StepResult.Crafted -> {
                         previousChar = null  // craft path involves bank trips; reset
@@ -454,8 +463,41 @@ class CharacterTaskRunner(
                     }
                     is StepResult.FightLost -> {
                         previousChar = null
-                        updateStatus { it.copy(lastError = result.message) }
-                        delay(5.seconds) // Brief pause after a loss
+                        consecutiveDeaths++
+                        updateStatus { it.copy(lastError = result.message, consecutiveDeaths = consecutiveDeaths) }
+                        if (consecutiveDeaths >= consecutiveDeathThreshold) {
+                            val monsterName = when (val t = task) {
+                                is TaskType.Fight -> t.monsterName
+                                is TaskType.TaskMaster -> result.message.removePrefix("Lost to ")
+                                else -> "unknown monster"
+                            }
+                            val msg = "Stopped after $consecutiveDeaths consecutive deaths fighting $monsterName"
+                            logger.log(characterName, msg)
+                            updateStatus { it.copy(statusMessage = msg, lastError = msg) }
+                            when (val taskSnapshot = task) {
+                                is TaskType.TaskMaster -> {
+                                    // For task master: cancel the current monster task and accept a new one.
+                                    previousChar = null
+                                    consecutiveDeaths = 0
+                                    updateStatus { it.copy(consecutiveDeaths = 0) }
+                                    val monsterCode = try {
+                                        helper.refreshCharacter(characterName).task
+                                    } catch (_: Exception) { "" }
+                                    taskMasterExecutor.blacklistMonster(monsterCode)
+                                    taskMasterExecutor.cancelCurrentMonsterTask(characterName, taskSnapshot.type, { logMsg ->
+                                        logger.log(characterName, logMsg)
+                                        updateStatus { it.copy(statusMessage = logMsg) }
+                                    })
+                                }
+                                else -> {
+                                    // For plain Fight: stop the runner
+                                    revertToPreviousTask()
+                                    break
+                                }
+                            }
+                        } else {
+                            delay(5.seconds) // Brief pause after a loss
+                        }
                     }
                     is StepResult.Rested -> {
                         previousChar = null
@@ -510,6 +552,15 @@ class CharacterTaskRunner(
                         logger.log(characterName, "No viable monster task found (exhausted attempts or no tasks_coins)")
                         revertToPreviousTask()
                         break
+                    }
+                    is StepResult.TooManyDeaths -> {
+                        // Emitted by TaskMasterExecutor when consecutive death handling is delegated
+                        // through the executor rather than inline. Loop continues — executor has
+                        // already cancelled the task and the next step will accept a new one.
+                        previousChar = null
+                        consecutiveDeaths = 0
+                        updateStatus { it.copy(consecutiveDeaths = 0, lastError = null) }
+                        logger.log(characterName, "Consecutive death limit reached for ${result.monsterName} — task cancelled, accepting new one")
                     }
                 }
 

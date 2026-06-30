@@ -555,4 +555,9 @@ sealed class StepResult {
     data object QuickTaskComplete : StepResult()
     /** Task master (monsters): no viable task found and no tasks_coins remain to keep cancelling. */
     data object TaskMasterNoViableTask : StepResult()
+    /**
+     * Fight loop: died [deaths] consecutive times against [monsterName] — the runner should stop
+     * (for a plain Fight task) or cancel the current task and try a new one (for TaskMaster).
+     */
+    data class TooManyDeaths(val monsterName: String, val deaths: Int) : StepResult()
 }

@@ -118,5 +118,7 @@ data class RunnerStatus(
     val bankTrips: Int = 0,
     val tasksCompleted: Int = 0,
     val isRunning: Boolean = false,
-    val lastError: String? = null
+    val lastError: String? = null,
+    /** Number of consecutive fight losses without a win. Resets to 0 on any win. */
+    val consecutiveDeaths: Int = 0
 )

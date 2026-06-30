@@ -45,6 +45,60 @@ class TaskMasterExecutor(
     private val acceptedMonsterCodes = mutableSetOf<String>()
 
     /**
+     * Monster codes that have been blacklisted due to too many consecutive deaths.
+     * These will be rejected (cancel + re-accept) if assigned again, just like a
+     * low win-rate would be. Session-scoped.
+     */
+    private val blacklistedMonsterCodes = mutableSetOf<String>()
+
+    /**
+     * Blacklist a monster code so it will be cancelled if assigned as a task again.
+     * Called by [CharacterTaskRunner] when the consecutive death threshold is reached.
+     */
+    fun blacklistMonster(monsterCode: String) {
+        if (monsterCode.isNotEmpty()) {
+            blacklistedMonsterCodes.add(monsterCode)
+            acceptedMonsterCodes.remove(monsterCode) // Remove from accepted cache too
+        }
+    }
+
+    /**
+     * Cancel the currently active monster task and accept a new one.
+     * Called by [CharacterTaskRunner] after too many consecutive deaths.
+     * Returns once a new task has been accepted (or a [StepResult] if the cancellation fails).
+     */
+    suspend fun cancelCurrentMonsterTask(
+        characterName: String,
+        type: String,
+        onStatus: (String) -> Unit
+    ) {
+        onStatus("Too many consecutive deaths — cancelling monster task...")
+        if (!ensureTaskCoinInInventory(characterName, onStatus)) {
+            onStatus("No tasks_coin available to cancel task after deaths — stopping")
+            return
+        }
+
+        val char = helper.refreshCharacter(characterName)
+        val taskMaster = helper.findNearestTasksMaster(char, type) ?: run {
+            onStatus("No $type task master found — cannot cancel task after deaths")
+            return
+        }
+
+        if (!helper.isAt(char, taskMaster.x, taskMaster.y)) {
+            onStatus("Moving to task master to cancel after deaths...")
+            helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+        }
+
+        onStatus("Cancelling task (too many deaths)...")
+        helper.cancelTask(characterName)
+
+        onStatus("Accepting new task...")
+        val taskData = helper.acceptTask(characterName)
+        val t = taskData.task
+        onStatus("New task accepted: ${t.total}x ${t.code} (${t.type})")
+    }
+
+    /**
      * Execute a single step of the task master loop.
      * This is a high-level step — it may internally do many actions
      * (e.g., an entire gather-trade cycle) before returning.
@@ -198,6 +252,28 @@ class TaskMasterExecutor(
                 return StepResult.Waiting
             }
 
+            // Reject immediately if blacklisted due to repeated deaths
+            if (monsterCode in blacklistedMonsterCodes) {
+                onStatus("$monsterCode is blacklisted (too many deaths) — cancelling task...")
+                if (!ensureTaskCoinInInventory(characterName, onStatus)) {
+                    return null
+                }
+                val blChar = helper.refreshCharacter(characterName)
+                val blTaskMaster = helper.findNearestTasksMaster(blChar, type)
+                    ?: return StepResult.Error("No $type task master found on map")
+                if (!helper.isAt(blChar, blTaskMaster.x, blTaskMaster.y)) {
+                    onStatus("Moving to task master to cancel blacklisted task...")
+                    helper.moveTo(characterName, blTaskMaster.x, blTaskMaster.y)
+                }
+                onStatus("Cancelling blacklisted task ($monsterCode)...")
+                helper.cancelTask(characterName)
+                onStatus("Accepting new task...")
+                val newTaskData = helper.acceptTask(characterName)
+                val newT = newTaskData.task
+                onStatus("New task accepted: ${newT.total}x ${newT.code} (${newT.type})")
+                return@repeat // Continue to next attempt with the new task
+            }
+
             onStatus("Simulating fight vs $monsterCode (attempt ${attempt + 1}/$maxAttempts)...")
             val simData = try {
                 helper.simulateFight(characterName, monsterCode, iterations = 20)
@@ -209,17 +285,22 @@ class TaskMasterExecutor(
             }
 
             val winRate = simData.winrate
-            onStatus("Win rate vs $monsterCode: ${"%.0f".format(winRate * 100)}%")
+            // Local simulator results have an empty results list (synthetic response).
+            // If monster effects were ignored, require a higher win-rate to be conservative.
+            val isLocalResult = simData.results.isEmpty()
+            val requiredWinRate = if (isLocalResult) 0.98 else 0.90
+            val sourceLabel = if (isLocalResult) "local sim" else "API sim"
+            onStatus("Win rate vs $monsterCode: ${"%.0f".format(winRate * 100)}% ($sourceLabel, threshold: ${"%.0f".format(requiredWinRate * 100)}%)")
 
-            if (winRate >= 0.90) {
+            if (winRate >= requiredWinRate) {
                 onStatus("Win rate acceptable, proceeding with $monsterCode task")
                 acceptedMonsterCodes.add(monsterCode)
                 optimiseWeaponForMonster(characterName, monsterCode, onStatus)
                 return StepResult.Waiting
             }
 
-            // Win rate too low (<90%) — need a coin to cancel
-            onStatus("Win rate too low (${"%.0f".format(winRate * 100)}%), attempting to cancel task...")
+            // Win rate too low — need a coin to cancel
+            onStatus("Win rate too low (${"%.0f".format(winRate * 100)}% < ${"%.0f".format(requiredWinRate * 100)}%), attempting to cancel task...")
             if (!ensureTaskCoinInInventory(characterName, onStatus)) {
                 return null // No coin available — give up
             }
