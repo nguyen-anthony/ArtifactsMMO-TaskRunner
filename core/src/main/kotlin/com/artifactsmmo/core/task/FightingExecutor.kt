@@ -27,37 +27,53 @@ class FightingExecutor(private val helper: ActionHelper) {
     private val monsterCookableCache = mutableMapOf<String, List<ActionHelper.CookableDropInfo>>()
 
     /**
-     * Tracks which monster code the weapon has already been optimised for in this
-     * executor instance. Reset to null when the monster target changes so a fresh
-     * weapon-selection pass runs for every new monster.
+     * Tracks which monster code each character's weapon has already been optimised for.
+     * Keyed by character name so multiple characters sharing this executor instance do not
+     * incorrectly skip each other's weapon-check — previously a single shared var caused
+     * character A's optimisation to suppress character B's check.
      */
-    private var weaponOptimisedForMonster: String? = null
+    private val weaponOptimisedForMonster = mutableMapOf<String, String?>()
 
     /**
      * Execute a single iteration of the fight loop.
+     *
+     * [previousChar] may be supplied by the caller when it already holds a fresh
+     * [Character] from the previous iteration's fight response. When provided the
+     * leading GET /characters/{name} fetch is skipped entirely.
      */
     suspend fun executeStep(
         characterName: String,
         task: TaskType.Fight,
-        onStatus: (String) -> Unit
+        onStatus: (String) -> Unit,
+        previousChar: com.artifactsmmo.client.models.Character? = null
     ): StepResult {
-        var char = helper.refreshCharacter(characterName)
+        // Use the character threaded from the previous tick's fight response when available.
+        var char = previousChar ?: helper.refreshCharacter(characterName)
 
         // ── One-time weapon optimisation per monster target ──
-        // Runs once when a new monster code is encountered, then skips on every
+        // Runs once per character when a new monster code is encountered, then skips on every
         // subsequent iteration to avoid per-fight overhead.
-        if (weaponOptimisedForMonster != task.monsterCode) {
-            weaponOptimisedForMonster = task.monsterCode
+        if (weaponOptimisedForMonster[characterName] != task.monsterCode) {
+            weaponOptimisedForMonster[characterName] = task.monsterCode
             onStatus("Checking best weapon for ${task.monsterName}...")
             val weaponSwap = try {
                 helper.findBestCombatWeapon(char, task.monsterCode)
             } catch (_: Exception) { null }
 
-            if (weaponSwap != null) {
-                onStatus("Switching to ${weaponSwap.itemCode} (better vs ${task.monsterName})...")
-                char = helper.retrieveAndEquipItems(characterName, listOf(weaponSwap))
-            } else {
-                onStatus("Current weapon is optimal for ${task.monsterName}")
+            when {
+                weaponSwap == null -> {
+                    onStatus("Current weapon is optimal for ${task.monsterName}")
+                }
+                weaponSwap.itemCode.isEmpty() -> {
+                    // No combat weapons owned — unequip the gathering tool so it isn't
+                    // used as a combat weapon (e.g. fishing net vs red slimes)
+                    onStatus("No combat weapons available — unequipping gathering tool...")
+                    try { char = helper.unequip(characterName, "weapon") } catch (_: Exception) {}
+                }
+                else -> {
+                    onStatus("Switching to ${weaponSwap.itemCode} (better vs ${task.monsterName})...")
+                    char = helper.retrieveAndEquipItems(characterName, listOf(weaponSwap))
+                }
             }
         }
 
@@ -104,13 +120,15 @@ class FightingExecutor(private val helper: ActionHelper) {
             val result = helper.fight(characterName)
             val fight = result.fight
             val charResult = fight.characters.find { it.characterName == characterName }
+            // The updated Character is in result.characters — thread it to the next tick.
+            val updatedChar = result.characters.find { it.name == characterName }
 
             if (fight.result == "win") {
                 val drops = charResult?.drops?.joinToString(", ") { "${it.quantity}x ${it.code}" } ?: ""
                 val xp = charResult?.xp ?: 0
                 val gold = charResult?.gold ?: 0
                 onStatus("Won! +${xp} XP, +${gold} gold${if (drops.isNotEmpty()) ", drops: $drops" else ""}")
-                StepResult.FightWon(xp, gold)
+                StepResult.FightWon(xp, gold, updatedChar)
             } else {
                 onStatus("Lost fight against ${task.monsterName}")
                 StepResult.FightLost("Lost to ${task.monsterName}")

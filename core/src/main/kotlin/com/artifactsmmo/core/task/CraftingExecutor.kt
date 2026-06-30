@@ -24,13 +24,17 @@ class CraftingExecutor(private val helper: ActionHelper) {
      * Execute a single step of the crafting loop.
      * A "step" may involve: withdrawing materials, moving to workshop, crafting a batch,
      * and recycling (RECYCLE) or depositing (BANK).
+     *
+     * [previousChar] may be supplied by the caller when it already holds a fresh
+     * [Character] from the previous iteration, skipping the leading refreshCharacter call.
      */
     suspend fun executeStep(
         characterName: String,
         task: TaskType.Craft,
-        onStatus: (String) -> Unit
+        onStatus: (String) -> Unit,
+        previousChar: Character? = null
     ): StepResult {
-        var char = helper.refreshCharacter(characterName)
+        var char = previousChar ?: helper.refreshCharacter(characterName)
 
         // Look up the recipe for the target item
         val targetItem = try {
@@ -238,13 +242,14 @@ class CraftingExecutor(private val helper: ActionHelper) {
             return StepResult.OutOfMaterials
         }
 
-        // Craft the batch
+        // Craft the batch — the response character is threaded forward to avoid
+        // a redundant refreshCharacter in handleBankPostCraft.
         onStatus("Crafting ${actualBatch}x ${task.itemName}...")
-        helper.craft(characterName, task.itemCode, actualBatch)
+        val craftResult = helper.craft(characterName, task.itemCode, actualBatch)
 
         return when (task.mode) {
             CraftMode.RECYCLE -> handleRecyclePostCraft(characterName, task, actualBatch, onStatus)
-            CraftMode.BANK    -> handleBankPostCraft(characterName, task, actualBatch, onStatus)
+            CraftMode.BANK    -> handleBankPostCraft(characterName, task, actualBatch, craftResult.character, onStatus)
         }
     }
 
@@ -280,20 +285,17 @@ class CraftingExecutor(private val helper: ActionHelper) {
 
     /**
      * After crafting in BANK mode: deposit crafted items to bank.
-     * Fix B: bankDepositItems() returns an updated Character from the action response,
-     * so the refreshCharacter() that preceded it has been removed.
+     * [postCraftChar] is the character returned by the craft action response —
+     * its inventory already reflects the crafted items so no extra refresh is needed.
      */
     private suspend fun handleBankPostCraft(
         characterName: String,
         task: TaskType.Craft,
         craftedCount: Int,
+        postCraftChar: com.artifactsmmo.client.models.Character,
         onStatus: (String) -> Unit
     ): StepResult {
-        // Re-fetch to get post-craft inventory state before depositing.
-        // This is the one refresh that remains necessary: the craft action response
-        // is consumed by helper.craft() internally and not threaded back here.
-        val char = helper.refreshCharacter(characterName)
-        val craftedQty = helper.getItemQuantity(char, task.itemCode)
+        val craftedQty = helper.getItemQuantity(postCraftChar, task.itemCode)
         if (craftedQty > 0) {
             onStatus("Depositing ${craftedQty}x ${task.itemName} to bank...")
             helper.bankDepositItems(characterName, listOf(SimpleItem(task.itemCode, craftedQty)))
@@ -304,6 +306,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
             onStatus("Completed! Crafted ${task.targetQuantity}x ${task.itemName}")
             StepResult.CraftTaskComplete
         } else {
+            // Thread the deposit response character to the next iteration.
             StepResult.Crafted(count = craftedCount)
         }
     }

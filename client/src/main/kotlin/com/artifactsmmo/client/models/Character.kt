@@ -181,7 +181,7 @@ data class EquipmentChangeItem(
 @Serializable
 data class EquipmentArrayData(
     val cooldown: Cooldown,
-    val equipment: List<EquipmentChangeItem>,
+    @SerialName("items") val equipment: List<EquipmentChangeItem>,
     val character: Character
 )
 

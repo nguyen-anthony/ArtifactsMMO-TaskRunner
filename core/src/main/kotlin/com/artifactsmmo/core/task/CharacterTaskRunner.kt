@@ -368,17 +368,22 @@ class CharacterTaskRunner(
     }
 
     private suspend fun runTaskLoop(task: TaskType) {
+        // previousChar threads the Character returned by each action response into the
+        // next iteration's executeStep(), eliminating one GET /characters/{name} per tick.
+        // Reset to null whenever an error or non-threading result occurs.
+        var previousChar: com.artifactsmmo.client.models.Character? = null
+
         while (currentCoroutineContext().isActive) {
             try {
                 val result = when (task) {
-                    is TaskType.Gather -> gatheringExecutor.executeStep(characterName, task) { msg ->
+                    is TaskType.Gather -> gatheringExecutor.executeStep(characterName, task, { msg ->
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg) }
-                    }
-                    is TaskType.Fight -> fightingExecutor.executeStep(characterName, task) { msg ->
+                    }, previousChar = previousChar)
+                    is TaskType.Fight -> fightingExecutor.executeStep(characterName, task, { msg ->
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg) }
-                    }
+                    }, previousChar = previousChar)
                     is TaskType.Craft -> {
                         // Inject current craftedSoFar for both BANK and RECYCLE modes
                         // (RECYCLE uses it to detect the first batch and cap at targetQuantity)
@@ -386,10 +391,10 @@ class CharacterTaskRunner(
                             task.copy(craftedSoFar = craftedSoFar)
                         } else task
 
-                        craftingExecutor.executeStep(characterName, craftTask) { msg ->
+                        craftingExecutor.executeStep(characterName, craftTask, { msg ->
                             logger.log(characterName, msg)
                             updateStatus { it.copy(statusMessage = msg) }
-                        }
+                        }, previousChar = previousChar)
                     }
                     is TaskType.Idle -> break
                     is TaskType.TaskMaster -> taskMasterExecutor.executeStep(characterName, task) { msg ->
@@ -414,29 +419,20 @@ class CharacterTaskRunner(
                     }
                 }
 
-                // Update counters based on result
+                // Update counters and thread character to next iteration where available.
+                // For results that carry no character (bank trips, errors, etc.) reset to null
+                // so the next tick falls back to a fresh API fetch.
                 when (result) {
-                    is StepResult.Gathered -> updateStatus { it.copy(gatherCount = it.gatherCount + 1, lastError = null) }
-                    is StepResult.Banked -> updateStatus { it.copy(bankTrips = it.bankTrips + 1, lastError = null) }
-                    is StepResult.CraftedAndBanked -> updateStatus { it.copy(
-                        craftCount = it.craftCount + result.craftCount,
-                        bankTrips = it.bankTrips + 1,
-                        lastError = null
-                    )}
-                    is StepResult.FightWon -> updateStatus { it.copy(fightCount = it.fightCount + 1, lastError = null) }
-                    is StepResult.FightLost -> {
-                        updateStatus { it.copy(lastError = result.message) }
-                        delay(5.seconds) // Brief pause after a loss
+                    is StepResult.Gathered -> {
+                        previousChar = result.character  // thread gather response character
+                        updateStatus { it.copy(gatherCount = it.gatherCount + 1, lastError = null) }
                     }
-                    is StepResult.Rested -> updateStatus { it.copy(lastError = null) }
-                    is StepResult.Waiting -> delay(3.seconds)
-                    is StepResult.Error -> {
-                        updateStatus { it.copy(statusMessage = "Error: ${result.message}", lastError = result.message) }
-                        delay(10.seconds)
+                    is StepResult.FightWon -> {
+                        previousChar = result.character  // thread fight response character
+                        updateStatus { it.copy(fightCount = it.fightCount + 1, lastError = null) }
                     }
-
-                    // Crafting-specific results
                     is StepResult.Crafted -> {
+                        previousChar = null  // craft path involves bank trips; reset
                         craftedSoFar += result.count
                         updateStatus { it.copy(
                             craftCount = it.craftCount + result.count,
@@ -444,12 +440,45 @@ class CharacterTaskRunner(
                             lastError = null
                         )}
                     }
+                    is StepResult.Banked -> {
+                        previousChar = null
+                        updateStatus { it.copy(bankTrips = it.bankTrips + 1, lastError = null) }
+                    }
+                    is StepResult.CraftedAndBanked -> {
+                        previousChar = null
+                        updateStatus { it.copy(
+                            craftCount = it.craftCount + result.craftCount,
+                            bankTrips = it.bankTrips + 1,
+                            lastError = null
+                        )}
+                    }
+                    is StepResult.FightLost -> {
+                        previousChar = null
+                        updateStatus { it.copy(lastError = result.message) }
+                        delay(5.seconds) // Brief pause after a loss
+                    }
+                    is StepResult.Rested -> {
+                        previousChar = null
+                        updateStatus { it.copy(lastError = null) }
+                    }
+                    is StepResult.Waiting -> {
+                        previousChar = null
+                        delay(3.seconds)
+                    }
+                    is StepResult.Error -> {
+                        previousChar = null
+                        updateStatus { it.copy(statusMessage = "Error: ${result.message}", lastError = result.message) }
+                        delay(10.seconds)
+                    }
+
                     is StepResult.OutOfMaterials -> {
+                        previousChar = null
                         logger.log(characterName, "Out of materials for crafting task")
                         revertToPreviousTask()
                         break
                     }
                     is StepResult.CraftTaskComplete -> {
+                        previousChar = null
                         logger.log(characterName, "Crafting task complete!")
                         revertToPreviousTask()
                         break
@@ -457,6 +486,7 @@ class CharacterTaskRunner(
 
                     // Quick bank/inventory task results
                     is StepResult.QuickTaskComplete -> {
+                        previousChar = null
                         logger.log(characterName, "Quick task complete!")
                         revertToPreviousTask()
                         break
@@ -464,16 +494,19 @@ class CharacterTaskRunner(
 
                     // Task master results
                     is StepResult.TaskMasterTaskCompleted -> {
+                        previousChar = null
                         updateStatus { it.copy(tasksCompleted = it.tasksCompleted + 1, lastError = null) }
                         logger.log(characterName, "Task master task completed! (total: ${_status.value.tasksCompleted})")
                         // Loop continues — will accept next task on next step
                     }
                     is StepResult.TaskMasterTaskCancelled -> {
+                        previousChar = null
                         updateStatus { it.copy(lastError = null) }
                         logger.log(characterName, "Task cancelled, will accept new one")
                         // Loop continues — will accept next task on next step
                     }
                     is StepResult.TaskMasterNoViableTask -> {
+                        previousChar = null
                         logger.log(characterName, "No viable monster task found (exhausted attempts or no tasks_coins)")
                         revertToPreviousTask()
                         break
@@ -483,6 +516,7 @@ class CharacterTaskRunner(
             } catch (e: CancellationException) {
                 throw e // Propagate cancellation
             } catch (e: ArtifactsApiException) {
+                previousChar = null
                 val msg = "API Error ${e.errorCode}: ${e.message}"
                 logger.log(characterName, msg)
                 updateStatus { it.copy(statusMessage = msg, lastError = msg) }
@@ -492,6 +526,7 @@ class CharacterTaskRunner(
                     else -> delay(10.seconds)
                 }
             } catch (e: Exception) {
+                previousChar = null
                 val msg = "Error: ${e.message}"
                 logger.log(characterName, msg)
                 updateStatus { it.copy(statusMessage = msg, lastError = msg) }

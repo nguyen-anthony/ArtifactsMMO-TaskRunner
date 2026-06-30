@@ -32,7 +32,17 @@ class TaskMasterExecutor(
 ) {
     /** Track last upgrade check time per character (epoch millis). */
     private val lastUpgradeCheck = mutableMapOf<String, Long>()
-    private val upgradeCheckIntervalMs = 5 * 60 * 1000L
+    /** How often to check for tool upgrades (10 minutes). */
+    private val upgradeCheckIntervalMs = 10 * 60 * 1000L
+
+    /**
+     * Cache of monster codes that have already passed the win-rate simulation gate.
+     * Once a monster code is accepted as viable, we skip re-simulating it on any
+     * subsequent task assignment for the same monster — saving up to 3 simulation
+     * calls per repeated task. The cache is per executor instance (per character)
+     * and lives for the session; monster viability doesn't change within a session.
+     */
+    private val acceptedMonsterCodes = mutableSetOf<String>()
 
     /**
      * Execute a single step of the task master loop.
@@ -61,8 +71,7 @@ class TaskMasterExecutor(
         return when (char.taskType) {
             "items" -> fulfillItemTask(characterName, char, onStatus)
             "monsters" -> fulfillMonsterTask(characterName, char, onStatus)
-            else -> {
-                onStatus("Unknown task type: ${char.taskType}, cancelling...")
+            else -> {                onStatus("Unknown task type: ${char.taskType}, cancelling...")
                 cancelAndRetry(characterName, task.type, onStatus)
             }
         }
@@ -163,10 +172,13 @@ class TaskMasterExecutor(
 
     /**
      * After a monster task has just been accepted, simulate the fight and
-     * optionally cancel + re-accept up to 5 times if win rate is below 90%.
+     * optionally cancel + re-accept up to 3 times if win rate is below 90%.
+     *
+     * Monster codes that have already been accepted as viable are cached for the
+     * session — if the same monster is assigned again, simulation is skipped entirely.
      *
      * Returns:
-     *  - [StepResult.Waiting]  if a viable task was found (win rate >= 0.90) or simulation failed
+     *  - [StepResult.Waiting]  if a viable task was found or simulation failed gracefully
      *  - null                  if no viable task could be found (no coins or attempts exhausted)
      */
     private suspend fun simulateAndFilterMonsterTask(
@@ -174,16 +186,25 @@ class TaskMasterExecutor(
         type: String,
         onStatus: (String) -> Unit
     ): StepResult? {
-        val maxAttempts = 5
+        val maxAttempts = 3
         repeat(maxAttempts) { attempt ->
             val char = helper.refreshCharacter(characterName)
             val monsterCode = char.task
 
+            // Skip simulation if we already know this monster is beatable
+            if (monsterCode in acceptedMonsterCodes) {
+                onStatus("$monsterCode previously verified — skipping simulation")
+                optimiseWeaponForMonster(characterName, monsterCode, onStatus)
+                return StepResult.Waiting
+            }
+
             onStatus("Simulating fight vs $monsterCode (attempt ${attempt + 1}/$maxAttempts)...")
             val simData = try {
-                helper.simulateFight(characterName, monsterCode, iterations = 100)
+                helper.simulateFight(characterName, monsterCode, iterations = 20)
             } catch (e: Exception) {
                 onStatus("Simulation failed (${e.message}), proceeding with task")
+                acceptedMonsterCodes.add(monsterCode) // treat as viable to avoid retrying
+                optimiseWeaponForMonster(characterName, monsterCode, onStatus)
                 return StepResult.Waiting
             }
 
@@ -192,29 +213,13 @@ class TaskMasterExecutor(
 
             if (winRate >= 0.90) {
                 onStatus("Win rate acceptable, proceeding with $monsterCode task")
-
-                // Optimise weapon for this monster before entering the fight loop
-                onStatus("Checking best weapon for $monsterCode...")
-                val weaponSwap = try {
-                    helper.findBestCombatWeapon(helper.refreshCharacter(characterName), monsterCode)
-                } catch (_: Exception) { null }
-
-                if (weaponSwap != null) {
-                    onStatus("Switching to ${weaponSwap.itemCode} (better vs $monsterCode)...")
-                    try {
-                        helper.retrieveAndEquipItems(characterName, listOf(weaponSwap))
-                    } catch (_: Exception) {
-                        onStatus("Weapon swap failed, continuing with current weapon")
-                    }
-                } else {
-                    onStatus("Current weapon is optimal for $monsterCode")
-                }
-
+                acceptedMonsterCodes.add(monsterCode)
+                optimiseWeaponForMonster(characterName, monsterCode, onStatus)
                 return StepResult.Waiting
             }
 
             // Win rate too low (<90%) — need a coin to cancel
-            onStatus("Win rate too low (${"%,.0f".format(winRate * 100)}%), attempting to cancel task...")
+            onStatus("Win rate too low (${"%.0f".format(winRate * 100)}%), attempting to cancel task...")
             if (!ensureTaskCoinInInventory(characterName, onStatus)) {
                 return null // No coin available — give up
             }
@@ -240,6 +245,37 @@ class TaskMasterExecutor(
 
         onStatus("Exhausted $maxAttempts attempts, no viable monster task found")
         return null
+    }
+
+    /**
+     * Check for and apply a better weapon for [monsterCode], handling both the normal
+     * weapon-swap case and the "unequip gathering tool" case.
+     */
+    private suspend fun optimiseWeaponForMonster(
+        characterName: String,
+        monsterCode: String,
+        onStatus: (String) -> Unit
+    ) {
+        onStatus("Checking best weapon for $monsterCode...")
+        val weaponSwap = try {
+            helper.findBestCombatWeapon(helper.refreshCharacter(characterName), monsterCode)
+        } catch (_: Exception) { null }
+
+        when {
+            weaponSwap == null -> onStatus("Current weapon is optimal for $monsterCode")
+            weaponSwap.itemCode.isEmpty() -> {
+                onStatus("No combat weapons available — unequipping gathering tool...")
+                try { helper.unequip(characterName, "weapon") } catch (_: Exception) {}
+            }
+            else -> {
+                onStatus("Switching to ${weaponSwap.itemCode} (better vs $monsterCode)...")
+                try {
+                    helper.retrieveAndEquipItems(characterName, listOf(weaponSwap))
+                } catch (_: Exception) {
+                    onStatus("Weapon swap failed, continuing with current weapon")
+                }
+            }
+        }
     }
 
     // ── Item Task Fulfillment ──
@@ -436,9 +472,10 @@ class TaskMasterExecutor(
         onStatus("Checking tool for ${ing.gatherSkill}...")
         currentChar = helper.ensureToolEquipped(characterName, ing.gatherSkill)
 
-        // Periodic tool upgrade check
+        // Periodic tool upgrade check — use getOrPut(now) so the check does not
+        // fire on the very first tick (lastUpgradeCheck initialises to current time).
         val now       = System.currentTimeMillis()
-        val lastCheck = lastUpgradeCheck[characterName] ?: 0L
+        val lastCheck = lastUpgradeCheck.getOrPut(characterName) { now }
         if (now - lastCheck >= upgradeCheckIntervalMs) {
             lastUpgradeCheck[characterName] = now
             currentChar = tryUpgradeTool(characterName, currentChar, ing.gatherSkill, onStatus)
@@ -654,14 +691,11 @@ class TaskMasterExecutor(
 
         onStatus("Monster task: ${char.taskProgress}/${char.taskTotal} $monsterCode")
 
-        // Create a temporary fight task and delegate to the fighting executor
+        // Create a temporary fight task and delegate to the fighting executor.
+        // Pass the character already fetched at the top of executeStep so
+        // FightingExecutor skips its own redundant refreshCharacter call.
         val fightTask = TaskType.Fight(monsterCode, monsterCode)
-
-        // Check if character can fight this monster (basic level check)
-        // The fighting executor handles HP, healing, inventory management
-        return fightingExecutor.executeStep(characterName, fightTask) { msg ->
-            onStatus(msg)
-        }
+        return fightingExecutor.executeStep(characterName, fightTask, { msg -> onStatus(msg) }, previousChar = char)
     }
 
     // ── Task Completion ──

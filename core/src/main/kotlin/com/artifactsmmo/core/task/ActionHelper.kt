@@ -891,10 +891,15 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     /**
      * Ensure the character has the best available tool equipped for the given skill.
      * Will equip from inventory if a better tool is available.
+     *
+     * [existingChar] may be supplied by callers that already hold a fresh [Character]
+     * from a preceding action response, avoiding a redundant GET /characters/{name} call.
+     * When null (default) the character is fetched from the API.
+     *
      * Returns updated character.
      */
-    suspend fun ensureToolEquipped(name: String, skill: String): Character {
-        var char = refreshCharacter(name)
+    suspend fun ensureToolEquipped(name: String, skill: String, existingChar: Character? = null): Character {
+        var char = existingChar ?: refreshCharacter(name)
         val bestTool = findBestToolInInventory(char, skill) ?: return char
 
         // Check if already equipped
@@ -1289,22 +1294,30 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     /**
      * Find the best combat weapon available to the character for fighting a specific monster.
      *
-     * Strategy (two-phase):
+     * Strategy (single-phase, no simulation):
      *
-     * Phase 1 — Elemental scoring (no API calls):
-     *   For each owned combat weapon, compute an elemental score:
-     *     score = Σ (weaponAttackElement * -monsterResistanceElement)
-     *   Negative monster resistance (vulnerability) multiplies the weapon's attack in that
-     *   element positively, boosting the score. Positive resistance reduces it.
-     *   Weapons are then ranked by elemental score descending. Level is used only as a
-     *   tiebreaker between weapons with the same elemental score, and the top 3 candidates
-     *   are selected for simulation.
+     * Candidates: all weapons the character owns (inventory, bank, or currently equipped)
+     * that are within their character level and are NOT gathering tools (subtype != "tool").
      *
-     * Phase 2 — Simulation (up to 3 API calls):
-     *   Run simulateFightWithSlotOverrides() for each candidate.
-     *   Primary ranking: highest win rate.
-     *   Tiebreaker: lowest average turns (faster kills = less HP lost per fight).
-     *   Returns null (no swap) if simulation is unavailable or current weapon is already best.
+     * If the character has no combat weapons at all, returns an [EquipAction] with an empty
+     * itemCode ("") — the caller should treat this as "unequip current weapon" so the
+     * character doesn't fight with a gathering tool.
+     *
+     * Scoring per weapon:
+     *   score = baseDmg + elementalBonus
+     *
+     * where:
+     *   baseDmg      = the weapon's "dmg" effect value (or 0 if absent) — ensures higher-level
+     *                  weapons without elemental attacks are not incorrectly ranked below
+     *                  lower-level elemental weapons.
+     *   elementalBonus = Σ attack_element * -(res_element - meanRes)
+     *                  Uses mean-subtracted resistances so scoring only captures relative
+     *                  elemental advantage, not absolute resistance levels. When all resistances
+     *                  are equal the bonus is 0 and level/damage alone decides the ranking.
+     *
+     * The weapon with the highest score is selected. Ties are broken by item level descending.
+     * Returns null if the best weapon is already equipped (no swap needed) or if no weapons
+     * at all can be determined (monster data unavailable and no combat weapons owned).
      */
     suspend fun findBestCombatWeapon(
         char: Character,
@@ -1317,102 +1330,72 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             }
         } catch (_: Exception) { return null }
 
-        if (allWeapons.isEmpty()) return null
-
-        // Fetch monster resistances for elemental scoring
+        // Fetch monster resistances for elemental scoring (cached in ContentCache via getItem)
         val monster = try {
             client.content.getMonster(monsterCode)
         } catch (_: Exception) { null }
 
-        // Build inventory + bank availability map for weapons
+        // Build inventory + bank availability map
         val inventoryCodes = char.inventory
             .filter { it.quantity > 0 }
             .associate { it.code to "inventory" }
 
-        // Use shared bank snapshot instead of an independent paginated sweep.
         val bankCodes = getOrRefreshBankSnapshot()
             .filter { it.value > 0 }
             .mapValues { "bank" }
 
-        // Include currently equipped weapon even if it's not in inventory
         val currentWeaponCode = char.weaponSlot.takeIf { it.isNotEmpty() }
 
-        // Build candidate list: owned weapons (inventory or bank) + current weapon
-        val ownedCandidates = allWeapons.filter { weapon ->
+        // Build candidate list: owned combat weapons (inventory, bank, or currently equipped)
+        val ownedCombatCandidates = allWeapons.filter { weapon ->
             weapon.code in inventoryCodes ||
             weapon.code in bankCodes ||
             weapon.code == currentWeaponCode
         }
 
-        if (ownedCandidates.isEmpty()) return null
-
-        // ── Phase 1: elemental scoring ────────────────────────────────────────
-        // For each weapon, compute how well its elemental attacks exploit the
-        // monster's resistances.
-        //
-        // Score = Σ attack_element * -(res_element - meanRes)
-        //
-        // Subtracting the mean resistance before scoring means the formula only captures
-        // *relative* elemental advantage — how much better/worse a weapon's element fares
-        // compared to a neutral element against this monster. This avoids penalising
-        // high-damage weapons when all resistances are uniformly positive (e.g. sheep with
-        // +10 on every element would otherwise score every weapon negatively and rank
-        // lower-damage weapons ahead of stronger ones). When all resistances are equal the
-        // mean-subtracted score is 0 for every weapon, so the level tiebreaker correctly
-        // promotes the highest-level (highest-damage) option.
-        fun elementalScore(weapon: Item): Int {
-            if (monster == null) return 0
-            val meanRes = (monster.resFire + monster.resEarth + monster.resWater + monster.resAir) / 4.0
-            val effectMap = weapon.effects.associate { it.code to it.value }
-            val fireContrib  = (effectMap["attack_fire"]  ?: 0) * (-(monster.resFire  - meanRes))
-            val earthContrib = (effectMap["attack_earth"] ?: 0) * (-(monster.resEarth - meanRes))
-            val waterContrib = (effectMap["attack_water"] ?: 0) * (-(monster.resWater - meanRes))
-            val airContrib   = (effectMap["attack_air"]   ?: 0) * (-(monster.resAir   - meanRes))
-            return (fireContrib + earthContrib + waterContrib + airContrib).toInt()
-        }
-
-        // Rank candidates: primary sort by elemental score descending,
-        // secondary by item level descending (tiebreaker only). Take top 3 for simulation.
-        val candidates = ownedCandidates
-            .sortedWith(compareByDescending<Item> { elementalScore(it) }.thenByDescending { it.level })
-            .take(3)
-
-        // ── Phase 2: simulation ───────────────────────────────────────────────
-        data class SimResult(val code: String, val winRate: Double, val avgTurns: Double)
-
-        val simResults = mutableListOf<SimResult>()
-
-        for (weapon in candidates) {
-            val sim = try {
-                simulateFightWithSlotOverrides(
-                    char = char,
-                    monsterCode = monsterCode,
-                    slotOverrides = mapOf("weapon" to weapon.code),
-                    iterations = 30
-                )
-            } catch (_: Exception) {
-                // Simulation unavailable — bail out entirely, don't swap anything
-                return null
+        // If the character has a tool equipped but no combat weapons anywhere, unequip the tool
+        // so they don't fight with a fishing net / pickaxe / etc.
+        if (ownedCombatCandidates.isEmpty()) {
+            return if (currentWeaponCode != null) {
+                // Signal "unequip" by returning an action with an empty itemCode
+                EquipAction(slot = "weapon", itemCode = "", source = "unequip")
+            } else {
+                null // Nothing equipped, nothing to do
             }
-            val avgTurns = if (sim.results.isNotEmpty())
-                sim.results.sumOf { it.turns }.toDouble() / sim.results.size
-            else Double.MAX_VALUE
-
-            simResults += SimResult(weapon.code, sim.winrate, avgTurns)
         }
 
-        // Pick best: highest win rate, then lowest average turns as tiebreaker
-        val best = simResults
-            .sortedWith(compareByDescending<SimResult> { it.winRate }.thenBy { it.avgTurns })
-            .firstOrNull() ?: return null
+        // ── Scoring ──────────────────────────────────────────────────────────
+        fun score(weapon: Item): Double {
+            // Base damage contribution — keeps higher-level weapons ranked above
+            // lower-level elemental weapons when the elemental bonus is small
+            val effectMap = weapon.effects.associate { it.code to it.value }
+            val baseDmg = (effectMap["dmg"] ?: effectMap["attack"] ?: 0).toDouble()
 
-        // Only suggest a swap if the best weapon differs from what's currently equipped
+            // Elemental bonus using mean-subtracted resistances
+            val elementalBonus = if (monster != null) {
+                val meanRes = (monster.resFire + monster.resEarth + monster.resWater + monster.resAir) / 4.0
+                val fireContrib  = (effectMap["attack_fire"]  ?: 0) * (-(monster.resFire  - meanRes))
+                val earthContrib = (effectMap["attack_earth"] ?: 0) * (-(monster.resEarth - meanRes))
+                val waterContrib = (effectMap["attack_water"] ?: 0) * (-(monster.resWater - meanRes))
+                val airContrib   = (effectMap["attack_air"]   ?: 0) * (-(monster.resAir   - meanRes))
+                fireContrib + earthContrib + waterContrib + airContrib
+            } else 0.0
+
+            return baseDmg + elementalBonus
+        }
+
+        // Select best: primary sort by score descending, tiebreaker by level descending
+        val best = ownedCombatCandidates
+            .sortedWith(compareByDescending<Item> { score(it) }.thenByDescending { it.level })
+            .first()
+
+        // No swap needed if best is already equipped
         if (best.code == currentWeaponCode) return null
 
         val source = when {
             best.code in inventoryCodes -> "inventory"
             best.code in bankCodes      -> "bank"
-            else                        -> return null // shouldn't happen
+            else                        -> return null
         }
 
         return EquipAction(slot = "weapon", itemCode = best.code, source = source)

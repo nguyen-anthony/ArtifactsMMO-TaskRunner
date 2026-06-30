@@ -20,19 +20,28 @@ class GatheringExecutor(private val helper: ActionHelper) {
     /** Track last upgrade check time per character (epoch millis). */
     private val lastUpgradeCheck = mutableMapOf<String, Long>()
 
-    /** How often to check for tool upgrades (5 minutes). */
-    private val upgradeCheckIntervalMs = 5 * 60 * 1000L
+    /** How often to check for tool upgrades (10 minutes). */
+    private val upgradeCheckIntervalMs = 10 * 60 * 1000L
 
     /**
      * Execute a single iteration of the gathering loop.
+     *
+     * [previousChar] may be supplied by the caller when it already holds a fresh
+     * [Character] from the previous iteration's action response (e.g. the gather
+     * cooldown response). When provided the leading GET /characters/{name} fetch is
+     * skipped entirely, saving one data endpoint call per tick.
+     *
      * Returns a result describing what happened.
      */
     suspend fun executeStep(
         characterName: String,
         task: TaskType.Gather,
-        onStatus: (String) -> Unit
+        onStatus: (String) -> Unit,
+        previousChar: com.artifactsmmo.client.models.Character? = null
     ): StepResult {
-        var char = helper.refreshCharacter(characterName)
+        // Use the character threaded from the previous tick's action response when available;
+        // only fetch from the API on the very first tick or after an error recovery.
+        var char = previousChar ?: helper.refreshCharacter(characterName)
 
         // Check if inventory is full
         if (helper.isInventoryFull(char)) {
@@ -40,13 +49,15 @@ class GatheringExecutor(private val helper: ActionHelper) {
             return handleFullInventory(characterName, task, onStatus)
         }
 
-        // Ensure best tool is equipped
-        onStatus("Checking tool...")
-        char = helper.ensureToolEquipped(characterName, task.skill)
+        // Ensure best tool is equipped — pass the character we already have to avoid
+        // the redundant refreshCharacter() inside ensureToolEquipped.
+        char = helper.ensureToolEquipped(characterName, task.skill, existingChar = char)
 
-        // Check for tool upgrade from bank materials periodically
+        // Check for tool upgrade from bank materials periodically.
+        // lastUpgradeCheck is initialised to System.currentTimeMillis() on first use
+        // so the check does NOT fire immediately on the very first tick.
         val now = System.currentTimeMillis()
-        val lastCheck = lastUpgradeCheck[characterName] ?: 0L
+        val lastCheck = lastUpgradeCheck.getOrPut(characterName) { now }
         if (now - lastCheck >= upgradeCheckIntervalMs) {
             lastUpgradeCheck[characterName] = now
             char = tryUpgradeTool(characterName, char, task.skill, onStatus)
@@ -80,7 +91,9 @@ class GatheringExecutor(private val helper: ActionHelper) {
             val result = helper.gather(characterName)
             val drops = result.details.items.joinToString(", ") { "${it.quantity}x ${it.code}" }
             onStatus("Gathered: $drops (+${result.details.xp} XP)")
-            StepResult.Gathered(result.details.xp, result.details.items.map { it.code to it.quantity })
+            // Thread the character from the action response to the next tick so the caller
+            // can pass it as previousChar and skip the redundant refreshCharacter() call.
+            StepResult.Gathered(result.details.xp, result.details.items.map { it.code to it.quantity }, result.character)
         } catch (e: ArtifactsApiException) {
             if (e.errorCode == 486) {
                 // Still in cooldown, just wait
@@ -190,11 +203,10 @@ class GatheringExecutor(private val helper: ActionHelper) {
         if (bankCookable.isEmpty()) return
 
         for ((item, maxQty, withdrawList) in bankCookable) {
-            val currentItems = helper.refreshCharacter(characterName).inventory.sumOf { it.quantity }
-            val maxItems = helper.refreshCharacter(characterName).inventoryMaxItems
+            val charNow = helper.refreshCharacter(characterName)
             val withdrawTotal = withdrawList.sumOf { it.quantity }
 
-            if (currentItems + withdrawTotal > maxItems) {
+            if (charNow.inventory.sumOf { it.quantity } + withdrawTotal > charNow.inventoryMaxItems) {
                 onStatus("Not enough inventory space to cook bank leftovers for ${item.name}, skipping")
                 continue
             }
@@ -506,16 +518,31 @@ class GatheringExecutor(private val helper: ActionHelper) {
 }
 
 sealed class StepResult {
-    data class Gathered(val xp: Int, val items: List<Pair<String, Int>>) : StepResult()
+    data class Gathered(
+        val xp: Int,
+        val items: List<Pair<String, Int>>,
+        /** Character state returned by the gather action — used to thread to next tick. */
+        val character: com.artifactsmmo.client.models.Character? = null
+    ) : StepResult()
     data object Banked : StepResult()
     data class CraftedAndBanked(val craftCount: Int) : StepResult()
-    data class FightWon(val xp: Int, val gold: Int) : StepResult()
+    data class FightWon(
+        val xp: Int,
+        val gold: Int,
+        /** Character state returned by the fight action — used to thread to next tick. */
+        val character: com.artifactsmmo.client.models.Character? = null
+    ) : StepResult()
     data class FightLost(val message: String) : StepResult()
     data object Rested : StepResult()
     data object Waiting : StepResult()
     data class Error(val message: String) : StepResult()
     /** Crafting task: successfully crafted (and optionally recycled) items. */
-    data class Crafted(val count: Int, val recycled: Int = 0) : StepResult()
+    data class Crafted(
+        val count: Int,
+        val recycled: Int = 0,
+        /** Character state after crafting — used to thread to next tick. */
+        val character: com.artifactsmmo.client.models.Character? = null
+    ) : StepResult()
     /** Crafting task: ran out of materials in bank + inventory. */
     data object OutOfMaterials : StepResult()
     /** Crafting task (specific mode): target quantity has been reached. */
