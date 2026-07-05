@@ -26,6 +26,7 @@ import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.CraftMode
 import com.artifactsmmo.core.task.DropStrategy
+import com.artifactsmmo.core.task.RunnerStatus
 import com.artifactsmmo.core.task.TaskType
 import com.artifactsmmo.gui.state.AppState
 import kotlinx.coroutines.launch
@@ -55,6 +56,12 @@ private sealed class WizardStep {
         val monster: Monster,
         val cookableDrops: List<ActionHelper.CookableDropInfo>,
         val equipActions: List<ActionHelper.EquipAction> = emptyList()
+    ) : WizardStep()
+    data class BossFightParticipants(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val sim: CombatSimulationData?,
+        val availableParticipants: List<RunnerStatus>  // all characters except initiator
     ) : WizardStep()
 
     // Equipment Browser (from FightSim → Check Equipment)
@@ -385,6 +392,13 @@ fun TaskWizardDialog(
                                     val char = appState.taskManager.getCharacterDetails(characterName)
                                     step = WizardStep.EquipmentBrowser(s.monsters, s.monster, s.sim, char)
                                 }
+                            },
+                            onBossFight = {
+                                load("Loading character roster...") {
+                                    val statuses = appState.taskManager.getAllStatuses()
+                                    val others = statuses.filter { it.characterName != characterName }
+                                    step = WizardStep.BossFightParticipants(s.monsters, s.monster, s.sim, others)
+                                }
                             }
                         )
 
@@ -482,7 +496,7 @@ fun TaskWizardDialog(
                                 }
                             },
                             onConfirm = { strategies ->
-                                assign(
+                                 assign(
                                     TaskType.Fight(
                                         monsterCode = s.monster.code,
                                         monsterName = s.monster.name,
@@ -490,6 +504,21 @@ fun TaskWizardDialog(
                                         dropStrategies = strategies
                                     )
                                 )
+                            }
+                        )
+
+                        is WizardStep.BossFightParticipants -> StepBossFightParticipants(
+                            step = s,
+                            characterName = characterName,
+                            onBack = { step = WizardStep.FightSim(s.monsters, s.monster, s.sim, null) },
+                            onConfirm = { selectedParticipants ->
+                                appState.taskManager.assignBossFight(
+                                    initiatorName = characterName,
+                                    participantNames = selectedParticipants,
+                                    monsterCode = s.monster.code,
+                                    monsterName = s.monster.name
+                                )
+                                onDismiss()
                             }
                         )
 
@@ -962,7 +991,7 @@ private fun StepFightDropConfig(
     val strategies = remember {
         mutableStateMapOf<String, DropStrategy>().apply {
             for (info in step.cookableDrops) {
-                put(info.rawCode, DropStrategy.COOK_AND_USE)
+                put(info.rawCode, DropStrategy.BANK_RAW)
             }
         }
     }
@@ -990,7 +1019,7 @@ private fun StepFightDropConfig(
         LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
             // Cookable drops with strategy selector
             items(step.cookableDrops) { info ->
-                val current = strategies[info.rawCode] ?: DropStrategy.COOK_AND_USE
+                val current = strategies[info.rawCode] ?: DropStrategy.BANK_RAW
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1114,7 +1143,8 @@ private fun StepFightSim(
     step: WizardStep.FightSim,
     onBack: () -> Unit,
     onConfirm: () -> Unit,
-    onCheckEquipment: () -> Unit
+    onCheckEquipment: () -> Unit,
+    onBossFight: () -> Unit = {}
 ) {
     val mon = step.monster
     val sim = step.sim
@@ -1244,6 +1274,10 @@ private fun StepFightSim(
         WizardNavRow(
             onBack = onBack,
             extraButton = {
+                if (step.monster.type == "boss") {
+                    OutlinedButton(onClick = onBossFight) { Text("Fight with Allies") }
+                    Spacer(Modifier.width(8.dp))
+                }
                 OutlinedButton(onClick = onCheckEquipment) { Text("Check Equipment") }
             },
             confirmLabel = "Fight!",
@@ -1856,6 +1890,128 @@ private fun StepEquipmentResim(
             onBack = onBack,
             confirmLabel = "Equip & Fight!",
             onConfirm = onEquipAndFight
+        )
+    }
+}
+
+// ── Step: Boss Fight — select participants ─────────────────────────────────────
+
+@Composable
+private fun StepBossFightParticipants(
+    step: WizardStep.BossFightParticipants,
+    characterName: String,
+    onBack: () -> Unit,
+    onConfirm: (List<String>) -> Unit
+) {
+    val selected = remember { mutableStateOf(setOf<String>()) }
+    val amber = Color(0xFFFFA000)
+    val amberContainer = Color(0xFFFFF8E1)
+
+    val anySelectedRunning = step.availableParticipants
+        .filter { it.characterName in selected.value }
+        .any { it.isRunning }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(
+                text = "Select participants for ${step.monster.name}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Select 1 or 2 characters to fight alongside $characterName. Boss fights require at least 2 characters total.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        LazyColumn(modifier = Modifier.heightIn(max = 340.dp)) {
+            items(step.availableParticipants) { participant ->
+                val isChecked = participant.characterName in selected.value
+                val hasActiveTask = participant.isRunning
+
+                ListItem(
+                    headlineContent = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "${participant.characterName}  Lv.${participant.characterLevel}",
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (hasActiveTask) {
+                                Surface(
+                                    color = amber.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Active task",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = amber,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    supportingContent = {
+                        Text(
+                            text = participant.statusMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    },
+                    trailingContent = {
+                        Checkbox(
+                            checked = isChecked,
+                            onCheckedChange = { nowChecked ->
+                                selected.value = if (nowChecked)
+                                    selected.value + participant.characterName
+                                else
+                                    selected.value - participant.characterName
+                            }
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        val nowChecked = participant.characterName !in selected.value
+                        selected.value = if (nowChecked)
+                            selected.value + participant.characterName
+                        else
+                            selected.value - participant.characterName
+                    }
+                )
+                HorizontalDivider()
+            }
+
+            // Warning surface if any selected participant has an active task
+            if (anySelectedRunning) {
+                item {
+                    Surface(
+                        color = amberContainer,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Warning: selected characters with active tasks will have their tasks cancelled.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = amber,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        WizardNavRow(
+            onBack = onBack,
+            confirmLabel = "Start Boss Fight",
+            onConfirm = if (selected.value.isEmpty() || selected.value.size > 2) null
+                        else { { onConfirm(selected.value.toList()) } }
         )
     }
 }

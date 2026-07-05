@@ -1,5 +1,6 @@
 package com.artifactsmmo.core.task
 
+import com.artifactsmmo.client.models.SimpleItem
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -17,7 +18,7 @@ private val json = Json {
  */
 @Serializable
 data class StoredTask(
-    val type: String, // "idle", "gather", "fight", "craft", "task_master", "bank_withdraw", "bank_recycle", "inventory_deposit", "inventory_recycle"
+    val type: String, // "idle", "gather", "fight", "boss_fight", "craft", "task_master", "bank_withdraw", "bank_recycle", "inventory_deposit", "inventory_recycle", "bulk_bank_withdraw", "bulk_inventory_deposit"
     val skill: String? = null,
     @SerialName("resource_code") val resourceCode: String? = null,
     @SerialName("resource_name") val resourceName: String? = null,
@@ -34,7 +35,22 @@ data class StoredTask(
     @SerialName("crafted_so_far") val craftedSoFar: Int? = null,
     @SerialName("task_master_type") val taskMasterType: String? = null, // "items", "monsters"
     val quantity: Int? = null,
-    @SerialName("craft_skill") val craftSkill: String? = null
+    @SerialName("craft_skill") val craftSkill: String? = null,
+    val items: List<StoredSimpleItem>? = null,  // For bulk withdraw/deposit
+    @SerialName("default_drop_strategy") val defaultDropStrategy: String? = null,  // For Fight tasks
+    // Boss fight fields
+    @SerialName("initiator_name") val initiatorName: String? = null,
+    @SerialName("participant_names") val participantNames: List<String>? = null,
+    @SerialName("is_initiator") val isInitiator: Boolean? = null
+)
+
+/**
+ * Serializable representation of a SimpleItem for persistence.
+ */
+@Serializable
+data class StoredSimpleItem(
+    val code: String,
+    val quantity: Int
 )
 
 /**
@@ -118,7 +134,20 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 monsterName = task.monsterName,
                 dropStrategies = if (task.dropStrategies.isNotEmpty())
                     task.dropStrategies.mapValues { it.value.name }
-                else null
+                else null,
+                defaultDropStrategy = task.defaultDropStrategy.name
+            )
+            is TaskType.BossFight -> StoredTask(
+                type = "boss_fight",
+                monsterCode = task.monsterCode,
+                monsterName = task.monsterName,
+                initiatorName = task.initiatorName,
+                participantNames = task.participantNames.ifEmpty { null },
+                isInitiator = task.isInitiator,
+                dropStrategies = if (task.dropStrategies.isNotEmpty())
+                    task.dropStrategies.mapValues { it.value.name }
+                else null,
+                defaultDropStrategy = task.defaultDropStrategy.name
             )
             is TaskType.Craft -> StoredTask(
                 type = "craft",
@@ -159,6 +188,14 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 quantity = task.quantity,
                 craftSkill = task.craftSkill
             )
+            is TaskType.BulkBankWithdraw -> StoredTask(
+                type = "bulk_bank_withdraw",
+                items = task.items.map { StoredSimpleItem(it.code, it.quantity) }
+            )
+            is TaskType.BulkInventoryDeposit -> StoredTask(
+                type = "bulk_inventory_deposit",
+                items = task.items.map { StoredSimpleItem(it.code, it.quantity) }
+            )
         }
     }
 
@@ -176,8 +213,24 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 monsterCode = stored.monsterCode ?: "",
                 monsterName = stored.monsterName ?: "",
                 dropStrategies = stored.dropStrategies?.mapValues { (_, v) ->
-                    try { DropStrategy.valueOf(v) } catch (_: Exception) { DropStrategy.COOK_AND_USE }
-                } ?: emptyMap()
+                    try { DropStrategy.valueOf(v) } catch (_: Exception) { DropStrategy.BANK_RAW }
+                } ?: emptyMap(),
+                defaultDropStrategy = stored.defaultDropStrategy?.let {
+                    try { DropStrategy.valueOf(it) } catch (_: Exception) { DropStrategy.BANK_RAW }
+                } ?: DropStrategy.BANK_RAW
+            )
+            "boss_fight" -> TaskType.BossFight(
+                monsterCode = stored.monsterCode ?: "",
+                monsterName = stored.monsterName ?: "",
+                initiatorName = stored.initiatorName ?: "",
+                participantNames = stored.participantNames ?: emptyList(),
+                isInitiator = stored.isInitiator ?: false,
+                dropStrategies = stored.dropStrategies?.mapValues { (_, v) ->
+                    try { DropStrategy.valueOf(v) } catch (_: Exception) { DropStrategy.BANK_RAW }
+                } ?: emptyMap(),
+                defaultDropStrategy = stored.defaultDropStrategy?.let {
+                    try { DropStrategy.valueOf(it) } catch (_: Exception) { DropStrategy.BANK_RAW }
+                } ?: DropStrategy.BANK_RAW
             )
             "craft" -> TaskType.Craft(
                 skill = stored.skill ?: "",
@@ -213,6 +266,12 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 itemName = stored.itemName ?: "",
                 quantity = stored.quantity ?: 1,
                 craftSkill = stored.craftSkill ?: ""
+            )
+            "bulk_bank_withdraw" -> TaskType.BulkBankWithdraw(
+                items = (stored.items ?: emptyList()).map { SimpleItem(it.code, it.quantity) }
+            )
+            "bulk_inventory_deposit" -> TaskType.BulkInventoryDeposit(
+                items = (stored.items ?: emptyList()).map { SimpleItem(it.code, it.quantity) }
             )
             else -> TaskType.Idle
         }

@@ -147,6 +147,8 @@ class TerminalUI(
                             is TaskType.BankRecycle      -> cyan("Recycle(bank): ${task.itemName}")
                             is TaskType.InventoryDeposit -> cyan("Deposit: ${task.quantity}x ${task.itemName}")
                             is TaskType.InventoryRecycle -> cyan("Recycle(inv): ${task.itemName}")
+                            is TaskType.BulkBankWithdraw -> cyan("Bulk Withdraw: ${task.items.size} items")
+                            is TaskType.BulkInventoryDeposit -> cyan("Bulk Deposit: ${task.items.size} items")
                         }
                         val craftsStr = if (s.recycleCount > 0) {
                             "${s.craftCount} (${s.recycleCount}r)"
@@ -769,6 +771,8 @@ class TerminalUI(
             is TaskType.BankRecycle      -> "Recycle ${task.quantity}x ${task.itemName} (bank)"
             is TaskType.InventoryDeposit -> "Deposit ${task.quantity}x ${task.itemName} to bank"
             is TaskType.InventoryRecycle -> "Recycle ${task.quantity}x ${task.itemName} (inventory)"
+            is TaskType.BulkBankWithdraw -> "Bulk Withdraw: ${task.items.size} items"
+            is TaskType.BulkInventoryDeposit -> "Bulk Deposit: ${task.items.size} items"
         }
     }
 }

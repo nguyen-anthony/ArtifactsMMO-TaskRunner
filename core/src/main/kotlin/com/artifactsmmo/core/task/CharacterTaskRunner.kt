@@ -35,7 +35,8 @@ class CharacterTaskRunner(
      * internal revert (craft/task-master completes). Allows [TaskManager]
      * to persist the new state immediately so restarts see the correct task.
      */
-    private val onTaskChanged: () -> Unit = {}
+    private val onTaskChanged: () -> Unit = {},
+    private val bossEncounterCoordinator: BossEncounterCoordinator
 ) {
     private val _status = MutableStateFlow(RunnerStatus(characterName = characterName))
     val status: StateFlow<RunnerStatus> = _status.asStateFlow()
@@ -69,11 +70,12 @@ class CharacterTaskRunner(
 
         // Save previous task when assigning a craft, task master, or quick bank/inventory task (and current task isn't idle)
         val isQuickTask = task is TaskType.BankWithdraw || task is TaskType.BankRecycle ||
-            task is TaskType.InventoryDeposit || task is TaskType.InventoryRecycle
+            task is TaskType.InventoryDeposit || task is TaskType.InventoryRecycle ||
+            task is TaskType.BulkBankWithdraw || task is TaskType.BulkInventoryDeposit
         if ((task is TaskType.Craft || task is TaskType.TaskMaster || isQuickTask) && oldTask !is TaskType.Idle) {
             previousTask = oldTask
         } else if (task !is TaskType.Craft && task !is TaskType.TaskMaster && !isQuickTask) {
-            // Clear previous task when assigning a regular task
+            // Clear previous task when assigning a regular task (including BossFight)
             previousTask = null
         }
 
@@ -91,7 +93,12 @@ class CharacterTaskRunner(
 
         job = scope.launch {
             // Cleanup previous task before starting new one
-            runCleanup(oldTask)
+            // Skip cleanup when transitioning into or out of a BossFight — participants
+            // are cancelled (not reverted) and the initiator's prior task was already
+            // cancelled by assignBossFight() before assignment.
+            if (oldTask !is TaskType.BossFight && task !is TaskType.BossFight) {
+                runCleanup(oldTask)
+            }
 
             // Wait for any active cooldown before starting — prevents 486 errors
             // when a task is switched while the character is mid-action.
@@ -135,6 +142,19 @@ class CharacterTaskRunner(
                 }
             }
 
+            // For boss fight initiators with equip actions, execute them first
+            if (task is TaskType.BossFight && task.isInitiator && task.equipActions.isNotEmpty()) {
+                try {
+                    logger.log(characterName, "Retrieving and equipping gear before boss fight...")
+                    updateStatus { it.copy(statusMessage = "Equipping gear...") }
+                    helper.retrieveAndEquipItems(characterName, task.equipActions)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.log(characterName, "[equip] Error during gear retrieval: ${e.message}")
+                }
+            }
+
             // For gather tasks, check bank for leftover raw materials to craft
             if (task is TaskType.Gather) {
                 try {
@@ -162,6 +182,11 @@ class CharacterTaskRunner(
         currentTask = TaskType.Idle
         previousTask = null
 
+        // If stopping a boss fight initiator, clear the encounter to unblock participants
+        if (oldTask is TaskType.BossFight && oldTask.isInitiator) {
+            bossEncounterCoordinator.clearEncounter(characterName)
+        }
+
         val s = scope
         if (s != null && oldTask !is TaskType.Idle) {
             // Launch cleanup then go idle
@@ -180,9 +205,16 @@ class CharacterTaskRunner(
      * Stop immediately without cleanup (used for quit/shutdown).
      */
     fun stopImmediate() {
+        val oldTask = currentTask
         job?.cancel()
         job = null
         currentTask = TaskType.Idle
+
+        // If stopping a boss fight initiator, clear the encounter to unblock participants
+        if (oldTask is TaskType.BossFight && oldTask.isInitiator) {
+            bossEncounterCoordinator.clearEncounter(characterName)
+        }
+
         updateStatus { it.copy(task = TaskType.Idle, statusMessage = "Stopped", isRunning = false) }
     }
 
@@ -215,8 +247,10 @@ class CharacterTaskRunner(
                 is TaskType.Fight -> cleanupFightTask(previousTask, onStatus)
                 is TaskType.Craft -> cleanupCraftTask(onStatus)
                 is TaskType.TaskMaster -> cleanupTaskMasterTask(onStatus)
+                is TaskType.BossFight -> {} // no cleanup for boss fight — bank is handled per-loop
                 is TaskType.BankWithdraw, is TaskType.BankRecycle,
-                is TaskType.InventoryDeposit, is TaskType.InventoryRecycle -> {} // no cleanup
+                is TaskType.InventoryDeposit, is TaskType.InventoryRecycle,
+                is TaskType.BulkBankWithdraw, is TaskType.BulkInventoryDeposit -> {} // no cleanup
                 is TaskType.Idle -> {} // unreachable
             }
         } catch (e: CancellationException) {
@@ -310,7 +344,7 @@ class CharacterTaskRunner(
 
         // Only cook drops that are COOK_AND_USE or COOK_AND_BANK (not BANK_RAW)
         val dropsToCook = allCookable.filter {
-            val strategy = task.dropStrategies[it.rawCode] ?: DropStrategy.COOK_AND_USE
+            val strategy = task.dropStrategies[it.rawCode] ?: task.defaultDropStrategy
             strategy != DropStrategy.BANK_RAW
         }
 
@@ -392,6 +426,23 @@ class CharacterTaskRunner(
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg) }
                     }, previousChar = previousChar)
+                    is TaskType.BossFight -> {
+                        // Update awaitingParticipants status for the initiator waiting state
+                        if (task.isInitiator && task.participantNames.isNotEmpty()) {
+                            updateStatus { it.copy(awaitingParticipants = task.participantNames) }
+                        }
+                        val bossResult = fightingExecutor.executeBossStep(
+                            characterName, task, bossEncounterCoordinator,
+                            { msg ->
+                                logger.log(characterName, msg)
+                                updateStatus { it.copy(statusMessage = msg) }
+                            },
+                            previousChar = previousChar
+                        )
+                        // Clear awaitingParticipants once the step returns
+                        updateStatus { it.copy(awaitingParticipants = null) }
+                        bossResult
+                    }
                     is TaskType.Craft -> {
                         // Inject current craftedSoFar for both BANK and RECYCLE modes
                         // (RECYCLE uses it to detect the first batch and cap at targetQuantity)
@@ -422,6 +473,14 @@ class CharacterTaskRunner(
                         updateStatus { it.copy(statusMessage = msg) }
                     }
                     is TaskType.InventoryRecycle -> bankExecutor.executeInventoryRecycle(characterName, task) { msg ->
+                        logger.log(characterName, msg)
+                        updateStatus { it.copy(statusMessage = msg) }
+                    }
+                    is TaskType.BulkBankWithdraw -> bankExecutor.executeBulkBankWithdraw(characterName, task) { msg ->
+                        logger.log(characterName, msg)
+                        updateStatus { it.copy(statusMessage = msg) }
+                    }
+                    is TaskType.BulkInventoryDeposit -> bankExecutor.executeBulkInventoryDeposit(characterName, task) { msg ->
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg) }
                     }
@@ -468,6 +527,7 @@ class CharacterTaskRunner(
                         if (consecutiveDeaths >= consecutiveDeathThreshold) {
                             val monsterName = when (val t = task) {
                                 is TaskType.Fight -> t.monsterName
+                                is TaskType.BossFight -> t.monsterName
                                 is TaskType.TaskMaster -> result.message.removePrefix("Lost to ")
                                 else -> "unknown monster"
                             }
@@ -490,7 +550,10 @@ class CharacterTaskRunner(
                                     })
                                 }
                                 else -> {
-                                    // For plain Fight: stop the runner
+                                    // For plain Fight and BossFight: stop the runner
+                                    if (task is TaskType.BossFight && task.isInitiator) {
+                                        bossEncounterCoordinator.clearEncounter(characterName)
+                                    }
                                     revertToPreviousTask()
                                     break
                                 }
@@ -505,7 +568,10 @@ class CharacterTaskRunner(
                     }
                     is StepResult.Waiting -> {
                         previousChar = null
-                        delay(3.seconds)
+                        // BossFight steps manage their own timing internally; skip the delay.
+                        if (task !is TaskType.BossFight) {
+                            delay(3.seconds)
+                        }
                     }
                     is StepResult.Error -> {
                         previousChar = null
@@ -605,7 +671,8 @@ class CharacterTaskRunner(
             is TaskType.Craft -> cleanupCraftTask(onCleanup)
             is TaskType.TaskMaster -> cleanupTaskMasterTask(onCleanup)
             is TaskType.BankWithdraw, is TaskType.BankRecycle,
-            is TaskType.InventoryDeposit, is TaskType.InventoryRecycle -> {} // no extra cleanup needed
+            is TaskType.InventoryDeposit, is TaskType.InventoryRecycle,
+            is TaskType.BulkBankWithdraw, is TaskType.BulkInventoryDeposit -> {} // no extra cleanup needed
             else -> {}
         }
 
@@ -669,12 +736,15 @@ class CharacterTaskRunner(
         return when (task) {
             is TaskType.Gather -> "gather ${task.resourceName} (${task.skill})"
             is TaskType.Fight -> "fight ${task.monsterName}"
+            is TaskType.BossFight -> if (task.isInitiator) "boss fight ${task.monsterName} (initiator)" else "boss fight ${task.monsterName} (participant)"
             is TaskType.Craft -> "craft ${task.itemName} (${task.skill})"
             is TaskType.TaskMaster -> "task master (${task.type})"
             is TaskType.BankWithdraw -> "withdraw ${task.quantity}x ${task.itemName} from bank"
             is TaskType.BankRecycle -> "recycle ${task.quantity}x ${task.itemName} (bank)"
             is TaskType.InventoryDeposit -> "deposit ${task.quantity}x ${task.itemName} to bank"
             is TaskType.InventoryRecycle -> "recycle ${task.quantity}x ${task.itemName} (inventory)"
+            is TaskType.BulkBankWithdraw -> "withdraw ${task.items.size} items from bank"
+            is TaskType.BulkInventoryDeposit -> "deposit ${task.items.size} items to bank"
             is TaskType.Idle -> "idle"
         }
     }

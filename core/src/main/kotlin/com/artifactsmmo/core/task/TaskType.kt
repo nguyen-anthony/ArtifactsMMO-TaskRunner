@@ -1,5 +1,7 @@
 package com.artifactsmmo.core.task
 
+import com.artifactsmmo.client.models.SimpleItem
+
 /**
  * What to do with items after crafting.
  */
@@ -52,9 +54,31 @@ sealed class TaskType {
         val equipActions: List<ActionHelper.EquipAction> = emptyList(),
         /**
          * Per-drop strategy for cookable drops. Key = raw item code, value = strategy.
-         * Drops not in this map default to COOK_AND_USE (current behavior).
+         * Drops not in this map fall back to [defaultDropStrategy].
          */
-        val dropStrategies: Map<String, DropStrategy> = emptyMap()
+        val dropStrategies: Map<String, DropStrategy> = emptyMap(),
+        /**
+         * Fallback strategy for cookable drops not explicitly listed in [dropStrategies].
+         * Defaults to BANK_RAW — drops are stored raw unless explicitly configured otherwise.
+         */
+        val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
+    ) : TaskType()
+
+    /** Fight a boss monster cooperatively. Initiator fires the fight; participants await the rendezvous. */
+    data class BossFight(
+        val monsterCode: String,
+        val monsterName: String,
+        val initiatorName: String,
+        /** Non-empty for the initiator runner; empty for participant runners. */
+        val participantNames: List<String>,
+        val isInitiator: Boolean,
+        val equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        val dropStrategies: Map<String, DropStrategy> = emptyMap(),
+        /**
+         * Fallback strategy for cookable drops not explicitly listed in [dropStrategies].
+         * Defaults to BANK_RAW — drops are stored raw unless explicitly configured otherwise.
+         */
+        val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
     ) : TaskType()
 
     /** Craft items at a workshop (weaponcrafting, gearcrafting, jewelrycrafting, or misc). */
@@ -101,6 +125,16 @@ sealed class TaskType {
         val quantity: Int,
         val craftSkill: String
     ) : TaskType()
+
+    /** Quick task: withdraw multiple items from the bank (one bank trip). */
+    data class BulkBankWithdraw(
+        val items: List<SimpleItem>
+    ) : TaskType()
+
+    /** Quick task: deposit multiple items from inventory to the bank (one bank trip). */
+    data class BulkInventoryDeposit(
+        val items: List<SimpleItem>
+    ) : TaskType()
 }
 
 /**
@@ -120,5 +154,7 @@ data class RunnerStatus(
     val isRunning: Boolean = false,
     val lastError: String? = null,
     /** Number of consecutive fight losses without a win. Resets to 0 on any win. */
-    val consecutiveDeaths: Int = 0
+    val consecutiveDeaths: Int = 0,
+    /** When non-null, this character is waiting for boss fight participants to be ready. */
+    val awaitingParticipants: List<String>? = null
 )

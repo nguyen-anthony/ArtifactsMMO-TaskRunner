@@ -152,6 +152,19 @@ fun CharacterCard(
                 overflow = TextOverflow.Ellipsis
             )
 
+            // ── Awaiting participants (boss fight) ────────────────────────────
+            val waiting = status.awaitingParticipants
+            if (waiting != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Waiting for: ${waiting.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
             // ── Error message ─────────────────────────────────────────────────
             val err = status.lastError
             if (err != null) {
@@ -246,10 +259,16 @@ private fun describeTask(task: TaskType): String = when (task) {
         }
     }
     is TaskType.Fight            -> "Fighting: ${task.monsterName}"
+    is TaskType.BossFight        -> if (task.isInitiator)
+        "Boss Fight: ${task.monsterName} (initiator)"
+    else
+        "Boss Fight: ${task.monsterName} (participant)"
     is TaskType.Craft            -> "Crafting: ${task.itemName} (${task.skill})"
     is TaskType.TaskMaster       -> "Task Master (${task.type})"
     is TaskType.BankWithdraw     -> "Withdrawing: ${task.quantity}x ${task.itemName}"
     is TaskType.BankRecycle      -> "Recycling (bank): ${task.quantity}x ${task.itemName}"
     is TaskType.InventoryDeposit -> "Depositing: ${task.quantity}x ${task.itemName}"
     is TaskType.InventoryRecycle -> "Recycling (inv): ${task.quantity}x ${task.itemName}"
+    is TaskType.BulkBankWithdraw -> "Bulk Withdrawing: ${task.items.size} items"
+    is TaskType.BulkInventoryDeposit -> "Bulk Depositing: ${task.items.size} items"
 }

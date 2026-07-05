@@ -276,8 +276,8 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
     // ── Fighting ──
 
-    suspend fun fight(name: String): com.artifactsmmo.client.models.CharacterFightData {
-        val result = client.actions.fight(name)
+    suspend fun fight(name: String, participants: List<String> = emptyList()): com.artifactsmmo.client.models.CharacterFightData {
+        val result = client.actions.fight(name, participants)
         waitForCooldown(result.cooldown.totalSeconds)
         return result
     }
@@ -1443,6 +1443,24 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         if (equipActions.isEmpty()) return refreshCharacter(characterName)
 
         var char = refreshCharacter(characterName)
+
+        // Fast path: if all equip actions are from inventory, skip bank entirely
+        if (equipActions.all { it.source == "inventory" }) {
+            // Unequip current items in each slot
+            for (action in equipActions) {
+                val equipped = getEquippedInSlot(char, action.slot)
+                if (equipped.isNotEmpty()) {
+                    char = unequip(characterName, action.slot)
+                }
+            }
+            // Equip new items
+            for (action in equipActions) {
+                try {
+                    char = equip(characterName, action.itemCode, action.slot)
+                } catch (_: Exception) {}
+            }
+            return char
+        }
 
         // Snapshot what's currently equipped in each affected slot
         val prevEquipped = equipActions.associate { it.slot to getEquippedInSlot(char, it.slot) }

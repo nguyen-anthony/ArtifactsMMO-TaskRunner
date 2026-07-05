@@ -141,10 +141,10 @@ class FightingExecutor(private val helper: ActionHelper) {
     }
 
     /**
-     * Get the drop strategy for a raw item code, defaulting to COOK_AND_USE.
+     * Get the drop strategy for a raw item code, falling back to the task's default.
      */
     private fun getDropStrategy(task: TaskType.Fight, rawCode: String): DropStrategy {
-        return task.dropStrategies[rawCode] ?: DropStrategy.COOK_AND_USE
+        return task.dropStrategies[rawCode] ?: task.defaultDropStrategy
     }
 
     /**
@@ -358,5 +358,125 @@ class FightingExecutor(private val helper: ActionHelper) {
         }
 
         return if (totalCrafted > 0) StepResult.CraftedAndBanked(totalCrafted) else StepResult.Banked
+    }
+
+    /**
+     * Execute a single boss-fight iteration.
+     *
+     * Initiator path (task.isInitiator = true):
+     *  1. Heal to full HP
+     *  2. Navigate to boss tile
+     *  3. Ensure 1 free inventory slot
+     *  4. Update status and await all participants via [coordinator]
+     *  5. Fire fight API with participant names
+     *  6. Return FightWon / FightLost
+     *
+     * Participant path (task.isInitiator = false):
+     *  1. Heal to full HP
+     *  2. Navigate to boss tile
+     *  3. Ensure 1 free inventory slot
+     *  4. Signal ready via [coordinator]
+     *  5. Wait for the server-applied fight cooldown to expire
+     *  6. Return StepResult.Waiting to re-enter the loop for the next round
+     */
+    suspend fun executeBossStep(
+        characterName: String,
+        task: TaskType.BossFight,
+        coordinator: BossEncounterCoordinator,
+        onStatus: (String) -> Unit,
+        previousChar: com.artifactsmmo.client.models.Character? = null
+    ): StepResult {
+        var char = previousChar ?: helper.refreshCharacter(characterName)
+
+        // Heal to full HP if below 75%
+        if (!CharacterUtils.hasEnoughHP(char, 0.75)) {
+            return handleHealing(
+                characterName = characterName,
+                char = char,
+                cookAndUseDrops = emptyList(),
+                foodCodes = emptySet(),
+                onStatus = onStatus
+            )
+        }
+
+        // Navigate to boss tile
+        val monsterMap = helper.findNearest(char, "monster", task.monsterCode)
+            ?: return StepResult.Error("No ${task.monsterCode} locations found on map")
+
+        if (!helper.isAt(char, monsterMap.x, monsterMap.y) || char.layer != monsterMap.layer) {
+            onStatus("Moving to ${task.monsterName}...")
+            char = helper.navigateToTile(characterName, monsterMap)
+        }
+
+        // Ensure at least 1 free inventory slot — bank all if full
+        if (helper.isInventoryFull(char)) {
+            onStatus("Inventory full, banking items before boss fight...")
+            helper.bankDepositAll(characterName)
+            char = helper.refreshCharacter(characterName)
+        }
+
+        if (task.isInitiator) {
+            // ── Initiator path ──────────────────────────────────────────────────
+            if (task.participantNames.isNotEmpty()) {
+                onStatus("Waiting for participants: ${task.participantNames.joinToString(", ")}...")
+                try {
+                    coordinator.awaitParticipants(characterName)
+                } catch (_: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
+                    // Encounter was cleared (stop/cancel); bail out
+                    return StepResult.Waiting
+                }
+            }
+
+            onStatus("Fighting ${task.monsterName} (boss)... (HP: ${char.hp}/${char.maxHp})")
+            return try {
+                val result = helper.fight(characterName, participants = task.participantNames)
+                val fight = result.fight
+                val charResult = fight.characters.find { it.characterName == characterName }
+                val updatedChar = result.characters.find { it.name == characterName }
+
+                if (fight.result == "win") {
+                    val drops = charResult?.drops?.joinToString(", ") { "${it.quantity}x ${it.code}" } ?: ""
+                    val xp = charResult?.xp ?: 0
+                    val gold = charResult?.gold ?: 0
+                    onStatus("Won! +${xp} XP, +${gold} gold${if (drops.isNotEmpty()) ", drops: $drops" else ""}")
+                    StepResult.FightWon(xp, gold, updatedChar)
+                } else {
+                    onStatus("Lost boss fight against ${task.monsterName}")
+                    StepResult.FightLost("Lost to ${task.monsterName}")
+                }
+            } catch (e: com.artifactsmmo.client.ArtifactsApiException) {
+                if (e.errorCode == 486) StepResult.Waiting else throw e
+            }
+        } else {
+            // ── Participant path ─────────────────────────────────────────────────
+            onStatus("Ready for boss fight vs ${task.monsterName}, signalling initiator...")
+            try {
+                coordinator.signalReady(characterName)
+            } catch (_: kotlinx.coroutines.channels.ClosedSendChannelException) {
+                // Encounter was cleared; bail out
+                return StepResult.Waiting
+            }
+
+            // The initiator fires the fight API after collecting all ready signals.
+            // The server then applies a cooldown to all participants automatically.
+            // We must wait for that cooldown to actually appear before draining it —
+            // polling with short sleeps until cooldown > 0, then waiting it out.
+            onStatus("Boss fight in progress, waiting for cooldown...")
+            var cooldownSeen = false
+            repeat(30) { // poll up to ~15 seconds for the cooldown to appear
+                if (cooldownSeen) return@repeat
+                val polledChar = try { helper.refreshCharacter(characterName) } catch (_: Exception) { return@repeat }
+                if (polledChar.cooldown > 0) {
+                    cooldownSeen = true
+                    onStatus("Boss fight complete, waiting ${polledChar.cooldown}s cooldown...")
+                    helper.waitForCooldown(polledChar.cooldown)
+                } else {
+                    kotlinx.coroutines.delay(500)
+                }
+            }
+
+            onStatus("Ready for next boss fight round...")
+            return StepResult.Waiting
+        }
     }
 }

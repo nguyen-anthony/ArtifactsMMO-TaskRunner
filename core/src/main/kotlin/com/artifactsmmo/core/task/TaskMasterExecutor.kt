@@ -775,7 +775,13 @@ class TaskMasterExecutor(
         // Create a temporary fight task and delegate to the fighting executor.
         // Pass the character already fetched at the top of executeStep so
         // FightingExecutor skips its own redundant refreshCharacter call.
-        val fightTask = TaskType.Fight(monsterCode, monsterCode)
+        // Use BANK_RAW as the default drop strategy — task master fights depend on
+        // bank food for healing rather than cooking drops on the fly.
+        val fightTask = TaskType.Fight(
+            monsterCode = monsterCode,
+            monsterName = monsterCode,
+            defaultDropStrategy = DropStrategy.BANK_RAW
+        )
         return fightingExecutor.executeStep(characterName, fightTask, { msg -> onStatus(msg) }, previousChar = char)
     }
 

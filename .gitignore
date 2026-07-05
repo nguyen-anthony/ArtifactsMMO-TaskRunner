@@ -58,3 +58,6 @@ hs_err_pid*.log
 ### IDE — user-specific ###
 .idea/workspace.xml
 .idea/copilot*.xml
+
+## docs reference
+docs_reference/

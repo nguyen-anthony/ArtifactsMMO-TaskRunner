@@ -124,4 +124,32 @@ class BankExecutor(private val helper: ActionHelper) {
         onStatus("Recycle complete: ${task.itemName}")
         return StepResult.QuickTaskComplete
     }
+
+    /**
+     * Move to bank and withdraw multiple items in a single trip.
+     */
+    suspend fun executeBulkBankWithdraw(
+        characterName: String,
+        task: TaskType.BulkBankWithdraw,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        onStatus("Moving to bank to withdraw ${task.items.size} items...")
+        helper.bankWithdrawItems(characterName, task.items)
+        onStatus("Withdrew ${task.items.size} items from bank")
+        return StepResult.QuickTaskComplete
+    }
+
+    /**
+     * Move to bank and deposit multiple items in a single trip.
+     */
+    suspend fun executeBulkInventoryDeposit(
+        characterName: String,
+        task: TaskType.BulkInventoryDeposit,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        onStatus("Depositing ${task.items.size} items to bank...")
+        helper.bankDepositItems(characterName, task.items)
+        onStatus("Deposited ${task.items.size} items to bank")
+        return StepResult.QuickTaskComplete
+    }
 }

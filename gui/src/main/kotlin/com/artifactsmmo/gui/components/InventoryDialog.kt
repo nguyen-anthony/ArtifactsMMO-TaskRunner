@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.InventorySlot
 import com.artifactsmmo.client.models.Item
+import com.artifactsmmo.client.models.SimpleItem
 import com.artifactsmmo.core.task.TaskType
 import com.artifactsmmo.gui.state.AppState
 import kotlinx.coroutines.launch
@@ -35,6 +36,8 @@ private data class InventoryItemDetail(
  * - Item name, code, quantity
  * - "Deposit" button → quantity prompt → assigns InventoryDeposit quick task
  * - "Recycle" button (only for weapon/gear/jewelry craft items) → quantity prompt → assigns InventoryRecycle
+ *
+ * Multi-select mode allows depositing multiple items in a single task.
  */
 @Composable
 fun InventoryDialog(
@@ -50,10 +53,16 @@ fun InventoryDialog(
     var loadError by remember { mutableStateOf<String?>(null) }
     var inventoryItems by remember { mutableStateOf<List<InventoryItemDetail>>(emptyList()) }
 
-    // Quantity prompt state
+    // Quantity prompt state (single-item)
     var quantityTarget by remember { mutableStateOf<InventoryItemDetail?>(null) }
     var quantityAction by remember { mutableStateOf<String>("deposit") } // "deposit" | "recycle"
     var quantityInput by remember { mutableStateOf("") }
+
+    // Multi-select state
+    var multiSelectMode by remember { mutableStateOf(false) }
+    var selectedItems by remember { mutableStateOf(setOf<String>()) } // keyed by item code
+    var selectedQuantities by remember { mutableStateOf(mapOf<String, String>()) } // itemCode -> qty string
+    var showBulkConfirm by remember { mutableStateOf(false) }
 
     val nonEmptySlots = remember(character) {
         character.inventory.filter { it.quantity > 0 && it.code.isNotEmpty() }
@@ -76,9 +85,29 @@ fun InventoryDialog(
         }
     }
 
+    // Clear selection when exiting multi-select mode
+    LaunchedEffect(multiSelectMode) {
+        if (!multiSelectMode) {
+            selectedItems = emptySet()
+            selectedQuantities = emptyMap()
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Inventory — $characterName") },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Inventory — $characterName")
+                val selectLabel = if (multiSelectMode) "Cancel" else "Select"
+                TextButton(onClick = { multiSelectMode = !multiSelectMode }) {
+                    Text(selectLabel, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        },
         text = {
             Box(modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 480.dp)) {
                 when {
@@ -104,6 +133,21 @@ fun InventoryDialog(
                             items(inventoryItems) { detail ->
                                 InventoryItemRow(
                                     detail = detail,
+                                    isSelected = detail.item.code in selectedItems,
+                                    isMultiSelectMode = multiSelectMode,
+                                    onToggleSelect = {
+                                        selectedItems = if (detail.item.code in selectedItems) {
+                                            selectedItems - detail.item.code
+                                        } else {
+                                            selectedItems + detail.item.code
+                                        }
+                                        // Reset quantity to full inventory quantity when toggling
+                                        if (detail.item.code in selectedItems) {
+                                            selectedQuantities = selectedQuantities + (detail.item.code to detail.slot.quantity.toString())
+                                        } else {
+                                            selectedQuantities = selectedQuantities - detail.item.code
+                                        }
+                                    },
                                     onDeposit = {
                                         quantityTarget = detail
                                         quantityAction = "deposit"
@@ -122,13 +166,24 @@ fun InventoryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (multiSelectMode && selectedItems.isNotEmpty()) {
+                    Button(onClick = { showBulkConfirm = true }) {
+                        Text("Deposit ${selectedItems.size}")
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
         }
     )
 
-    // Quantity sub-dialog
+    // Quantity sub-dialog (single-item)
     val target = quantityTarget
-    if (target != null) {
+    if (target != null && !showBulkConfirm) {
         val maxQty = target.slot.quantity
         val craftSkill = target.item.craft?.skill ?: ""
         AlertDialog(
@@ -184,11 +239,80 @@ fun InventoryDialog(
             }
         )
     }
+
+    // Bulk deposit confirmation dialog (multi-item)
+    if (showBulkConfirm && selectedItems.isNotEmpty()) {
+        val itemsToDeposit = inventoryItems.filter { it.item.code in selectedItems }
+        AlertDialog(
+            onDismissRequest = { showBulkConfirm = false },
+            title = { Text("Confirm Bulk Deposit (${itemsToDeposit.size} items)") },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 400.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(itemsToDeposit) { detail ->
+                        val currentQtyStr = selectedQuantities[detail.item.code] ?: detail.slot.quantity.toString()
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = detail.item.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "In inventory: ${detail.slot.quantity}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedTextField(
+                                value = currentQtyStr,
+                                onValueChange = { newVal ->
+                                    selectedQuantities = selectedQuantities + (detail.item.code to newVal.filter { c -> c.isDigit() })
+                                },
+                                label = { Text("Qty") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val items = itemsToDeposit.mapNotNull { detail ->
+                            val qtyStr = selectedQuantities[detail.item.code] ?: ""
+                            val qty = qtyStr.toIntOrNull()?.coerceIn(1, detail.slot.quantity) ?: 0
+                            if (qty > 0) SimpleItem(detail.item.code, qty) else null
+                        }
+                        if (items.isNotEmpty()) {
+                            val task = TaskType.BulkInventoryDeposit(items = items)
+                            scope.launch {
+                                appState.taskManager.assignTask(characterName, task)
+                            }
+                            selectedItems = emptySet()
+                            selectedQuantities = emptyMap()
+                            showBulkConfirm = false
+                            onDismiss()
+                        }
+                    }
+                ) { Text("Confirm") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBulkConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 @Composable
 private fun InventoryItemRow(
     detail: InventoryItemDetail,
+    isSelected: Boolean,
+    isMultiSelectMode: Boolean,
+    onToggleSelect: () -> Unit,
     onDeposit: () -> Unit,
     onRecycle: () -> Unit
 ) {
@@ -207,6 +331,13 @@ private fun InventoryItemRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (isMultiSelectMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelect() },
+                    modifier = Modifier.size(24.dp)
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = detail.item.name,
@@ -219,21 +350,23 @@ private fun InventoryItemRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            OutlinedButton(
-                onClick = onDeposit,
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-            ) {
-                Text("Deposit", style = MaterialTheme.typography.labelSmall)
-            }
-            if (canRecycle) {
+            if (!isMultiSelectMode) {
                 OutlinedButton(
-                    onClick = onRecycle,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.secondary
-                    )
+                    onClick = onDeposit,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Text("Recycle", style = MaterialTheme.typography.labelSmall)
+                    Text("Deposit", style = MaterialTheme.typography.labelSmall)
+                }
+                if (canRecycle) {
+                    OutlinedButton(
+                        onClick = onRecycle,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Text("Recycle", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }

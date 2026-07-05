@@ -26,6 +26,7 @@ class TaskManager(
     private val craftingExecutor = CraftingExecutor(helper)
     private val taskMasterExecutor = TaskMasterExecutor(helper, gatheringExecutor, fightingExecutor)
     private val bankExecutor = BankExecutor(helper)
+    private val bossEncounterCoordinator = BossEncounterCoordinator()
 
     private val runners = mutableMapOf<String, CharacterTaskRunner>()
 
@@ -57,7 +58,8 @@ class TaskManager(
                 taskMasterExecutor = taskMasterExecutor,
                 bankExecutor = bankExecutor,
                 logger = logger,
-                onTaskChanged = { persistTasks() }
+                onTaskChanged = { persistTasks() },
+                bossEncounterCoordinator = bossEncounterCoordinator
             )
         }
 
@@ -217,6 +219,71 @@ class TaskManager(
     fun assignTask(characterName: String, task: TaskType) {
         val runner = runners[characterName] ?: throw IllegalArgumentException("Unknown character: $characterName")
         runner.assignTask(task, scope)
+        persistTasks()
+    }
+
+    /**
+     * Assign a cooperative boss fight to an initiator and one or two participants.
+     *
+     * The initiator fires the fight API; participants navigate to the boss tile and signal
+     * ready via the [BossEncounterCoordinator] before each fight round. Any participant
+     * with an active task has that task cancelled immediately (no cleanup, per spec).
+     */
+    fun assignBossFight(
+        initiatorName: String,
+        participantNames: List<String>,
+        monsterCode: String,
+        monsterName: String,
+        equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        dropStrategies: Map<String, DropStrategy> = emptyMap(),
+        defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
+    ) {
+        val initiatorRunner = runners[initiatorName]
+            ?: throw IllegalArgumentException("Unknown initiator character: $initiatorName")
+        for (name in participantNames) {
+            runners[name] ?: throw IllegalArgumentException("Unknown participant character: $name")
+        }
+        require(participantNames.size <= 2) { "Boss fights support at most 2 participants" }
+
+        // Register the encounter before launching runners so the coordinator is ready
+        bossEncounterCoordinator.registerEncounter(initiatorName, participantNames, monsterCode)
+
+        // Stop participant runners immediately (no cleanup — per spec, just cancel)
+        for (name in participantNames) {
+            runners[name]!!.stopImmediate()
+        }
+
+        // Assign participant tasks
+        for (name in participantNames) {
+            runners[name]!!.assignTask(
+                TaskType.BossFight(
+                    monsterCode = monsterCode,
+                    monsterName = monsterName,
+                    initiatorName = initiatorName,
+                    participantNames = emptyList(),
+                    isInitiator = false,
+                    dropStrategies = dropStrategies,
+                    defaultDropStrategy = defaultDropStrategy
+                ),
+                scope
+            )
+        }
+
+        // Assign initiator task
+        initiatorRunner.assignTask(
+            TaskType.BossFight(
+                monsterCode = monsterCode,
+                monsterName = monsterName,
+                initiatorName = initiatorName,
+                participantNames = participantNames,
+                isInitiator = true,
+                equipActions = equipActions,
+                dropStrategies = dropStrategies,
+                defaultDropStrategy = defaultDropStrategy
+            ),
+            scope
+        )
+
         persistTasks()
     }
 
