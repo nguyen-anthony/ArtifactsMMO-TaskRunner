@@ -221,6 +221,7 @@ class CharacterTaskRunner(
     /**
      * Run cleanup for a previous task: craft leftover materials if applicable, then bank everything.
      */
+    @OptIn(kotlin.time.ExperimentalTime::class)
     private suspend fun runCleanup(previousTask: TaskType) {
         if (previousTask is TaskType.Idle) return
 
@@ -230,8 +231,8 @@ class CharacterTaskRunner(
             // Wait for any active cooldown before performing cleanup actions.
             // The task may have been switched while the character was mid-action.
             if (char.cooldown > 0) {
-                updateStatus { it.copy(statusMessage = "Waiting for cooldown (${char.cooldown}s)...") }
-                helper.waitForCooldown(char.cooldown)
+                updateStatus { it.copy(statusMessage = "Waiting for cooldown...") }
+                helper.waitForCooldown(char.cooldownExpiration)
             }
 
             val totalItems = char.inventory.sumOf { it.quantity }

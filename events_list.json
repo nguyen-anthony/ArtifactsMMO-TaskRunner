@@ -1,0 +1,608 @@
+{
+  "data": [
+    {
+      "name": "Attacking The Island",
+      "code": "attacking_the_island",
+      "content": {
+        "type": "monster",
+        "code": "sea_marauder"
+      },
+      "maps": [
+        {
+          "map_id": 1126,
+          "x": -4,
+          "y": 17,
+          "layer": "overworld",
+          "skin": "desertisland_1_event"
+        },
+        {
+          "map_id": 1129,
+          "x": -3,
+          "y": 17,
+          "layer": "overworld",
+          "skin": "desertisland_2_event"
+        }
+      ],
+      "duration": 60,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T00:50:05.749Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Bandit Camp",
+      "code": "bandit_camp",
+      "content": {
+        "type": "monster",
+        "code": "bandit_lizard"
+      },
+      "maps": [
+        {
+          "map_id": 538,
+          "x": 4,
+          "y": 5,
+          "layer": "overworld",
+          "skin": "forest_event_lizard1"
+        },
+        {
+          "map_id": 7,
+          "x": -3,
+          "y": -5,
+          "layer": "overworld",
+          "skin": "forest_event_lizard1"
+        },
+        {
+          "map_id": 64,
+          "x": -1,
+          "y": -4,
+          "layer": "overworld",
+          "skin": "forest_event_lizard1"
+        },
+        {
+          "map_id": 301,
+          "x": 10,
+          "y": 0,
+          "layer": "overworld",
+          "skin": "forest_event_lizard1"
+        }
+      ],
+      "duration": 60,
+      "rate": 1000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T04:18:56.047Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Corrupted Ogre",
+      "code": "corrupted_ogre",
+      "content": {
+        "type": "monster",
+        "code": "corrupted_ogre"
+      },
+      "maps": [
+        {
+          "map_id": 91,
+          "x": 8,
+          "y": -4,
+          "layer": "overworld",
+          "skin": "forest_corruptedogre1"
+        },
+        {
+          "map_id": 193,
+          "x": 8,
+          "y": -2,
+          "layer": "overworld",
+          "skin": "forest_corruptedogre2"
+        }
+      ],
+      "duration": 60,
+      "rate": 1000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T11:41:31.497Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Corrupted Owlbear",
+      "code": "corrupted_owlbear",
+      "content": {
+        "type": "monster",
+        "code": "corrupted_owlbear"
+      },
+      "maps": [
+        {
+          "map_id": 403,
+          "x": 10,
+          "y": 2,
+          "layer": "overworld",
+          "skin": "forest_corruptedowlbear1"
+        },
+        {
+          "map_id": 352,
+          "x": 10,
+          "y": 1,
+          "layer": "overworld",
+          "skin": "forest_corruptedowlbear2"
+        }
+      ],
+      "duration": 60,
+      "rate": 1000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-04T20:33:08.592Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Corrupted Portal",
+      "code": "corrupted_portal",
+      "content": {
+        "type": "monster",
+        "code": "grimlet"
+      },
+      "maps": [
+        {
+          "map_id": 829,
+          "x": -1,
+          "y": 11,
+          "layer": "overworld",
+          "skin": "forest_portal3"
+        },
+        {
+          "map_id": 793,
+          "x": 4,
+          "y": 10,
+          "layer": "overworld",
+          "skin": "forest_portal3"
+        }
+      ],
+      "duration": 60,
+      "rate": 2000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-04T12:56:25.082Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Cult of Darkness",
+      "code": "cult_of_darkness",
+      "content": {
+        "type": "monster",
+        "code": "cultist_emperor"
+      },
+      "maps": [
+        {
+          "map_id": 880,
+          "x": -1,
+          "y": 12,
+          "layer": "overworld",
+          "skin": "forest_cultistemperor1"
+        }
+      ],
+      "duration": 60,
+      "rate": 2000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-04T17:40:12.197Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Fish Merchant",
+      "code": "fish_merchant",
+      "content": {
+        "type": "npc",
+        "code": "fish_merchant"
+      },
+      "maps": [
+        {
+          "map_id": 532,
+          "x": 2,
+          "y": 5,
+          "layer": "overworld",
+          "skin": "forest_village6_fish_merchant"
+        }
+      ],
+      "duration": 90,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T11:47:31.939Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Full Moon",
+      "code": "full_moon",
+      "content": {
+        "type": "monster",
+        "code": "full_moon_vampire"
+      },
+      "maps": [
+        {
+          "map_id": 607,
+          "x": 10,
+          "y": 6,
+          "layer": "overworld",
+          "skin": "forest_skeleton3_event"
+        },
+        {
+          "map_id": 709,
+          "x": 10,
+          "y": 8,
+          "layer": "overworld",
+          "skin": "forest_skeleton9_event"
+        }
+      ],
+      "duration": 60,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-03T15:09:24.755Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Gemstone Merchant",
+      "code": "gemstone_merchant",
+      "content": {
+        "type": "npc",
+        "code": "gemstone_merchant"
+      },
+      "maps": [
+        {
+          "map_id": 238,
+          "x": 6,
+          "y": -1,
+          "layer": "overworld",
+          "skin": "forest_road13_gemstone_merchant"
+        }
+      ],
+      "duration": 90,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T08:17:42.159Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Herbal Merchant",
+      "code": "herbal_merchant",
+      "content": {
+        "type": "npc",
+        "code": "herbal_merchant"
+      },
+      "maps": [
+        {
+          "map_id": 241,
+          "x": 7,
+          "y": -1,
+          "layer": "overworld",
+          "skin": "forest_road14_herbal_merchant"
+        }
+      ],
+      "duration": 90,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T13:04:26.172Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Magic Apparition",
+      "code": "magic_apparition",
+      "content": {
+        "type": "resource",
+        "code": "magic_tree"
+      },
+      "maps": [
+        {
+          "map_id": 973,
+          "x": -4,
+          "y": 14,
+          "layer": "overworld",
+          "skin": "forest_magictree1"
+        },
+        {
+          "map_id": 841,
+          "x": 3,
+          "y": 11,
+          "layer": "overworld",
+          "skin": "forest_magictree1"
+        },
+        {
+          "map_id": 910,
+          "x": 9,
+          "y": 12,
+          "layer": "overworld",
+          "skin": "forest_magictree1"
+        }
+      ],
+      "duration": 60,
+      "rate": 2000,
+      "cooldown": 120,
+      "cooldown_expiration": null,
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Nomadic Merchant",
+      "code": "nomadic_merchant",
+      "content": {
+        "type": "npc",
+        "code": "nomadic_merchant"
+      },
+      "maps": [
+        {
+          "map_id": 382,
+          "x": 3,
+          "y": 2,
+          "layer": "overworld",
+          "skin": "forest_village2_nomadic_merchant"
+        }
+      ],
+      "duration": 90,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-04T05:02:48.294Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Out Of The Ground",
+      "code": "out_of_the_ground",
+      "content": {
+        "type": "monster",
+        "code": "duskworm"
+      },
+      "maps": [
+        {
+          "map_id": 1238,
+          "x": -1,
+          "y": 19,
+          "layer": "underground",
+          "skin": "desertmine_6_event"
+        }
+      ],
+      "duration": 60,
+      "rate": 2000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T08:31:42.646Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Portal (Demon)",
+      "code": "portal_demon",
+      "content": {
+        "type": "monster",
+        "code": "demon"
+      },
+      "maps": [
+        {
+          "map_id": 523,
+          "x": -1,
+          "y": 5,
+          "layer": "overworld",
+          "skin": "forest_portal"
+        },
+        {
+          "map_id": 619,
+          "x": -3,
+          "y": 7,
+          "layer": "overworld",
+          "skin": "forest_portal"
+        },
+        {
+          "map_id": 721,
+          "x": -3,
+          "y": 9,
+          "layer": "overworld",
+          "skin": "forest_portal"
+        }
+      ],
+      "duration": 60,
+      "rate": 1000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T03:42:58.863Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Portal (Efreet)",
+      "code": "portal_efreet_sultan",
+      "content": {
+        "type": "monster",
+        "code": "efreet_sultan"
+      },
+      "maps": [
+        {
+          "map_id": 565,
+          "x": -4,
+          "y": 6,
+          "layer": "overworld",
+          "skin": "forest_portal2"
+        },
+        {
+          "map_id": 823,
+          "x": -3,
+          "y": 11,
+          "layer": "overworld",
+          "skin": "forest_portal2"
+        },
+        {
+          "map_id": 1000,
+          "x": 5,
+          "y": 14,
+          "layer": "overworld",
+          "skin": "forest_portal2"
+        }
+      ],
+      "duration": 60,
+      "rate": 2000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T07:42:47.263Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Silent Night",
+      "code": "silent_night",
+      "content": {
+        "type": "monster",
+        "code": "echoless_bat"
+      },
+      "maps": [
+        {
+          "map_id": 470,
+          "x": -2,
+          "y": 4,
+          "layer": "underground",
+          "skin": "mine_3_event"
+        },
+        {
+          "map_id": 518,
+          "x": -3,
+          "y": 5,
+          "layer": "underground",
+          "skin": "mine_5_event"
+        }
+      ],
+      "duration": 60,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-04T13:40:18.377Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Small Becomes Great",
+      "code": "small_becomes_great",
+      "content": {
+        "type": "monster",
+        "code": "red_dragon"
+      },
+      "maps": [
+        {
+          "map_id": 494,
+          "x": 6,
+          "y": 4,
+          "layer": "underground",
+          "skin": "lavaunderground_25_event"
+        },
+        {
+          "map_id": 548,
+          "x": 7,
+          "y": 5,
+          "layer": "underground",
+          "skin": "lavaunderground_29_event"
+        },
+        {
+          "map_id": 500,
+          "x": 8,
+          "y": 4,
+          "layer": "underground",
+          "skin": "lavaunderground_31_event"
+        }
+      ],
+      "duration": 60,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T13:26:27.440Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Strange Apparition",
+      "code": "strange_apparition",
+      "content": {
+        "type": "resource",
+        "code": "strange_rocks"
+      },
+      "maps": [
+        {
+          "map_id": 871,
+          "x": -4,
+          "y": 12,
+          "layer": "overworld",
+          "skin": "forest_strangerocks1"
+        },
+        {
+          "map_id": 892,
+          "x": 3,
+          "y": 12,
+          "layer": "overworld",
+          "skin": "forest_strangerocks1"
+        },
+        {
+          "map_id": 859,
+          "x": 9,
+          "y": 11,
+          "layer": "overworld",
+          "skin": "forest_strangerocks1"
+        }
+      ],
+      "duration": 60,
+      "rate": 2000,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-04T23:36:08.778Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Sunsting Awakening",
+      "code": "sunsting_awakening",
+      "content": {
+        "type": "monster",
+        "code": "solar_desert_scorpion"
+      },
+      "maps": [
+        {
+          "map_id": 1189,
+          "x": 0,
+          "y": 18,
+          "layer": "overworld",
+          "skin": "desertisland_8_event"
+        },
+        {
+          "map_id": 1237,
+          "x": -1,
+          "y": 19,
+          "layer": "overworld",
+          "skin": "desertisland_19_event"
+        }
+      ],
+      "duration": 60,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-04T13:26:17.921Z",
+      "price": 50,
+      "transition": null
+    },
+    {
+      "name": "Timber Merchant",
+      "code": "timber_merchant",
+      "content": {
+        "type": "npc",
+        "code": "timber_merchant"
+      },
+      "maps": [
+        {
+          "map_id": 481,
+          "x": 2,
+          "y": 4,
+          "layer": "overworld",
+          "skin": "forest_village5_timber_merchant"
+        }
+      ],
+      "duration": 90,
+      "rate": 1500,
+      "cooldown": 120,
+      "cooldown_expiration": "2026-07-05T09:52:35.957Z",
+      "price": 50,
+      "transition": null
+    }
+  ],
+  "total": 20,
+  "page": 1,
+  "size": 100,
+  "pages": 1
+}

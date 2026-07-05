@@ -10,14 +10,23 @@ import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.utils.CharacterUtils
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * Common helper functions for character actions.
  * Handles cooldowns, movement, banking, equipping, and inventory management.
  */
+@OptIn(ExperimentalTime::class)
 class ActionHelper(private val client: ArtifactsMMOClient, private val contentCache: ContentCache) {
 
     // ── Cooldown ──
+
+    suspend fun waitForCooldown(expiration: Instant) {
+        val remaining = expiration - Clock.System.now()
+        if (remaining.isPositive()) delay(remaining)
+    }
 
     suspend fun waitForCooldown(seconds: Int) {
         if (seconds > 0) delay(seconds.seconds)
@@ -32,7 +41,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     suspend fun waitForActiveCooldown(name: String) {
         val char = refreshCharacter(name)
         if (char.cooldown > 0) {
-            waitForCooldown(char.cooldown)
+            waitForCooldown(char.cooldownExpiration)
         }
     }
 
@@ -51,7 +60,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     suspend fun moveTo(name: String, x: Int, y: Int): Character {
         return try {
             val result = client.actions.move(name, x, y)
-            waitForCooldown(result.cooldown.totalSeconds)
+            waitForCooldown(result.cooldown.expiration)
             result.character
         } catch (e: ArtifactsApiException) {
             if (e.errorCode == 490 || e.errorCode == 497) {
@@ -127,7 +136,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     private suspend fun useTransition(name: String): Character {
         val result = client.actions.transition(name)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result.character
     }
 
@@ -202,7 +211,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
         if (itemsToDeposit.isNotEmpty()) {
             val result = client.bank.depositItems(name, itemsToDeposit)
-            waitForCooldown(result.cooldown.totalSeconds)
+            waitForCooldown(result.cooldown.expiration)
             return result.character
         }
         return char
@@ -259,7 +268,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         char = navigateToTile(name, bank)
 
         val result = client.bank.depositItems(name, items)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result.character
     }
 
@@ -270,7 +279,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     suspend fun gather(name: String): com.artifactsmmo.client.models.SkillData {
         val result = client.actions.gather(name)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result
     }
 
@@ -278,13 +287,13 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
     suspend fun fight(name: String, participants: List<String> = emptyList()): com.artifactsmmo.client.models.CharacterFightData {
         val result = client.actions.fight(name, participants)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result
     }
 
     suspend fun rest(name: String): Character {
         val result = client.actions.rest(name)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result.character
     }
 
@@ -292,7 +301,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
     suspend fun craft(name: String, itemCode: String, quantity: Int = 1): com.artifactsmmo.client.models.SkillData {
         val result = client.actions.craft(name, itemCode, quantity)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result
     }
 
@@ -304,7 +313,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     suspend fun recycle(name: String, itemCode: String, quantity: Int = 1): com.artifactsmmo.client.models.RecyclingData {
         val result = client.actions.recycle(name, itemCode, quantity)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result
     }
 
@@ -505,7 +514,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     suspend fun useItem(name: String, itemCode: String, quantity: Int = 1): com.artifactsmmo.client.models.UseItemData {
         val result = client.actions.use(name, itemCode, quantity)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result
     }
 
@@ -522,7 +531,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         char = navigateToTile(name, bank)
 
         val result = client.bank.withdrawItems(name, items)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result.character
     }
 
@@ -796,7 +805,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
         return try {
             val result = client.npc.buyItem(characterName, itemCode, quantity)
-            waitForCooldown(result.cooldown.totalSeconds)
+            waitForCooldown(result.cooldown.expiration)
             result.character
         } catch (e: ArtifactsApiException) {
             if (e.errorCode == 496) {
@@ -837,13 +846,13 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
     suspend fun equip(name: String, itemCode: String, slot: String): Character {
         val result = client.actions.equip(name, itemCode, slot)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result.character
     }
 
     suspend fun unequip(name: String, slot: String): Character {
         val result = client.actions.unequip(name, slot)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result.character
     }
 
@@ -1485,7 +1494,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         }
         if (itemsToDeposit.isNotEmpty()) {
             val result = client.bank.depositItems(characterName, itemsToDeposit)
-            waitForCooldown(result.cooldown.totalSeconds)
+            waitForCooldown(result.cooldown.expiration)
             char = result.character
         }
 
@@ -1493,7 +1502,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         for (action in equipActions.filter { it.source == "bank" }) {
             try {
                 val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(action.itemCode, 1)))
-                waitForCooldown(result.cooldown.totalSeconds)
+                waitForCooldown(result.cooldown.expiration)
                 char = result.character
             } catch (_: Exception) {}
         }
@@ -1505,7 +1514,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
                 val craft = item.craft ?: continue
                 val ingredients = craft.items.map { SimpleItem(it.code, it.quantity) }
                 val result = client.bank.withdrawItems(characterName, ingredients)
-                waitForCooldown(result.cooldown.totalSeconds)
+                waitForCooldown(result.cooldown.expiration)
                 char = result.character
             } catch (_: Exception) {}
         }
@@ -1522,7 +1531,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             for (action in actions) {
                 try {
                     val result = client.actions.craft(characterName, action.itemCode, 1)
-                    waitForCooldown(result.cooldown.totalSeconds)
+                    waitForCooldown(result.cooldown.expiration)
                     char = result.character
                 } catch (_: Exception) {}
             }
@@ -1553,7 +1562,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     suspend fun acceptTask(name: String): com.artifactsmmo.client.models.TaskData {
         val result = client.tasks.acceptNewTask(name)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result
     }
 
@@ -1563,7 +1572,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     suspend fun tradeTask(name: String, itemCode: String, quantity: Int): Character {
         val char = client.tasks.tradeTask(name, itemCode, quantity)
-        waitForCooldown(char.cooldown)
+        waitForCooldown(char.cooldownExpiration)
         return char
     }
 
@@ -1573,7 +1582,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     suspend fun completeTask(name: String): com.artifactsmmo.client.models.RewardData {
         val result = client.tasks.completeTask(name)
-        waitForCooldown(result.cooldown.totalSeconds)
+        waitForCooldown(result.cooldown.expiration)
         return result
     }
 
@@ -1583,7 +1592,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
      */
     suspend fun cancelTask(name: String): Character {
         val char = client.tasks.cancelTask(name)
-        waitForCooldown(char.cooldown)
+        waitForCooldown(char.cooldownExpiration)
         return char
     }
 

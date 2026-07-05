@@ -379,6 +379,7 @@ class FightingExecutor(private val helper: ActionHelper) {
      *  5. Wait for the server-applied fight cooldown to expire
      *  6. Return StepResult.Waiting to re-enter the loop for the next round
      */
+    @OptIn(kotlin.time.ExperimentalTime::class)
     suspend fun executeBossStep(
         characterName: String,
         task: TaskType.BossFight,
@@ -469,7 +470,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 if (polledChar.cooldown > 0) {
                     cooldownSeen = true
                     onStatus("Boss fight complete, waiting ${polledChar.cooldown}s cooldown...")
-                    helper.waitForCooldown(polledChar.cooldown)
+                    helper.waitForCooldown(polledChar.cooldownExpiration)
                 } else {
                     kotlinx.coroutines.delay(500)
                 }
