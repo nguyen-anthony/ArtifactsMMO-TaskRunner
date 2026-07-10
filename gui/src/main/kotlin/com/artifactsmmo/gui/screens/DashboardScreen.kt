@@ -47,6 +47,8 @@ fun DashboardScreen(
     val statuses by appState.statuses.collectAsState()
     val characterDetails by appState.characterDetails.collectAsState()
     val logEntries by appState.logEntries.collectAsState()
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    val wsLogEntries by appState.wsLogEntries.collectAsState()
 
     // Single-select: which character's detail panel is shown
     var selectedCharacter by remember { mutableStateOf<String?>(null) }
@@ -57,6 +59,9 @@ fun DashboardScreen(
 
     // Task wizard: list of characters to assign to (null = closed)
     var wizardCharacters by remember { mutableStateOf<List<String>?>(null) }
+
+    // Event config dialog
+    var showEventConfig by remember { mutableStateOf(false) }
 
     // Bank dialog: character name (null = closed)
     var bankDialogCharacter by remember { mutableStateOf<String?>(null) }
@@ -102,6 +107,8 @@ fun DashboardScreen(
                     OutlinedButton(onClick = {
                         scope.launch { appState.refreshCharacterDetails() }
                     }) { Text("Refresh") }
+
+                    OutlinedButton(onClick = { showEventConfig = true }) { Text("Events") }
 
                     // Multi-select toggle
                     val selectLabel = if (multiSelectMode) "Cancel Select" else "Select"
@@ -241,6 +248,7 @@ fun DashboardScreen(
                         VerticalDivider()
                         CharacterDetailPanel(
                             character = selChar,
+                            appState = appState,
                             onClose = { selectedCharacter = null },
                             onAssignTask = { wizardCharacters = listOf(selName) },
                             onStopTask = { appState.taskManager.stopTask(selName) },
@@ -265,6 +273,11 @@ fun DashboardScreen(
                             }
                         }
                     )
+                }
+
+                // ── Event config dialog ────────────────────────────────────────
+                if (showEventConfig) {
+                    EventConfigScreen(appState = appState, onDismiss = { showEventConfig = false })
                 }
 
                 // ── Bank dialog ────────────────────────────────────────────────
@@ -292,8 +305,10 @@ fun DashboardScreen(
                 HorizontalDivider()
 
                 // ── Log panel ─────────────────────────────────────────────────
+                @OptIn(kotlin.time.ExperimentalTime::class)
                 LogPanel(
                     entries = logEntries,
+                    wsLogEntries = wsLogEntries,
                     characterNames = characterNames,
                     logFilter = logFilter,
                     onFilterChange = { logFilter = it },
@@ -347,26 +362,35 @@ private fun ErrorView(message: String, modifier: Modifier = Modifier) {
 
 // ── Log panel ──────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
+private const val WS_LOG_FILTER = "__websocket__"
+
+@OptIn(ExperimentalMaterial3Api::class, kotlin.time.ExperimentalTime::class)
 @Composable
 private fun LogPanel(
     entries: List<TaskLogger.LogEntry>,
+    wsLogEntries: List<com.artifactsmmo.core.task.WebSocketManager.WebSocketLogEntry>,
     characterNames: List<String>,
     logFilter: String?,
     onFilterChange: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Apply filter
+    val isWsMode = logFilter == WS_LOG_FILTER
+
+    // Task log: filter + format
     val filtered = remember(entries, logFilter) {
-        if (logFilter == null) entries
+        if (logFilter == null || isWsMode) entries
         else entries.filter { it.characterName.equals(logFilter, ignoreCase = true) }
     }
     val lines = remember(filtered) { filtered.map { it.formatted() } }
 
     val listState = rememberLazyListState()
 
+    // Auto-scroll: task log scrolls to newest at bottom; WS log is shown newest-first
     LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
+        if (!isWsMode && lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
+    }
+    LaunchedEffect(wsLogEntries.size) {
+        if (isWsMode && wsLogEntries.isNotEmpty()) listState.animateScrollToItem(0)
     }
 
     Surface(
@@ -398,6 +422,13 @@ private fun LogPanel(
                         label = { Text(name) }
                     )
                 }
+                item {
+                    FilterChip(
+                        selected = isWsMode,
+                        onClick = { onFilterChange(if (isWsMode) null else WS_LOG_FILTER) },
+                        label = { Text("WebSocket") }
+                    )
+                }
             }
 
             HorizontalDivider()
@@ -408,17 +439,41 @@ private fun LogPanel(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                items(lines) { line ->
-                    Text(
-                        text = line,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = MaterialTheme.typography.bodySmall.fontSize * 0.9
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (isWsMode) {
+                    // WebSocket feed — newest first
+                    val wsLines = wsLogEntries.takeLast(500).asReversed()
+                    items(wsLines) { entry ->
+                        val timeStr = formatWsTimestamp(entry.timestamp)
+                        Text(
+                            text = "[$timeStr] ${entry.summary}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = MaterialTheme.typography.bodySmall.fontSize * 0.9
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    items(lines) { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = MaterialTheme.typography.bodySmall.fontSize * 0.9
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@kotlin.time.ExperimentalTime
+private fun formatWsTimestamp(instant: kotlin.time.Instant): String {
+    val epochMs = instant.toEpochMilliseconds()
+    val zdt = java.time.Instant.ofEpochMilli(epochMs)
+        .atZone(java.time.ZoneId.systemDefault())
+    return "%02d:%02d:%02d".format(zdt.hour, zdt.minute, zdt.second)
 }

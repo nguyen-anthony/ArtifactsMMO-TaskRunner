@@ -1,10 +1,13 @@
 package com.artifactsmmo.gui.state
 
 import com.artifactsmmo.client.ArtifactsMMOClient
+import com.artifactsmmo.client.models.ActiveEvent
 import com.artifactsmmo.client.models.Character
+import com.artifactsmmo.core.task.EventConfig
 import com.artifactsmmo.core.task.RunnerStatus
 import com.artifactsmmo.core.task.TaskLogger
 import com.artifactsmmo.core.task.TaskManager
+import com.artifactsmmo.core.task.WebSocketManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,7 +27,7 @@ class AppState(val scope: CoroutineScope, private val apiToken: String) {
 
     val logger = TaskLogger()
 
-    val taskManager: TaskManager by lazy { TaskManager(client, scope, logger = logger) }
+    val taskManager: TaskManager by lazy { TaskManager(client, scope, logger = logger, token = apiToken) }
 
     // ── Initialization state ──────────────────────────────────────────────────
 
@@ -52,6 +55,25 @@ class AppState(val scope: CoroutineScope, private val apiToken: String) {
     private val _logEntries = MutableStateFlow<List<TaskLogger.LogEntry>>(emptyList())
     val logEntries: StateFlow<List<TaskLogger.LogEntry>> = _logEntries.asStateFlow()
 
+    // ── Event config ──────────────────────────────────────────────────────────
+
+    private val _eventConfigs = MutableStateFlow<List<EventConfig>>(emptyList())
+    val eventConfigs: StateFlow<List<EventConfig>> = _eventConfigs.asStateFlow()
+
+    // ── Active events (from WebSocket dispatcher) ─────────────────────────────
+
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    private val _activeEvents = MutableStateFlow<Map<String, ActiveEvent>>(emptyMap())
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    val activeEvents: StateFlow<Map<String, ActiveEvent>> = _activeEvents.asStateFlow()
+
+    // ── WebSocket log entries ─────────────────────────────────────────────────
+
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    private val _wsLogEntries = MutableStateFlow<List<WebSocketManager.WebSocketLogEntry>>(emptyList())
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    val wsLogEntries: StateFlow<List<WebSocketManager.WebSocketLogEntry>> = _wsLogEntries.asStateFlow()
+
     private var logPollJob: Job? = null
     private var statusPollJob: Job? = null
 
@@ -68,6 +90,11 @@ class AppState(val scope: CoroutineScope, private val apiToken: String) {
             _initState.value = InitState.Ready(names)
             refreshCharacterDetails(names)
             startPolling(names)
+            _eventConfigs.value = taskManager.getEventConfigs()
+            scope.launch {
+                @OptIn(kotlin.time.ExperimentalTime::class)
+                taskManager.eventDispatcher.activeEvents.collect { _activeEvents.value = it }
+            }
         } catch (e: Exception) {
             _initState.value = InitState.Error(e.message ?: "Unknown error during initialization")
         }
@@ -102,6 +129,15 @@ class AppState(val scope: CoroutineScope, private val apiToken: String) {
                 delay(500)
             }
         }
+
+        // Poll WebSocket log entries every 1 s
+        scope.launch {
+            while (isActive) {
+                @OptIn(kotlin.time.ExperimentalTime::class)
+                _wsLogEntries.value = taskManager.getRecentWebSocketLogs(500)
+                delay(1_000)
+            }
+        }
     }
 
     // ── Public actions ────────────────────────────────────────────────────────
@@ -119,5 +155,14 @@ class AppState(val scope: CoroutineScope, private val apiToken: String) {
     /** Stop all running tasks without clearing the persisted task file. */
     fun stopAll() {
         taskManager.stopAll()
+    }
+
+    /** Live bank snapshot from [BankState] — no polling needed, it's already a StateFlow. */
+    val bankSnapshot: StateFlow<Map<String, Int>> get() = taskManager.bankState.snapshot
+
+    /** Save event configurations and update the local flow. */
+    fun saveEventConfigs(configs: List<EventConfig>) {
+        taskManager.saveEventConfigs(configs)
+        _eventConfigs.value = configs
     }
 }

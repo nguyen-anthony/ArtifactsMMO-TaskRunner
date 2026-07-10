@@ -271,4 +271,6 @@ private fun describeTask(task: TaskType): String = when (task) {
     is TaskType.InventoryRecycle -> "Recycling (inv): ${task.quantity}x ${task.itemName}"
     is TaskType.BulkBankWithdraw -> "Bulk Withdrawing: ${task.items.size} items"
     is TaskType.BulkInventoryDeposit -> "Bulk Depositing: ${task.items.size} items"
+    is TaskType.EventGather -> "Event: Gathering ${task.resourceName}"
+    is TaskType.EventNpc -> "Event: Trading at ${task.npcName}"
 }

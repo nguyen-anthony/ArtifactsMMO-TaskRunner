@@ -1,0 +1,3004 @@
+{
+  "data": [
+    {
+      "name": "Copper Ring",
+      "code": "copper_ring",
+      "level": 1,
+      "type": "ring",
+      "subtype": "",
+      "description": "A simple ring made of copper. Provides a small boost to your damage output.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 2,
+          "description": "Adds 2% Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 1,
+        "items": [
+          {
+            "code": "copper_bar",
+            "quantity": 6
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Life Amulet",
+      "code": "life_amulet",
+      "level": 5,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet that pulses with vital energy. Increases your health and survivability.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 4
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 30,
+          "description": "Adds 30 HP to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 5,
+        "items": [
+          {
+            "code": "feather",
+            "quantity": 4
+          },
+          {
+            "code": "red_slimeball",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Iron Ring",
+      "code": "iron_ring",
+      "level": 10,
+      "type": "ring",
+      "subtype": "",
+      "description": "A simple ring forged from iron. Enhances your damage output in combat.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 4,
+          "description": "Adds 4% Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 6
+          },
+          {
+            "code": "wool",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Fire & Earth Amulet",
+      "code": "fire_and_earth_amulet",
+      "level": 10,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet forged with the power of fire and earth. Grants extra vitality and dual elemental protection.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 20,
+          "description": "Adds 20 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 5,
+          "description": "Adds 5% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 5,
+          "description": "Adds 5% Earth Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 4
+          },
+          {
+            "code": "red_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "yellow_slimeball",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Air & Water Amulet",
+      "code": "air_and_water_amulet",
+      "level": 10,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An elegant amulet that channels both air and water energies. Perfect for those who value versatility.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 20,
+          "description": "Adds 20 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 5,
+          "description": "Adds 5% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 5,
+          "description": "Adds 5% Air Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 4
+          },
+          {
+            "code": "green_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "blue_slimeball",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Wisdom Amulet",
+      "code": "wisdom_amulet",
+      "level": 15,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet that sharpens the mind and accelerates learning. Wearing it helps you gain experience and master new skills faster.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 30,
+          "description": "Adds 30 HP to its stats when equipped."
+        },
+        {
+          "code": "wisdom",
+          "value": 60,
+          "description": "Adds 60 Wisdom to its stats when equipped. Each point of wisdom increases your xp in combat and with skills. (1% extra per 10 wisdom)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 4
+          },
+          {
+            "code": "green_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "snake_hide",
+            "quantity": 3
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Air Ring",
+      "code": "air_ring",
+      "level": 15,
+      "type": "ring",
+      "subtype": "",
+      "description": "A light silver ring that crackles with a gentle breeze. Increases your affinity with the element of air.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_air",
+          "value": 8,
+          "description": "Adds 8% Air Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 5
+          },
+          {
+            "code": "green_slimeball",
+            "quantity": 4
+          },
+          {
+            "code": "flying_wing",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Earth Ring",
+      "code": "earth_ring",
+      "level": 15,
+      "type": "ring",
+      "subtype": "",
+      "description": "A heavy ring with earthen patterns carved into its surface. Strengthens your connection to the earth element.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_earth",
+          "value": 8,
+          "description": "Adds 8% Earth Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 5
+          },
+          {
+            "code": "yellow_slimeball",
+            "quantity": 4
+          },
+          {
+            "code": "flying_wing",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Life Ring",
+      "code": "life_ring",
+      "level": 15,
+      "type": "ring",
+      "subtype": "",
+      "description": "A ring that pulses with life energy, granting vitality and wisdom to its wearer.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 25,
+          "description": "Adds 25 HP to its stats when equipped."
+        },
+        {
+          "code": "wisdom",
+          "value": 20,
+          "description": "Adds 20 Wisdom to its stats when equipped. Each point of wisdom increases your xp in combat and with skills. (1% extra per 10 wisdom)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 8
+          },
+          {
+            "code": "cloth",
+            "quantity": 2
+          },
+          {
+            "code": "mushroom",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Water Ring",
+      "code": "water_ring",
+      "level": 15,
+      "type": "ring",
+      "subtype": "",
+      "description": "A ring set with a droplet-shaped gem. Enhances your connection to the power of water.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_water",
+          "value": 8,
+          "description": "Adds 8% Water Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 5
+          },
+          {
+            "code": "blue_slimeball",
+            "quantity": 4
+          },
+          {
+            "code": "flying_wing",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Fire Ring",
+      "code": "fire_ring",
+      "level": 15,
+      "type": "ring",
+      "subtype": "",
+      "description": "A ring adorned with a glowing ember. Enhances your fire-based attacks with searing power.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_fire",
+          "value": 8,
+          "description": "Adds 8% Fire Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 5
+          },
+          {
+            "code": "red_slimeball",
+            "quantity": 4
+          },
+          {
+            "code": "flying_wing",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Ring of Chance",
+      "code": "ring_of_chance",
+      "level": 20,
+      "type": "ring",
+      "subtype": "",
+      "description": "A gleaming ring that increases luck and power. Fortune favors those who wear it.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 30,
+          "description": "Adds 30 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 7,
+          "description": "Adds 7% Damage to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 30,
+          "description": "Adds 30 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "critical_strike",
+          "value": 4,
+          "description": "Adds 4% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          },
+          {
+            "code": "steel_bar",
+            "quantity": 6
+          },
+          {
+            "code": "king_slimeball",
+            "quantity": 4
+          },
+          {
+            "code": "pig_skin",
+            "quantity": 4
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Skull Amulet",
+      "code": "skull_amulet",
+      "level": 20,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet adorned with a tiny skull. Grants health and enhances both fire and air damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 40,
+          "description": "Adds 40 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 10,
+          "description": "Adds 10% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 10,
+          "description": "Adds 10% Fire Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 7
+          },
+          {
+            "code": "skeleton_skull",
+            "quantity": 3
+          },
+          {
+            "code": "king_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "snake_hide",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Dreadful Amulet",
+      "code": "dreadful_amulet",
+      "level": 20,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet that radiates ominous energy. Enhances health and both water and earth damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 40,
+          "description": "Adds 40 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 10,
+          "description": "Adds 10% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 10,
+          "description": "Adds 10% Earth Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 6
+          },
+          {
+            "code": "ogre_eye",
+            "quantity": 4
+          },
+          {
+            "code": "hard_leather",
+            "quantity": 2
+          },
+          {
+            "code": "king_slimeball",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Skull Ring",
+      "code": "skull_ring",
+      "level": 20,
+      "type": "ring",
+      "subtype": "",
+      "description": "A silver ring topped with a tiny skull. Enhances health and both fire and air damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 20,
+          "description": "Adds 20 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 11,
+          "description": "Adds 11% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 11,
+          "description": "Adds 11% Air Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 4
+          },
+          {
+            "code": "wolf_bone",
+            "quantity": 4
+          },
+          {
+            "code": "skeleton_skull",
+            "quantity": 1
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Steel Ring",
+      "code": "steel_ring",
+      "level": 20,
+      "type": "ring",
+      "subtype": "",
+      "description": "A sturdy ring made of polished steel. Enhances both damage and wisdom significantly.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 6,
+          "description": "Adds 6% Damage to its stats when equipped."
+        },
+        {
+          "code": "wisdom",
+          "value": 30,
+          "description": "Adds 30 Wisdom to its stats when equipped. Each point of wisdom increases your xp in combat and with skills. (1% extra per 10 wisdom)"
+        },
+        {
+          "code": "initiative",
+          "value": 75,
+          "description": "Adds 75 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 7
+          },
+          {
+            "code": "skeleton_bone",
+            "quantity": 3
+          },
+          {
+            "code": "hard_leather",
+            "quantity": 2
+          },
+          {
+            "code": "snake_hide",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Dreadful Ring",
+      "code": "dreadful_ring",
+      "level": 20,
+      "type": "ring",
+      "subtype": "",
+      "description": "A ring that emanates ominous energy. Enhances both earth and water magic significantly.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 20,
+          "description": "Adds 20 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 11,
+          "description": "Adds 11% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 11,
+          "description": "Adds 11% Water Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 7
+          },
+          {
+            "code": "ogre_eye",
+            "quantity": 4
+          },
+          {
+            "code": "cyclops_eye",
+            "quantity": 3
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Emerald Amulet",
+      "code": "emerald_amulet",
+      "level": 25,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet adorned with a brilliant emerald. Enhances health and air damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 70,
+          "description": "Adds 70 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 18,
+          "description": "Adds 18% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 50,
+          "description": "Adds 50 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 25,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 8
+          },
+          {
+            "code": "emerald",
+            "quantity": 1
+          },
+          {
+            "code": "snake_hide",
+            "quantity": 5
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Topaz Amulet",
+      "code": "topaz_amulet",
+      "level": 25,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet set with a gleaming topaz. Enhances vitality and earth damage significantly.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 70,
+          "description": "Adds 70 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 18,
+          "description": "Adds 18% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 50,
+          "description": "Adds 50 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 25,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 8
+          },
+          {
+            "code": "topaz",
+            "quantity": 1
+          },
+          {
+            "code": "wolf_hair",
+            "quantity": 5
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Sapphire Amulet",
+      "code": "sapphire_amulet",
+      "level": 25,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet with a stunning sapphire as its centerpiece. Enhances health and water damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 70,
+          "description": "Adds 70 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 18,
+          "description": "Adds 18% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 50,
+          "description": "Adds 50 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 25,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 8
+          },
+          {
+            "code": "sapphire",
+            "quantity": 1
+          },
+          {
+            "code": "wolf_hair",
+            "quantity": 5
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Ruby Amulet",
+      "code": "ruby_amulet",
+      "level": 25,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet set with a fiery ruby. Increases vitality and fire damage significantly.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 70,
+          "description": "Adds 70 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 18,
+          "description": "Adds 18% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 50,
+          "description": "Adds 50 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 25,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 8
+          },
+          {
+            "code": "ruby",
+            "quantity": 1
+          },
+          {
+            "code": "snake_hide",
+            "quantity": 5
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Lost Amulet",
+      "code": "lost_amulet",
+      "level": 30,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An ancient amulet with unknown origins. Its magic resonates with fire and air elements.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 90,
+          "description": "Adds 90 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 15,
+          "description": "Adds 15% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 15,
+          "description": "Adds 15% Air Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 4
+          },
+          {
+            "code": "cyclops_eye",
+            "quantity": 4
+          },
+          {
+            "code": "imp_tail",
+            "quantity": 3
+          },
+          {
+            "code": "red_cloth",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Prospecting Amulet",
+      "code": "prospecting_amulet",
+      "level": 30,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet that seems to pull its wearer toward hidden treasures. Invaluable for treasure hunters.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 100,
+          "description": "Adds 100 HP to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 100,
+          "description": "Adds 100 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "dmg",
+          "value": 5,
+          "description": "Adds 5% Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "dead_wood_plank",
+            "quantity": 4
+          },
+          {
+            "code": "spider_leg",
+            "quantity": 3
+          },
+          {
+            "code": "ogre_skin",
+            "quantity": 6
+          },
+          {
+            "code": "owlbear_hair",
+            "quantity": 4
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Royal Skeleton Ring",
+      "code": "royal_skeleton_ring",
+      "level": 30,
+      "type": "ring",
+      "subtype": "",
+      "description": "A macabre ring made from polished bone and adorned with gold. Despite its grim appearance, it grants potent benefits.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 70,
+          "description": "Adds 70 HP to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 30,
+          "description": "Adds 30 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "initiative",
+          "value": 80,
+          "description": "Adds 80 Initiative to its stats when equipped."
+        },
+        {
+          "code": "threat",
+          "value": 5,
+          "description": "Adds 5 Threat to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 12,
+          "description": "Adds 12% Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "owlbear_claw",
+            "quantity": 3
+          },
+          {
+            "code": "vampire_tooth",
+            "quantity": 3
+          },
+          {
+            "code": "spider_leg",
+            "quantity": 2
+          },
+          {
+            "code": "ogre_skin",
+            "quantity": 4
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Emerald Ring",
+      "code": "emerald_ring",
+      "level": 30,
+      "type": "ring",
+      "subtype": "",
+      "description": "A golden ring adorned with a sparkling emerald. Enhances air damage and overall fighting prowess.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_air",
+          "value": 7,
+          "description": "Adds 7% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 17,
+          "description": "Adds 17% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 4
+          },
+          {
+            "code": "emerald",
+            "quantity": 1
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 5
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Sapphire Ring",
+      "code": "sapphire_ring",
+      "level": 30,
+      "type": "ring",
+      "subtype": "",
+      "description": "A golden ring set with a brilliant sapphire. Enhances water damage and overall combat ability.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_water",
+          "value": 7,
+          "description": "Adds 7% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 17,
+          "description": "Adds 17% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 4
+          },
+          {
+            "code": "sapphire",
+            "quantity": 1
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 5
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Gold Ring",
+      "code": "gold_ring",
+      "level": 30,
+      "type": "ring",
+      "subtype": "",
+      "description": "A finely crafted ring of pure gold. Enhances both combat ability and magical wisdom.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 10,
+          "description": "Adds 10% Damage to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 75,
+          "description": "Adds 75 Initiative to its stats when equipped."
+        },
+        {
+          "code": "wisdom",
+          "value": 30,
+          "description": "Adds 30 Wisdom to its stats when equipped. Each point of wisdom increases your xp in combat and with skills. (1% extra per 10 wisdom)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "dead_wood_plank",
+            "quantity": 3
+          },
+          {
+            "code": "wolf_bone",
+            "quantity": 3
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 3
+          },
+          {
+            "code": "skeleton_bone",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Topaz Ring",
+      "code": "topaz_ring",
+      "level": 30,
+      "type": "ring",
+      "subtype": "",
+      "description": "A golden ring set with a gleaming topaz. Enhances earth damage and general combat prowess.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_earth",
+          "value": 7,
+          "description": "Adds 7% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 17,
+          "description": "Adds 17% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 4
+          },
+          {
+            "code": "topaz",
+            "quantity": 1
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 5
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Greater Dreadful Amulet",
+      "code": "greater_dreadful_amulet",
+      "level": 30,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An enhanced version of the Dreadful Amulet. Radiates more intense dark energy and power.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 90,
+          "description": "Adds 90 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 15,
+          "description": "Adds 15% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 15,
+          "description": "Adds 15% Water Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "dreadful_amulet",
+            "quantity": 1
+          },
+          {
+            "code": "cyclops_eye",
+            "quantity": 4
+          },
+          {
+            "code": "ogre_eye",
+            "quantity": 4
+          },
+          {
+            "code": "red_cloth",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Ruby Ring",
+      "code": "ruby_ring",
+      "level": 30,
+      "type": "ring",
+      "subtype": "",
+      "description": "A golden ring set with a fiery ruby. Enhances fire power and overall damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_fire",
+          "value": 7,
+          "description": "Adds 7% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 17,
+          "description": "Adds 17% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 4
+          },
+          {
+            "code": "ruby",
+            "quantity": 1
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 5
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Corrupted Stone Amulet",
+      "code": "corrupted_stone_amulet",
+      "level": 35,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet with a corrupted stone as its centerpiece. Radiates dark energy and enhances fire and air damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 100,
+          "description": "Adds 100 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 20,
+          "description": "Adds 20% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 10,
+          "description": "Adds 10% Air Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 6
+          },
+          {
+            "code": "malefic_cloth",
+            "quantity": 2
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 5
+          },
+          {
+            "code": "orc_bone",
+            "quantity": 5
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Diamond Amulet",
+      "code": "diamond_amulet",
+      "level": 35,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An amulet with a perfect diamond at its center. Provides excellent health and dual elemental enhancement.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 100,
+          "description": "Adds 100 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 20,
+          "description": "Adds 20% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 10,
+          "description": "Adds 10% Earth Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "magical_plank",
+            "quantity": 8
+          },
+          {
+            "code": "diamond",
+            "quantity": 1
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 5
+          },
+          {
+            "code": "cursed_book",
+            "quantity": 4
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Malefic Ring",
+      "code": "malefic_ring",
+      "level": 35,
+      "type": "ring",
+      "subtype": "",
+      "description": "A twisted ring of black metal that seems to absorb light. Wearing it makes your strikes more deadly.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 14,
+          "description": "Adds 14% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 7,
+          "description": "Adds 7% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 40,
+          "description": "Adds 40 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "cursed_plank",
+            "quantity": 4
+          },
+          {
+            "code": "ruby",
+            "quantity": 2
+          },
+          {
+            "code": "lizard_eye",
+            "quantity": 2
+          },
+          {
+            "code": "owlbear_claw",
+            "quantity": 2
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Ancestral Talisman",
+      "code": "ancestral_talisman",
+      "level": 35,
+      "type": "amulet",
+      "subtype": "",
+      "description": "A talisman passed down through generations of spellcasters. Enhances air and water magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 100,
+          "description": "Adds 100 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 20,
+          "description": "Adds 20% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 10,
+          "description": "Adds 10% Water Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "magical_plank",
+            "quantity": 8
+          },
+          {
+            "code": "diamond",
+            "quantity": 1
+          },
+          {
+            "code": "cursed_book",
+            "quantity": 4
+          },
+          {
+            "code": "goblin_tooth",
+            "quantity": 5
+          },
+          {
+            "code": "priestess_orb",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Masterful Necklace",
+      "code": "masterful_necklace",
+      "level": 35,
+      "type": "amulet",
+      "subtype": "",
+      "description": "A necklace of extraordinary craftsmanship. Its pendant pulses with earth and fire energy.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 100,
+          "description": "Adds 100 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 20,
+          "description": "Adds 20% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 10,
+          "description": "Adds 10% Fire Damage to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 6
+          },
+          {
+            "code": "priestess_orb",
+            "quantity": 2
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 5
+          },
+          {
+            "code": "goblin_tooth",
+            "quantity": 5
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mithril Ring",
+      "code": "mithril_ring",
+      "level": 40,
+      "type": "ring",
+      "subtype": "",
+      "description": "A gleaming blue-silver ring that feels unusually light on the finger. The metal amplifies the wearer's natural attributes while enhancing their ability to find treasure.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 175,
+          "description": "Adds 175 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 20,
+          "description": "Adds 20% Damage to its stats when equipped."
+        },
+        {
+          "code": "threat",
+          "value": 10,
+          "description": "Adds 10 Threat to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 80,
+          "description": "Adds 80 Initiative to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 4,
+          "description": "Adds 4% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "prospecting",
+          "value": 60,
+          "description": "Adds 60 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 8
+          },
+          {
+            "code": "lizard_eye",
+            "quantity": 2
+          },
+          {
+            "code": "wolfrider_hair",
+            "quantity": 3
+          },
+          {
+            "code": "dark_essence",
+            "quantity": 3
+          },
+          {
+            "code": "bat_heart",
+            "quantity": 4
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Sacred Ring",
+      "code": "sacred_ring",
+      "level": 40,
+      "type": "ring",
+      "subtype": "",
+      "description": "A golden ring inscribed with holy symbols that boost fire and air magic. Glows when danger is near.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_fire",
+          "value": 25,
+          "description": "Adds 25% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 25,
+          "description": "Adds 25% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 30,
+          "description": "Adds 30 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 9
+          },
+          {
+            "code": "hellhound_collar",
+            "quantity": 4
+          },
+          {
+            "code": "ruby",
+            "quantity": 2
+          },
+          {
+            "code": "emerald",
+            "quantity": 2
+          },
+          {
+            "code": "rosenblood_elixir",
+            "quantity": 1
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Celest Ring",
+      "code": "celest_ring",
+      "level": 40,
+      "type": "ring",
+      "subtype": "",
+      "description": "A ring said to have been forged from a fallen star. It enhances both fire and water magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_fire",
+          "value": 25,
+          "description": "Adds 25% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 25,
+          "description": "Adds 25% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 30,
+          "description": "Adds 30 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 9
+          },
+          {
+            "code": "wolfrider_hair",
+            "quantity": 3
+          },
+          {
+            "code": "ruby",
+            "quantity": 2
+          },
+          {
+            "code": "sapphire",
+            "quantity": 2
+          },
+          {
+            "code": "rosenblood_elixir",
+            "quantity": 1
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Divinity Ring",
+      "code": "divinity_ring",
+      "level": 40,
+      "type": "ring",
+      "subtype": "",
+      "description": "A ring blessed by ancient gods of earth and water. Radiates a gentle, protective aura.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_earth",
+          "value": 25,
+          "description": "Adds 25% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 25,
+          "description": "Adds 25% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 30,
+          "description": "Adds 30 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 9
+          },
+          {
+            "code": "hellhound_collar",
+            "quantity": 4
+          },
+          {
+            "code": "topaz",
+            "quantity": 2
+          },
+          {
+            "code": "sapphire",
+            "quantity": 2
+          },
+          {
+            "code": "rosenblood_elixir",
+            "quantity": 1
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Eternity Ring",
+      "code": "eternity_ring",
+      "level": 40,
+      "type": "ring",
+      "subtype": "",
+      "description": "A ring forged with metals said to have existed since the dawn of time. Enhances air and earth magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_air",
+          "value": 25,
+          "description": "Adds 25% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 25,
+          "description": "Adds 25% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 30,
+          "description": "Adds 30 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 9
+          },
+          {
+            "code": "wolfrider_ponytail",
+            "quantity": 3
+          },
+          {
+            "code": "topaz",
+            "quantity": 2
+          },
+          {
+            "code": "emerald",
+            "quantity": 2
+          },
+          {
+            "code": "rosenblood_elixir",
+            "quantity": 1
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Greater Emerald Amulet",
+      "code": "greater_emerald_amulet",
+      "level": 40,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An enhanced emerald amulet with incredible power. The gem seems to contain a swirling breeze.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 130,
+          "description": "Adds 130 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_air",
+          "value": 30,
+          "description": "Adds 30% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "maple_plank",
+            "quantity": 8
+          },
+          {
+            "code": "emerald_amulet",
+            "quantity": 1
+          },
+          {
+            "code": "emerald",
+            "quantity": 2
+          },
+          {
+            "code": "echoless_bat_wing",
+            "quantity": 6
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Greater Sapphire Amulet",
+      "code": "greater_sapphire_amulet",
+      "level": 40,
+      "type": "amulet",
+      "subtype": "",
+      "description": "An improved sapphire amulet of extraordinary quality. The gem seems to contain an ocean's depth.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 130,
+          "description": "Adds 130 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_water",
+          "value": 30,
+          "description": "Adds 30% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "maple_plank",
+            "quantity": 8
+          },
+          {
+            "code": "sapphire_amulet",
+            "quantity": 1
+          },
+          {
+            "code": "sapphire",
+            "quantity": 2
+          },
+          {
+            "code": "cursed_flask",
+            "quantity": 6
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Greater Topaz Amulet",
+      "code": "greater_topaz_amulet",
+      "level": 40,
+      "type": "amulet",
+      "subtype": "",
+      "description": "A refined topaz amulet with superior enchantments. The gem pulses with the might of mountains.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 130,
+          "description": "Adds 130 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 30,
+          "description": "Adds 30% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "maple_plank",
+            "quantity": 8
+          },
+          {
+            "code": "topaz_amulet",
+            "quantity": 1
+          },
+          {
+            "code": "topaz",
+            "quantity": 2
+          },
+          {
+            "code": "hellhound_collar",
+            "quantity": 6
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Greater Ruby Amulet",
+      "code": "greater_ruby_amulet",
+      "level": 40,
+      "type": "amulet",
+      "subtype": "",
+      "description": "A perfected ruby amulet of astonishing power. The gem seems to contain a dancing flame.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 130,
+          "description": "Adds 130 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 30,
+          "description": "Adds 30% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "maple_plank",
+            "quantity": 8
+          },
+          {
+            "code": "ruby_amulet",
+            "quantity": 1
+          },
+          {
+            "code": "ruby",
+            "quantity": 2
+          },
+          {
+            "code": "hellhound_collar",
+            "quantity": 6
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Hell Ring",
+      "code": "hell_ring",
+      "level": 45,
+      "type": "ring",
+      "subtype": "",
+      "description": "A band of metal that burns the finger it adorns. Grants tremendous power but leaves the wearer vulnerable to elemental attacks.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 80,
+          "description": "Adds 80 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 30,
+          "description": "Adds 30% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "threat",
+          "value": 10,
+          "description": "Adds 10 Threat to its stats when equipped."
+        },
+        {
+          "code": "res_air",
+          "value": -10,
+          "description": "Adds -10% Air Res to its stats when equipped."
+        },
+        {
+          "code": "res_earth",
+          "value": -10,
+          "description": "Adds -10% Earth Res to its stats when equipped."
+        },
+        {
+          "code": "res_fire",
+          "value": -10,
+          "description": "Adds -10% Fire Res to its stats when equipped."
+        },
+        {
+          "code": "res_water",
+          "value": -10,
+          "description": "Adds -10% Water Res to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 45,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 10
+          },
+          {
+            "code": "grimlet_bone",
+            "quantity": 4
+          },
+          {
+            "code": "diamond",
+            "quantity": 2
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 2
+          },
+          {
+            "code": "book_from_hell",
+            "quantity": 1
+          },
+          {
+            "code": "bat_heart",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Dust Amulet",
+      "code": "dust_amulet",
+      "level": 50,
+      "type": "amulet",
+      "subtype": "",
+      "description": "A pendant containing swirling golden dust in a crystal chamber. The magical particles enhance the wearer's vitality and combat prowess while occasionally igniting with fire magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 200,
+          "description": "Adds 200 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 5,
+          "description": "Adds 5% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 30,
+          "description": "Adds 30% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 10
+          },
+          {
+            "code": "dark_essence",
+            "quantity": 4
+          },
+          {
+            "code": "duskworm_skin",
+            "quantity": 2
+          },
+          {
+            "code": "fennec_ear",
+            "quantity": 2
+          },
+          {
+            "code": "demoniac_dust",
+            "quantity": 3
+          },
+          {
+            "code": "golden_dust",
+            "quantity": 4
+          },
+          {
+            "code": "alexandrite",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Skullforged Ring",
+      "code": "skullforged_ring",
+      "level": 50,
+      "type": "ring",
+      "subtype": "",
+      "description": "A macabre ring featuring a miniature skull crafted from adamantite. It pulses with water and earth magic, drawing power from the fallen adventurers whose essence it contains.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_water",
+          "value": 30,
+          "description": "Adds 30% Water Damage to its stats when equipped."
+        },
+        {
+          "code": "dmg_earth",
+          "value": 30,
+          "description": "Adds 30% Earth Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 3,
+          "description": "Adds 3% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "threat",
+          "value": 5,
+          "description": "Adds 5 Threat to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 30,
+          "description": "Adds 30 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 10
+          },
+          {
+            "code": "lava_bucket",
+            "quantity": 4
+          },
+          {
+            "code": "dusk_beetle_shell",
+            "quantity": 3
+          },
+          {
+            "code": "alexandrite",
+            "quantity": 1
+          },
+          {
+            "code": "adventurer_skull",
+            "quantity": 4
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 4
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Adamantite Ring",
+      "code": "adamantite_ring",
+      "level": 50,
+      "type": "ring",
+      "subtype": "",
+      "description": "A heavy ring of dark green adamantite that crackles with air energy. It channels the power of storms into devastating critical strikes while marking the wearer as a threat.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_air",
+          "value": 30,
+          "description": "Adds 30% Air Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 7,
+          "description": "Adds 7% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "threat",
+          "value": 6,
+          "description": "Adds 6 Threat to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 150,
+          "description": "Adds 150 Initiative to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 60,
+          "description": "Adds 60 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 12
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 3
+          },
+          {
+            "code": "sand_snakeskin",
+            "quantity": 3
+          },
+          {
+            "code": "duskworm_skin",
+            "quantity": 3
+          },
+          {
+            "code": "golden_dust",
+            "quantity": 3
+          },
+          {
+            "code": "desert_scorpion_carapace",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Eternal Red Ring",
+      "code": "eternal_red_ring",
+      "level": 50,
+      "type": "ring",
+      "subtype": "",
+      "description": "A crimson band said to be forged from metal quenched in dragonfire. It burns with an undying inner flame, fortifying its wearer’s life force and igniting their attacks with searing fire.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 80,
+          "description": "Adds 80 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg_fire",
+          "value": 30,
+          "description": "Adds 30% Fire Damage to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 150,
+          "description": "Adds 150 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 12
+          },
+          {
+            "code": "alexandrite",
+            "quantity": 1
+          },
+          {
+            "code": "sand_snake_poison",
+            "quantity": 4
+          },
+          {
+            "code": "duskworm_skin",
+            "quantity": 3
+          },
+          {
+            "code": "fennec_tail",
+            "quantity": 1
+          },
+          {
+            "code": "fennec_ear",
+            "quantity": 4
+          },
+          {
+            "code": "desert_scorpion_carapace",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Heart Amulet",
+      "code": "heart_amulet",
+      "level": 50,
+      "type": "amulet",
+      "subtype": "",
+      "description": "A blood-red gem set in a golden heart-shaped pendant. The amulet pulses in rhythm with its wearer's heartbeat, enhancing vitality and combat prowess.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 350,
+          "description": "Adds 350 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 20,
+          "description": "Adds 20% Damage to its stats when equipped."
+        },
+        {
+          "code": "threat",
+          "value": 5,
+          "description": "Adds 5 Threat to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 250,
+          "description": "Adds 250 Initiative to its stats when equipped."
+        }
+      ],
+      "craft": {
+        "skill": "jewelrycrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "palm_plank",
+            "quantity": 12
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 3
+          },
+          {
+            "code": "grimlet_bone",
+            "quantity": 3
+          },
+          {
+            "code": "duskworm_skin",
+            "quantity": 3
+          },
+          {
+            "code": "golden_dust",
+            "quantity": 3
+          },
+          {
+            "code": "goblin_eye",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    }
+  ],
+  "total": 50,
+  "page": 1,
+  "size": 1000,
+  "pages": 1
+}

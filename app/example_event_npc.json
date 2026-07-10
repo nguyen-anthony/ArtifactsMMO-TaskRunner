@@ -1,0 +1,88 @@
+{
+  "data": {
+    "name": "Timber Merchant",
+    "code": "timber_merchant",
+    "description": "Got logs or tools to trade? I buy and sell anything woodcutting-related!",
+    "type": "merchant",
+    "items": [
+      {
+        "code": "ash_wood",
+        "currency": "gold",
+        "buy_price": 10,
+        "sell_price": 1
+      },
+      {
+        "code": "birch_wood",
+        "currency": "gold",
+        "buy_price": 35,
+        "sell_price": 1
+      },
+      {
+        "code": "coconut",
+        "currency": "gold",
+        "buy_price": null,
+        "sell_price": 5
+      },
+      {
+        "code": "cursed_wood",
+        "currency": "gold",
+        "buy_price": 350,
+        "sell_price": 15
+      },
+      {
+        "code": "dead_wood",
+        "currency": "gold",
+        "buy_price": 50,
+        "sell_price": 1
+      },
+      {
+        "code": "magic_sap",
+        "currency": "gold",
+        "buy_price": 1500,
+        "sell_price": 150
+      },
+      {
+        "code": "magic_wood",
+        "currency": "gold",
+        "buy_price": 100,
+        "sell_price": 1
+      },
+      {
+        "code": "maple_sap",
+        "currency": "gold",
+        "buy_price": 500,
+        "sell_price": 25
+      },
+      {
+        "code": "maple_wood",
+        "currency": "gold",
+        "buy_price": 75,
+        "sell_price": 1
+      },
+      {
+        "code": "palm_wood",
+        "currency": "gold",
+        "buy_price": 100,
+        "sell_price": 1
+      },
+      {
+        "code": "sap",
+        "currency": "gold",
+        "buy_price": 300,
+        "sell_price": 15
+      },
+      {
+        "code": "spruce_wood",
+        "currency": "gold",
+        "buy_price": 25,
+        "sell_price": 1
+      },
+      {
+        "code": "voidstone_axe",
+        "currency": "gold",
+        "buy_price": 250000,
+        "sell_price": null
+      }
+    ]
+  }
+}

@@ -254,11 +254,11 @@ class CraftingExecutor(private val helper: ActionHelper) {
     }
 
     /**
-     * Fetch all bank quantities in a single sweep, using the shared bank snapshot cache
-     * in ActionHelper. Multiple calls within the same 10-second window are free (in-memory).
+     * Return the current bank snapshot from [BankState] via the shared [ActionHelper].
+     * No API call — reads directly from the in-memory StateFlow snapshot.
      */
-    private suspend fun loadBankSnapshot(): Map<String, Int> =
-        helper.getOrRefreshBankSnapshot()
+    private fun loadBankSnapshot(): Map<String, Int> =
+        helper.getBankSnapshot()
 
     /**
      * After crafting in RECYCLE mode: recycle the crafted items at the same workshop.

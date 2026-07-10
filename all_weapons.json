@@ -1,0 +1,4055 @@
+{
+  "data": [
+    {
+      "name": "Copper Axe",
+      "code": "copper_axe",
+      "level": 1,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A simple axe with a copper head. It's not particularly powerful, but it makes chopping trees a bit faster.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "woodcutting",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character logs a tree."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 1,
+        "items": [
+          {
+            "code": "copper_bar",
+            "quantity": 6
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Apprentice Gloves",
+      "code": "apprentice_gloves",
+      "level": 1,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "Simple cloth gloves worn by beginner alchemists. They provide a small boost to harvesting efficiency.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 5,
+          "description": "Adds 5 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "alchemy",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character harvest a plant."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 1,
+        "items": [
+          {
+            "code": "feather",
+            "quantity": 6
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Copper Pickaxe",
+      "code": "copper_pickaxe",
+      "level": 1,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A basic pickaxe with a copper head. It's not very durable, but it helps beginners mine a bit faster.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "mining",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character mines a resource."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 1,
+        "items": [
+          {
+            "code": "copper_bar",
+            "quantity": 6
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Fishing Net",
+      "code": "fishing_net",
+      "level": 1,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A simple net woven from ash wood planks. Makes catching fish slightly easier for novice fishers.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 5,
+          "description": "Adds 5 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "fishing",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character is fishing."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 1,
+        "items": [
+          {
+            "code": "ash_plank",
+            "quantity": 6
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Wooden Stick",
+      "code": "wooden_stick",
+      "level": 1,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A simple wooden stick. Not much as a weapon, but it's a start for budding adventurers.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 4,
+          "description": "Adds 4 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": null,
+      "tradeable": false,
+      "recyclable": false
+    },
+    {
+      "name": "Wooden Staff",
+      "code": "wooden_staff",
+      "level": 1,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A simple staff carved from wood. Perfect for beginners learning to channel earth magic.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 8,
+          "description": "Adds 8 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 1,
+        "items": [
+          {
+            "code": "wooden_stick",
+            "quantity": 1
+          },
+          {
+            "code": "ash_wood",
+            "quantity": 4
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Copper Dagger",
+      "code": "copper_dagger",
+      "level": 1,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A basic dagger made of copper. Easy to handle and surprisingly sharp for its size.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 6,
+          "description": "Adds 6 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 1,
+        "items": [
+          {
+            "code": "copper_bar",
+            "quantity": 6
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Sticky Dagger",
+      "code": "sticky_dagger",
+      "level": 5,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A copper dagger coated with green slime. Strange, but surprisingly effective in combat.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 4
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 12,
+          "description": "Adds 12 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 5,
+        "items": [
+          {
+            "code": "copper_bar",
+            "quantity": 5
+          },
+          {
+            "code": "green_slimeball",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Sticky Sword",
+      "code": "sticky_sword",
+      "level": 5,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A sword covered in sticky residue. Enemies who underestimate it are in for a nasty surprise.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 4
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 16,
+          "description": "Adds 16 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 5,
+        "items": [
+          {
+            "code": "yellow_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "copper_bar",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Fire Staff",
+      "code": "fire_staff",
+      "level": 5,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A staff tipped with red crystal that channels fire magic. The wood seems permanently warm to the touch.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 4
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 16,
+          "description": "Adds 16 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 5,
+        "items": [
+          {
+            "code": "red_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "ash_plank",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Water Bow",
+      "code": "water_bow",
+      "level": 5,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A bow infused with blue slime that enhances water attacks. Its arrows seem to flow through the air.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 4
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 16,
+          "description": "Adds 16 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 5,
+        "items": [
+          {
+            "code": "blue_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "ash_plank",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Iron Sword",
+      "code": "iron_sword",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A reliable weapon for any adventurer. The weight of iron gives your strikes extra force.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 24,
+          "description": "Adds 24 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 6
+          },
+          {
+            "code": "feather",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Iron Dagger",
+      "code": "iron_dagger",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A sharp iron dagger, balanced for quick attacks and precise strikes. Perfect for targeting weak points.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 17,
+          "description": "Adds 17 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 6
+          },
+          {
+            "code": "feather",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Forest Staff",
+      "code": "forest_staff",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A wooden staff shaped from living forest branches, channeling earth and fire through its carved runes.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 12,
+          "description": "Adds 12 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 12,
+          "description": "Adds 12 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Spruce Fishing Rod",
+      "code": "spruce_fishing_rod",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A well-crafted fishing rod made from spruce wood. Makes fishing more efficient.",
+      "conditions": [
+        {
+          "code": "fishing_level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 5,
+          "description": "Adds 5 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "fishing",
+          "value": -20,
+          "description": "Reduces cooldown by -20% when a character is fishing."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 8
+          },
+          {
+            "code": "iron_bar",
+            "quantity": 2
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Iron Axe",
+      "code": "iron_axe",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A sturdy axe made from iron. Makes woodcutting more efficient and can serve as a weapon in a pinch.",
+      "conditions": [
+        {
+          "code": "woodcutting_level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "woodcutting",
+          "value": -20,
+          "description": "Reduces cooldown by -20% when a character logs a tree."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 2
+          },
+          {
+            "code": "iron_bar",
+            "quantity": 8
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Iron Pickaxe",
+      "code": "iron_pickaxe",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A sturdy pickaxe made of iron. Makes mining more efficient and can double as a weapon.",
+      "conditions": [
+        {
+          "code": "mining_level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "mining",
+          "value": -20,
+          "description": "Reduces cooldown by -20% when a character mines a resource."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 2
+          },
+          {
+            "code": "iron_bar",
+            "quantity": 8
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Fire Bow",
+      "code": "fire_bow",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A bow that seems to smolder with heat. Its arrows leave trails of fire in the air.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 17,
+          "description": "Adds 17 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 6
+          },
+          {
+            "code": "red_slimeball",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Leather Gloves",
+      "code": "leather_gloves",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "Tough gloves that protect your hands while harvesting plants. Also handy for brawls.",
+      "conditions": [
+        {
+          "code": "alchemy_level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 5,
+          "description": "Adds 5 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "alchemy",
+          "value": -20,
+          "description": "Reduces cooldown by -20% when a character harvest a plant."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "ash_plank",
+            "quantity": 2
+          },
+          {
+            "code": "cowhide",
+            "quantity": 8
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Greater Wooden Staff",
+      "code": "greater_wooden_staff",
+      "level": 10,
+      "type": "weapon",
+      "subtype": "",
+      "description": "An enhanced staff that channels powerful water magic. The wood seems to flow like water itself.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 24,
+          "description": "Adds 24 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 10,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 6
+          },
+          {
+            "code": "blue_slimeball",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Highwayman Dagger",
+      "code": "highwayman_dagger",
+      "level": 15,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A swift blade favored by thieves and bandits. Perfect for quick, precise strikes.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 23,
+          "description": "Adds 23 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "King Slime Sword",
+      "code": "king_slime_sword",
+      "level": 15,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A blade infused with the power of every type of slime. It's unpredictable, but devastating in skilled hands.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 9,
+          "description": "Adds 9 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_water",
+          "value": 9,
+          "description": "Adds 9 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 9,
+          "description": "Adds 9 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_earth",
+          "value": 9,
+          "description": "Adds 9 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 24,
+          "description": "Adds 24% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "iron_bar",
+            "quantity": 8
+          },
+          {
+            "code": "king_slimeball",
+            "quantity": 6
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mushmush Bow",
+      "code": "mushmush_bow",
+      "level": 15,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A strange bow infused with mushroom essence. Highly accurate and capable of surprising critical strikes.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 12,
+          "description": "Adds 12 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_water",
+          "value": 12,
+          "description": "Adds 12 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 5
+          },
+          {
+            "code": "wolf_hair",
+            "quantity": 2
+          },
+          {
+            "code": "mushroom",
+            "quantity": 4
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mushstaff",
+      "code": "mushstaff",
+      "level": 15,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A staff topped with glowing mushrooms. Channels balanced fire and earth energy with unexpected precision.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 14
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 15,
+          "description": "Adds 15 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_earth",
+          "value": 15,
+          "description": "Adds 15 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 24,
+          "description": "Adds 24% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 15,
+        "items": [
+          {
+            "code": "spruce_plank",
+            "quantity": 5
+          },
+          {
+            "code": "mushroom",
+            "quantity": 4
+          },
+          {
+            "code": "green_cloth",
+            "quantity": 2
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Steel Pickaxe",
+      "code": "steel_pickaxe",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A sturdy pickaxe forged from quality steel. Makes mining significantly more efficient for experienced miners.",
+      "conditions": [
+        {
+          "code": "mining_level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "mining",
+          "value": -30,
+          "description": "Reduces cooldown by -30% when a character mines a resource."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 7
+          },
+          {
+            "code": "pig_skin",
+            "quantity": 3
+          },
+          {
+            "code": "spider_leg",
+            "quantity": 3
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Steel Gloves",
+      "code": "steel_gloves",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "Reinforced gloves with steel plates protecting the palms and knuckles. Perfect for efficient herb gathering.",
+      "conditions": [
+        {
+          "code": "alchemy_level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "alchemy",
+          "value": -30,
+          "description": "Reduces cooldown by -30% when a character harvest a plant."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 7
+          },
+          {
+            "code": "pig_skin",
+            "quantity": 3
+          },
+          {
+            "code": "skeleton_bone",
+            "quantity": 3
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Steel Axe",
+      "code": "steel_axe",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A well-balanced axe with a razor-sharp steel blade. Makes short work of even the toughest trees.",
+      "conditions": [
+        {
+          "code": "woodcutting_level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "woodcutting",
+          "value": -30,
+          "description": "Reduces cooldown by -30% when a character logs a tree."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 7
+          },
+          {
+            "code": "ogre_eye",
+            "quantity": 4
+          },
+          {
+            "code": "flying_wing",
+            "quantity": 2
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Shuriken",
+      "code": "shuriken",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A set of star-shaped throwing weapons with razor-sharp edges. Perfect for swift, precise attacks at medium range.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 15,
+          "description": "Adds 15 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_air",
+          "value": 14,
+          "description": "Adds 14 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 5
+          },
+          {
+            "code": "wolf_bone",
+            "quantity": 4
+          },
+          {
+            "code": "ogre_skin",
+            "quantity": 3
+          },
+          {
+            "code": "flying_wing",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Forest Whip",
+      "code": "forest_whip",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A flexible whip made from enchanted forest materials. Fast as the wind and surprisingly powerful.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 40,
+          "description": "Adds 40 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "king_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "wolf_hair",
+            "quantity": 5
+          },
+          {
+            "code": "ogre_eye",
+            "quantity": 4
+          },
+          {
+            "code": "hardwood_plank",
+            "quantity": 4
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Skull Staff",
+      "code": "skull_staff",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A staff topped with a skull, channeling the energy of fire for those with a taste for the dramatic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 40,
+          "description": "Adds 40 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "skeleton_skull",
+            "quantity": 1
+          },
+          {
+            "code": "skeleton_bone",
+            "quantity": 4
+          },
+          {
+            "code": "steel_bar",
+            "quantity": 5
+          },
+          {
+            "code": "hardwood_plank",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Battlestaff",
+      "code": "battlestaff",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A sturdy staff designed for combat. Its core is infused with water magic for devastating attacks.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 40,
+          "description": "Adds 40 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 6
+          },
+          {
+            "code": "steel_bar",
+            "quantity": 4
+          },
+          {
+            "code": "wolf_bone",
+            "quantity": 3
+          },
+          {
+            "code": "blue_slimeball",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Steel Fishing Rod",
+      "code": "steel_fishing_rod",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A professional-grade fishing rod with a steel core. Significantly increases fishing speed and has good durability.",
+      "conditions": [
+        {
+          "code": "fishing_level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 5,
+          "description": "Adds 5 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "fishing",
+          "value": -30,
+          "description": "Reduces cooldown by -30% when a character is fishing."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 7
+          },
+          {
+            "code": "ogre_skin",
+            "quantity": 3
+          },
+          {
+            "code": "green_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Hunting Bow",
+      "code": "hunting_bow",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A well-crafted bow designed for tracking and bringing down game. Balanced for both power and accuracy.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 15,
+          "description": "Adds 15 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 14,
+          "description": "Adds 14 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 5
+          },
+          {
+            "code": "green_cloth",
+            "quantity": 4
+          },
+          {
+            "code": "ogre_skin",
+            "quantity": 3
+          },
+          {
+            "code": "pig_skin",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Steel Battleaxe",
+      "code": "steel_battleaxe",
+      "level": 20,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A heavy battleaxe, carefully forged from steel. A favorite among those who prefer decisive blows.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 40,
+          "description": "Adds 40 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 20,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 4
+          },
+          {
+            "code": "hardwood_plank",
+            "quantity": 4
+          },
+          {
+            "code": "skeleton_bone",
+            "quantity": 4
+          },
+          {
+            "code": "wolf_hair",
+            "quantity": 4
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Dreadful Staff",
+      "code": "dreadful_staff",
+      "level": 25,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A fearsome staff, rumored to be crafted from the remains of legendary monsters. Pulses with elemental power.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 25,
+          "description": "Adds 25 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_earth",
+          "value": 25,
+          "description": "Adds 25 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 25,
+        "items": [
+          {
+            "code": "cyclops_eye",
+            "quantity": 4
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 5
+          },
+          {
+            "code": "hardwood_plank",
+            "quantity": 6
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Vampire Bow",
+      "code": "vampire_bow",
+      "level": 25,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A crimson bow that seems to drink the life of its targets. Its string is said to be made from vampire hair.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 36,
+          "description": "Adds 36 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 25,
+        "items": [
+          {
+            "code": "steel_bar",
+            "quantity": 4
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 4
+          },
+          {
+            "code": "full_moon_vampire_cape",
+            "quantity": 4
+          },
+          {
+            "code": "vermin_leather",
+            "quantity": 2
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Skull Wand",
+      "code": "skull_wand",
+      "level": 25,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A wand with a miniature skull at its tip. Channels both air and fire magic with deadly precision.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 25,
+          "description": "Adds 25 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 25,
+          "description": "Adds 25 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 25,
+        "items": [
+          {
+            "code": "hardwood_plank",
+            "quantity": 4
+          },
+          {
+            "code": "skeleton_skull",
+            "quantity": 3
+          },
+          {
+            "code": "vampire_tooth",
+            "quantity": 2
+          },
+          {
+            "code": "spider_leg",
+            "quantity": 3
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 1
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Wooden Club",
+      "code": "wooden_club",
+      "level": 25,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A simple but effective weapon. This hefty club can break bones with a well-placed swing.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 36,
+          "description": "Adds 36 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Obsidian Battleaxe",
+      "code": "obsidian_battleaxe",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A massive battleaxe with blades of volcanic glass. Heavy to wield, but devastating in combat.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 80,
+          "description": "Adds 80 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "inventory_space",
+          "value": -25,
+          "description": "Adds -25 to the maximum number of items in the inventory when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "obsidian_bar",
+            "quantity": 7
+          },
+          {
+            "code": "dead_wood_plank",
+            "quantity": 4
+          },
+          {
+            "code": "lizard_skin",
+            "quantity": 3
+          },
+          {
+            "code": "cyclops_eye",
+            "quantity": 3
+          },
+          {
+            "code": "imp_tail",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Elderwood Staff",
+      "code": "elderwood_staff",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A staff carved from ancient wood, topped with a crystal focus. Channels both fire and water magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 40,
+          "description": "Adds 40 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 40,
+          "description": "Adds 40 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "dead_wood_plank",
+            "quantity": 5
+          },
+          {
+            "code": "lizard_skin",
+            "quantity": 4
+          },
+          {
+            "code": "cyclops_eye",
+            "quantity": 5
+          },
+          {
+            "code": "red_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "skeleton_skull",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Greater Dreadful Staff",
+      "code": "greater_dreadful_staff",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "",
+      "description": "An enhanced version of the already fearsome Dreadful Staff. Dark power flows through its core.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 60,
+          "description": "Adds 60 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_earth",
+          "value": 20,
+          "description": "Adds 20 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "dead_wood_plank",
+            "quantity": 5
+          },
+          {
+            "code": "dreadful_staff",
+            "quantity": 1
+          },
+          {
+            "code": "ogre_eye",
+            "quantity": 4
+          },
+          {
+            "code": "cyclops_eye",
+            "quantity": 5
+          },
+          {
+            "code": "red_cloth",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Perfect Bow",
+      "code": "perfect_bow",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A bow that shoots perfectly. Its arrows seem to find their targets with uncanny precision.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 53,
+          "description": "Adds 53 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_water",
+          "value": 15,
+          "description": "Adds 15 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "spider_leg",
+            "quantity": 3
+          },
+          {
+            "code": "demon_horn",
+            "quantity": 2
+          },
+          {
+            "code": "ogre_eye",
+            "quantity": 4
+          },
+          {
+            "code": "red_cloth",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Gold Pickaxe",
+      "code": "gold_pickaxe",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A magnificent pickaxe made of gold. Makes mining significantly faster and looks impressive.",
+      "conditions": [
+        {
+          "code": "mining_level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "mining",
+          "value": -40,
+          "description": "Reduces cooldown by -40% when a character mines a resource."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "dead_wood_plank",
+            "quantity": 2
+          },
+          {
+            "code": "gold_bar",
+            "quantity": 7
+          },
+          {
+            "code": "topaz",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          },
+          {
+            "code": "demon_horn",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Gold Axe",
+      "code": "gold_axe",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A gleaming axe made of gold. Makes woodcutting significantly faster and looks impressive.",
+      "conditions": [
+        {
+          "code": "woodcutting_level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "woodcutting",
+          "value": -40,
+          "description": "Reduces cooldown by -40% when a character logs a tree."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "dead_wood_plank",
+            "quantity": 2
+          },
+          {
+            "code": "gold_bar",
+            "quantity": 7
+          },
+          {
+            "code": "ruby",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          },
+          {
+            "code": "red_cloth",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Golden Gloves",
+      "code": "golden_gloves",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "Luxurious gloves that make harvesting herbs feel like a noble's pastime.",
+      "conditions": [
+        {
+          "code": "alchemy_level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "alchemy",
+          "value": -40,
+          "description": "Reduces cooldown by -40% when a character harvest a plant."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "dead_wood_plank",
+            "quantity": 7
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 2
+          },
+          {
+            "code": "emerald",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          },
+          {
+            "code": "demoniac_dust",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Gold Fishing Rod",
+      "code": "gold_fishing_rod",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "An elegant fishing rod made with gold. Significantly reduces fishing time and adds a touch of style.",
+      "conditions": [
+        {
+          "code": "fishing_level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 5,
+          "description": "Adds 5 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "fishing",
+          "value": -40,
+          "description": "Reduces cooldown by -40% when a character is fishing."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "dead_wood_plank",
+            "quantity": 2
+          },
+          {
+            "code": "gold_bar",
+            "quantity": 7
+          },
+          {
+            "code": "sapphire",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          },
+          {
+            "code": "owlbear_claw",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Gold Sword",
+      "code": "gold_sword",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A magnificent sword of pure gold. Both a status symbol and a powerful weapon.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 60,
+          "description": "Adds 60 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_air",
+          "value": 20,
+          "description": "Adds 20 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 30,
+        "items": [
+          {
+            "code": "gold_bar",
+            "quantity": 8
+          },
+          {
+            "code": "imp_tail",
+            "quantity": 4
+          },
+          {
+            "code": "red_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "demon_horn",
+            "quantity": 2
+          },
+          {
+            "code": "dead_wood_plank",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Death Knight Sword",
+      "code": "death_knight_sword",
+      "level": 30,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A menacing blade once wielded by a fallen knight. Dark energy pulses through its core.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 37,
+          "description": "Adds 37 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_earth",
+          "value": 37,
+          "description": "Adds 37 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 24,
+          "description": "Adds 24% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Diamond Sword",
+      "code": "diamond_sword",
+      "level": 35,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A magnificent blade with diamonds embedded in its hilt. Its edge never dulls and can slice through almost anything.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 75,
+          "description": "Adds 75 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 24,
+          "description": "Adds 24% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "magical_plank",
+            "quantity": 7
+          },
+          {
+            "code": "goblin_eye",
+            "quantity": 3
+          },
+          {
+            "code": "spider_leg",
+            "quantity": 3
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 3
+          },
+          {
+            "code": "diamond",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Cursed Sceptre",
+      "code": "cursed_sceptre",
+      "level": 35,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A scepter pulsing with dark energy. Channels devastating fire magic but may carry a hidden price.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 82,
+          "description": "Adds 82 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "magical_plank",
+            "quantity": 8
+          },
+          {
+            "code": "cursed_book",
+            "quantity": 3
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 3
+          },
+          {
+            "code": "malefic_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "diamond",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Magic Bow",
+      "code": "magic_bow",
+      "level": 35,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A bow crafted from magical materials. Arrows fired from it seem to find their targets with uncanny precision.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 47,
+          "description": "Adds 47 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_water",
+          "value": 14,
+          "description": "Adds 14 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "magical_plank",
+            "quantity": 7
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 3
+          },
+          {
+            "code": "lizard_skin",
+            "quantity": 3
+          },
+          {
+            "code": "wolf_hair",
+            "quantity": 3
+          },
+          {
+            "code": "sapphire",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Dreadful Battleaxe",
+      "code": "dreadful_battleaxe",
+      "level": 35,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A fearsome battleaxe that seems to drink in the light around it. Devastatingly powerful.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 65,
+          "description": "Adds 65 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_earth",
+          "value": 20,
+          "description": "Adds 20 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "magical_plank",
+            "quantity": 7
+          },
+          {
+            "code": "lizard_eye",
+            "quantity": 4
+          },
+          {
+            "code": "goblin_eye",
+            "quantity": 3
+          },
+          {
+            "code": "goblin_guard_foot",
+            "quantity": 3
+          },
+          {
+            "code": "jasper_crystal",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Strangold Sword",
+      "code": "strangold_sword",
+      "level": 35,
+      "type": "weapon",
+      "subtype": "",
+      "description": "An ornate sword forged from rare Strangold alloy. Its strikes are as astonishing as its shine.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 45,
+          "description": "Adds 45 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_air",
+          "value": 40,
+          "description": "Adds 40 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 35,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 7
+          },
+          {
+            "code": "goblin_tooth",
+            "quantity": 3
+          },
+          {
+            "code": "goblin_guard_foot",
+            "quantity": 3
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 4
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mithril Axe",
+      "code": "mithril_axe",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A razor-sharp axe forged from legendary mithril. Its lightweight yet unbreakable blade allows for swift, effortless woodcutting, prized by seasoned lumberjacks.",
+      "conditions": [
+        {
+          "code": "woodcutting_level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "woodcutting",
+          "value": -50,
+          "description": "Reduces cooldown by -50% when a character logs a tree."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 8
+          },
+          {
+            "code": "owlbear_claw",
+            "quantity": 3
+          },
+          {
+            "code": "wolfrider_ponytail",
+            "quantity": 3
+          },
+          {
+            "code": "dark_essence",
+            "quantity": 3
+          },
+          {
+            "code": "vampire_tooth",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mithril Pickaxe",
+      "code": "mithril_pickaxe",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A masterfully-crafted pickaxe of pure mithril, capable of shattering the hardest ores with ease. Its enchanted tip gleams with an icy brilliance, perfect for expert miners.",
+      "conditions": [
+        {
+          "code": "mining_level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "mining",
+          "value": -50,
+          "description": "Reduces cooldown by -50% when a character mines a resource."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 8
+          },
+          {
+            "code": "owlbear_claw",
+            "quantity": 3
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 1
+          },
+          {
+            "code": "dark_essence",
+            "quantity": 3
+          },
+          {
+            "code": "vampire_blood",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mithril Fishing Rod",
+      "code": "mithril_fishing_rod",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A fishing rod woven from enchanted mithril threads. Light as a feather, it grants extraordinary control and lures even the most elusive fish.",
+      "conditions": [
+        {
+          "code": "fishing_level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 5,
+          "description": "Adds 5 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "fishing",
+          "value": -50,
+          "description": "Reduces cooldown by -50% when a character is fishing."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 8
+          },
+          {
+            "code": "cursed_plank",
+            "quantity": 3
+          },
+          {
+            "code": "hellhound_hair",
+            "quantity": 3
+          },
+          {
+            "code": "cursed_flask",
+            "quantity": 3
+          },
+          {
+            "code": "bat_heart",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mithril Gloves",
+      "code": "mithril_gloves",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "Gloves crafted from supple mithril mesh. They enhance the dexterity of the wearer, making delicate harvesting and precise alchemical gathering effortless.",
+      "conditions": [
+        {
+          "code": "alchemy_level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 5,
+          "description": "Adds 5 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "alchemy",
+          "value": -50,
+          "description": "Reduces cooldown by -50% when a character harvest a plant."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 8
+          },
+          {
+            "code": "cursed_book",
+            "quantity": 3
+          },
+          {
+            "code": "hellhound_collar",
+            "quantity": 3
+          },
+          {
+            "code": "imp_tail",
+            "quantity": 3
+          },
+          {
+            "code": "cursed_flask",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Sanguine Edge of Rosen",
+      "code": "sanguine_edge_of_rosen",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A legendary blade, forged in honor of Rosenstjerne, the first to uncover an artifact in the realm. Its edge glows with a crimson light, inspiring adventurers to seek their own destiny.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 75,
+          "description": "Adds 75 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 25,
+          "description": "Adds 25 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Wrathsword",
+      "code": "wrathsword",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A blade forged from the rage of a hundred warriors. It hums with power and seems eager for battle.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 70,
+          "description": "Adds 70 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_water",
+          "value": 30,
+          "description": "Adds 30 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 7
+          },
+          {
+            "code": "orc_bone",
+            "quantity": 5
+          },
+          {
+            "code": "bat_wing",
+            "quantity": 4
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Bloodblade",
+      "code": "bloodblade",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A crimson sword that seems to drink the blood of its victims. The blade is warm to the touch, as if alive.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 70,
+          "description": "Adds 70 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_air",
+          "value": 30,
+          "description": "Adds 30 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 8
+          },
+          {
+            "code": "goblin_tooth",
+            "quantity": 5
+          },
+          {
+            "code": "bat_heart",
+            "quantity": 4
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 1
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Lightning Sword",
+      "code": "lightning_sword",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A sword that crackles with electricity. Fast as lightning and twice as dangerous.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 50,
+          "description": "Adds 50 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_earth",
+          "value": 22,
+          "description": "Adds 22 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "maple_plank",
+            "quantity": 7
+          },
+          {
+            "code": "bat_heart",
+            "quantity": 5
+          },
+          {
+            "code": "hellhound_hair",
+            "quantity": 4
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 1
+          },
+          {
+            "code": "magical_cure",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Mithril Sword",
+      "code": "mithril_sword",
+      "level": 40,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A legendary sword forged from pure mithril. Whispered to be able to cut through stone like butter.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 70,
+          "description": "Adds 70 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 30,
+          "description": "Adds 30 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 40,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 7
+          },
+          {
+            "code": "corrupted_stone",
+            "quantity": 3
+          },
+          {
+            "code": "goblin_guard_foot",
+            "quantity": 4
+          },
+          {
+            "code": "wolfrider_hair",
+            "quantity": 3
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 1
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Hell Reaper",
+      "code": "hell_reaper",
+      "level": 45,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A massive scythe said to have been used by demons to harvest souls. Its blade cuts through both flesh and spirit with equal ease.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 65,
+          "description": "Adds 65 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "attack_fire",
+          "value": 65,
+          "description": "Adds 65 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 10,
+          "description": "Adds 10% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 45,
+        "items": [
+          {
+            "code": "mithril_bar",
+            "quantity": 11
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 4
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 3
+          },
+          {
+            "code": "book_from_hell",
+            "quantity": 1
+          },
+          {
+            "code": "grimlet_bone",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Bow from Hell",
+      "code": "bow_from_hell",
+      "level": 45,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A bow that seems to have been forged in hellfire itself. Its arrows leave trails of brimstone in the air.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 106,
+          "description": "Adds 106 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 24,
+          "description": "Adds 24% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 45,
+        "items": [
+          {
+            "code": "magical_plank",
+            "quantity": 10
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "demon_horn",
+            "quantity": 3
+          },
+          {
+            "code": "fire_crystal",
+            "quantity": 1
+          },
+          {
+            "code": "book_from_hell",
+            "quantity": 1
+          },
+          {
+            "code": "imp_tail",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Hell Staff",
+      "code": "hell_staff",
+      "level": 45,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A staff crackling with infernal power. Its wielder can command waters to boil and freeze at will.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 115,
+          "description": "Adds 115 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 45,
+        "items": [
+          {
+            "code": "cursed_plank",
+            "quantity": 10
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 2
+          },
+          {
+            "code": "book_from_hell",
+            "quantity": 1
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 5
+          },
+          {
+            "code": "imp_tail",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Demoniac Dagger",
+      "code": "demoniac_dagger",
+      "level": 45,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A twisted dagger that seems to have been forged in the depths of hell itself. Its blade flickers with unholy flames.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 85,
+          "description": "Adds 85 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 45,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 10
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "obsidian_bar",
+            "quantity": 5
+          },
+          {
+            "code": "book_from_hell",
+            "quantity": 1
+          },
+          {
+            "code": "cursed_book",
+            "quantity": 5
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Blade of Hell",
+      "code": "blade_of_hell",
+      "level": 45,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A massive sword that burns with hellfire. The metal seems to have been forged in the deepest pits of the underworld.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 115,
+          "description": "Adds 115 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 45,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 11
+          },
+          {
+            "code": "lava_bucket",
+            "quantity": 3
+          },
+          {
+            "code": "fire_crystal",
+            "quantity": 1
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 2
+          },
+          {
+            "code": "book_from_hell",
+            "quantity": 1
+          },
+          {
+            "code": "orc_bone",
+            "quantity": 6
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Moonlight Staff",
+      "code": "moonlight_staff",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A luminous staff crowned with a crescent-shaped crystal that glows with pale blue light. Water magic flows through it like a river, focusing into devastating critical strikes.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 96,
+          "description": "Adds 96 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 35,
+          "description": "Adds 35% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "palm_plank",
+            "quantity": 10
+          },
+          {
+            "code": "dusk_beetle_shell",
+            "quantity": 5
+          },
+          {
+            "code": "alexandrite",
+            "quantity": 1
+          },
+          {
+            "code": "marauder_hand",
+            "quantity": 4
+          },
+          {
+            "code": "orc_bone",
+            "quantity": 4
+          },
+          {
+            "code": "priestess_orb",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Dust Sword",
+      "code": "dust_sword",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A blade that leaves trails of glowing dust with each swing. The enchanted particles ignite on impact, channeling concentrated fire magic that melts through enemy defenses.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_fire",
+          "value": 115,
+          "description": "Adds 115 Fire Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 10
+          },
+          {
+            "code": "marauder_hand",
+            "quantity": 4
+          },
+          {
+            "code": "adventurer_skull",
+            "quantity": 3
+          },
+          {
+            "code": "cursed_flask",
+            "quantity": 3
+          },
+          {
+            "code": "golden_dust",
+            "quantity": 4
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Voidstone Fishing Rod",
+      "code": "voidstone_fishing_rod",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "This fishing rod pulses with void energy, its line shimmering in the light. It attracts rare and magical fish from even the deepest waters and increases the chance of valuable finds.",
+      "conditions": [
+        {
+          "code": "fishing_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 5,
+          "description": "Adds 5 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 100,
+          "description": "Adds 100 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "fishing",
+          "value": -70,
+          "description": "Reduces cooldown by -70% when a character is fishing."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Desert Whip",
+      "code": "desert_whip",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A fearsome weapon crafted from the spine of a massive desert serpent. Its barbed tip is coated with crystallized earth magic that tears through flesh and armor alike.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 125,
+          "description": "Adds 125 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "palm_plank",
+            "quantity": 12
+          },
+          {
+            "code": "sand_snake_poison",
+            "quantity": 3
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 3
+          },
+          {
+            "code": "duskworm_skin",
+            "quantity": 3
+          },
+          {
+            "code": "desert_scorpion_carapace",
+            "quantity": 3
+          },
+          {
+            "code": "solar_desert_scorpion_tail",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Adamantite Sword",
+      "code": "adamantite_sword",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "",
+      "description": "A masterfully crafted sword of gleaming adamantite. The blade seems to cut through the air itself, whistling with deadly promise as it strikes.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 115,
+          "description": "Adds 115 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 24,
+          "description": "Adds 24% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 12
+          },
+          {
+            "code": "adventurer_skull",
+            "quantity": 3
+          },
+          {
+            "code": "dusk_beetle_shell",
+            "quantity": 3
+          },
+          {
+            "code": "bat_wing",
+            "quantity": 3
+          },
+          {
+            "code": "marauder_hand",
+            "quantity": 3
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Voidstone Pickaxe",
+      "code": "voidstone_pickaxe",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A pickaxe forged from voidstone, its edge humming with otherworldly power. It carves through rock and reveals hidden veins of precious minerals.",
+      "conditions": [
+        {
+          "code": "mining_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 100,
+          "description": "Adds 100 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "mining",
+          "value": -70,
+          "description": "Reduces cooldown by -70% when a character mines a resource."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Voidstone Gloves",
+      "code": "voidstone_gloves",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "Gloves woven from void-infused fiber. They let the wearer sense and harvest rare plants, boosting both gathering speed and the chance to find valuables.",
+      "conditions": [
+        {
+          "code": "alchemy_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 5,
+          "description": "Adds 5 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 100,
+          "description": "Adds 100 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "alchemy",
+          "value": -70,
+          "description": "Reduces cooldown by -70% when a character harvest a plant."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Voidstone Axe",
+      "code": "voidstone_axe",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "An axe imbued with the power of the void. Its obsidian blade slices through wood and reveals hidden riches with every swing, favored by treasure hunters.",
+      "conditions": [
+        {
+          "code": "woodcutting_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 100,
+          "description": "Adds 100 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "woodcutting",
+          "value": -70,
+          "description": "Reduces cooldown by -70% when a character logs a tree."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Adamantite Gloves",
+      "code": "adamantite_gloves",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "Impeccably made gloves lined with adamantite threads. They grant superior grip and tactile sensitivity, allowing the wearer to harvest rare herbs with ease.",
+      "conditions": [
+        {
+          "code": "alchemy_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_air",
+          "value": 5,
+          "description": "Adds 5 Air Attack to its stats when equipped."
+        },
+        {
+          "code": "alchemy",
+          "value": -60,
+          "description": "Reduces cooldown by -60% when a character harvest a plant."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 10
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 4
+          },
+          {
+            "code": "desert_scorpion_carapace",
+            "quantity": 4
+          },
+          {
+            "code": "goblin_guard_foot",
+            "quantity": 4
+          },
+          {
+            "code": "rosenblood_elixir",
+            "quantity": 1
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 3
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Adamantite Fishing Rod",
+      "code": "adamantite_fishing_rod",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A rod crafted from adamantite alloy, both flexible and impossibly strong. With this tool, legendary aquatic creatures are within any angler's reach.",
+      "conditions": [
+        {
+          "code": "fishing_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_water",
+          "value": 5,
+          "description": "Adds 5 Water Attack to its stats when equipped."
+        },
+        {
+          "code": "fishing",
+          "value": -60,
+          "description": "Reduces cooldown by -60% when a character is fishing."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 5
+          },
+          {
+            "code": "palm_plank",
+            "quantity": 5
+          },
+          {
+            "code": "lava_bucket",
+            "quantity": 4
+          },
+          {
+            "code": "solar_desert_scorpion_tail",
+            "quantity": 4
+          },
+          {
+            "code": "cursed_flask",
+            "quantity": 3
+          },
+          {
+            "code": "cursed_plank",
+            "quantity": 3
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Adamantite Pickaxe",
+      "code": "adamantite_pickaxe",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "A pickaxe of unmatched strength, forged from pure adamantite. Its enchanted head cracks open the toughest stone veins, prized by master miners.",
+      "conditions": [
+        {
+          "code": "mining_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "mining",
+          "value": -60,
+          "description": "Reduces cooldown by -60% when a character mines a resource."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 10
+          },
+          {
+            "code": "efreet_cloth",
+            "quantity": 4
+          },
+          {
+            "code": "sand_snake_poison",
+            "quantity": 4
+          },
+          {
+            "code": "dark_essence",
+            "quantity": 4
+          },
+          {
+            "code": "broken_sword",
+            "quantity": 2
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    },
+    {
+      "name": "Adamantite Axe",
+      "code": "adamantite_axe",
+      "level": 50,
+      "type": "weapon",
+      "subtype": "tool",
+      "description": "This axe boasts a blade forged from rare adamantite, gleaming with a subtle blue sheen. Its legendary edge makes short work of even the thickest timber.",
+      "conditions": [
+        {
+          "code": "woodcutting_level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "attack_earth",
+          "value": 5,
+          "description": "Adds 5 Earth Attack to its stats when equipped."
+        },
+        {
+          "code": "woodcutting",
+          "value": -60,
+          "description": "Reduces cooldown by -60% when a character logs a tree."
+        }
+      ],
+      "craft": {
+        "skill": "weaponcrafting",
+        "level": 50,
+        "items": [
+          {
+            "code": "adamantite_bar",
+            "quantity": 10
+          },
+          {
+            "code": "lava_bucket",
+            "quantity": 4
+          },
+          {
+            "code": "adventurer_skull",
+            "quantity": 3
+          },
+          {
+            "code": "cursed_flask",
+            "quantity": 3
+          },
+          {
+            "code": "golden_dust",
+            "quantity": 4
+          },
+          {
+            "code": "astralyte_crystal",
+            "quantity": 2
+          }
+        ],
+        "quantity": 1
+      },
+      "tradeable": true,
+      "recyclable": true
+    }
+  ],
+  "total": 79,
+  "page": 1,
+  "size": 1000,
+  "pages": 1
+}

@@ -54,14 +54,14 @@ class ContentCache(private val contentService: ContentService) {
             val result = contentService.getMaps(hideBlockedMaps = true, page = page, size = 100)
             for (tile in result.data) {
                 when (tile.access.type) {
-                    "standard" -> maps.add(tile)
-                    "conditional" -> {
+                    "standard", "conditional" -> {
                         val conditions = tile.access.conditions ?: emptyList()
-                        // Include the tile only if ALL conditions are satisfied
+                        // Include the tile only if ALL conditions are satisfied.
+                        // Standard tiles with no conditions pass (empty list → all {} = true).
                         val allMet = conditions.all { condition ->
                             when (condition.operator) {
                                 "achievement_unlocked" -> condition.code in completedAchievementCodes
-                                else -> false // Unknown operator — exclude to be safe
+                                else -> false  // unknown operator — exclude to be safe
                             }
                         }
                         if (allMet) maps.add(tile)
@@ -294,6 +294,21 @@ class ContentCache(private val contentService: ContentService) {
     /** Like [getMonster] but returns null instead of throwing on failure. */
     suspend fun getMonsterOrNull(code: String): Monster? {
         return try { getMonster(code) } catch (_: Exception) { null }
+    }
+
+    // ── Resource cache (lazy, 24-hour TTL) ───────────────────────────────────
+
+    private val resourceCache: Cache<String, Resource> = Caffeine.newBuilder()
+        .maximumSize(500)
+        .expireAfterWrite(24, TimeUnit.HOURS)
+        .build()
+
+    /** Fetch resource by [code], hitting the cache first. Throws on API failure. */
+    suspend fun getResource(code: String): Resource {
+        resourceCache.getIfPresent(code)?.let { return it }
+        val resource = contentService.getResource(code)
+        resourceCache.put(code, resource)
+        return resource
     }
 
     // ── NPC item cache (lazy, 24-hour TTL) ───────────────────────────────────

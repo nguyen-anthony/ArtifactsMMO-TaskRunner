@@ -113,3 +113,59 @@ data class NPCItem(
     @SerialName("sell_price") val sellPrice: Int? = null
 )
 
+@Serializable
+data class EventContent(val type: String, val code: String)
+
+@Serializable
+data class EventSpawnMap(
+    @SerialName("map_id") val mapId: Int,
+    val name: String = "",
+    val skin: String = "",
+    val x: Int,
+    val y: Int,
+    val layer: String,
+    val access: MapAccess? = null,
+    val interactions: MapInteraction? = null,
+    @SerialName("previous_map") val previousMap: EventSpawnMap? = null,
+    val duration: Int? = null,
+    @SerialName("expiration") val expiration: String? = null,
+    @SerialName("created_at") val createdAt: String? = null
+)
+
+@Serializable
+data class EventDefinition(
+    val name: String,
+    val code: String,
+    val content: EventContent,
+    val maps: List<EventSpawnMap>,
+    val duration: Int,
+    val rate: Int
+)
+
+@Serializable
+data class ActiveEvent(
+    val name: String,
+    val code: String,
+    val map: EventSpawnMap
+) {
+    // content, duration, expiration, created_at are nested inside map on the wire
+    val content: EventContent get() {
+        val mc = map.interactions?.content
+        return if (mc != null) EventContent(type = mc.type, code = mc.code)
+               else EventContent(type = "unknown", code = "")
+    }
+}
+
+@OptIn(kotlin.time.ExperimentalTime::class)
+@Serializable
+data class AccountLogEntry(
+    val character: String,
+    val account: String,
+    val type: String,
+    val description: String,
+    val content: kotlinx.serialization.json.JsonElement = kotlinx.serialization.json.JsonObject(emptyMap()),
+    val cooldown: Int = 0,
+    @SerialName("cooldown_expiration") val cooldownExpiration: kotlin.time.Instant? = null,
+    @SerialName("created_at") val createdAt: kotlin.time.Instant? = null
+)
+

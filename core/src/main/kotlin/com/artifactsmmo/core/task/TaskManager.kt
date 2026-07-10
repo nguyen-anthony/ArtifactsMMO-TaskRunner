@@ -1,7 +1,9 @@
 package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.ArtifactsMMOClient
+import com.artifactsmmo.client.RealtimeClient
 import com.artifactsmmo.client.models.Character
+import com.artifactsmmo.client.models.EventDefinition
 import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.Monster
 import com.artifactsmmo.client.models.Resource
@@ -17,16 +19,23 @@ class TaskManager(
     private val client: ArtifactsMMOClient,
     private val scope: CoroutineScope,
     private val taskStore: TaskStore = TaskStore(),
-    val logger: TaskLogger = TaskLogger()
+    val logger: TaskLogger = TaskLogger(),
+    private val token: String = ""
 ) {
     private val contentCache = ContentCache(client.content)
-    private val helper = ActionHelper(client, contentCache)
+    val bankState = BankState(client, scope, logger)
+    private val helper = ActionHelper(client, contentCache, bankState)
     private val gatheringExecutor = GatheringExecutor(helper)
     private val fightingExecutor = FightingExecutor(helper)
     private val craftingExecutor = CraftingExecutor(helper)
     private val taskMasterExecutor = TaskMasterExecutor(helper, gatheringExecutor, fightingExecutor)
     private val bankExecutor = BankExecutor(helper)
     private val bossEncounterCoordinator = BossEncounterCoordinator()
+    private val eventExecutor = EventExecutor(helper)
+    private val eventConfigStore = EventConfigStore()
+    private lateinit var webSocketManager: WebSocketManager
+    lateinit var eventDispatcher: EventDispatcher
+        private set
 
     private val runners = mutableMapOf<String, CharacterTaskRunner>()
 
@@ -46,6 +55,11 @@ class TaskManager(
         // Pre-warm the map cache before restoring tasks so findNearest* calls are ready
         contentCache.preWarmMaps(completedAchievements)
 
+        // Set up WebSocket and event dispatcher before creating runners
+        webSocketManager = WebSocketManager(RealtimeClient(token), client.events, scope, bankState)
+        eventDispatcher = EventDispatcher(webSocketManager, eventConfigStore, this, contentCache, scope)
+        bankState.start()
+
         val characters = client.characters.getMyCharacters()
         for (char in characters) {
             runners[char.name] = CharacterTaskRunner(
@@ -59,7 +73,9 @@ class TaskManager(
                 bankExecutor = bankExecutor,
                 logger = logger,
                 onTaskChanged = { persistTasks() },
-                bossEncounterCoordinator = bossEncounterCoordinator
+                bossEncounterCoordinator = bossEncounterCoordinator,
+                eventExecutor = eventExecutor,
+                eventDispatcher = eventDispatcher
             )
         }
 
@@ -88,6 +104,9 @@ class TaskManager(
         if (restored > 0) {
             logger.log("Restored $restored saved task assignment(s).")
         }
+
+        webSocketManager.start()
+        eventDispatcher.start()
 
         return characters.map { it.name }
     }
@@ -288,6 +307,70 @@ class TaskManager(
     }
 
     /**
+     * Assign an event task to a character. Does not run cleanup — event tasks
+     * save and restore previousTask via the runner's isQuickTask path.
+     */
+    fun assignEventTask(characterName: String, task: TaskType) {
+        runners[characterName]?.assignTask(task, scope)
+        persistTasks()
+    }
+
+    /**
+     * Revert all characters currently running an event task for [eventCode] back to
+     * their previous task. Called by [EventDispatcher] when an event_removed message arrives.
+     */
+    fun revertEventTasks(eventCode: String) {
+        runners.values
+            .filter { r ->
+                r.currentTask.let {
+                    (it is TaskType.EventGather && it.eventCode == eventCode) ||
+                    (it is TaskType.EventNpc && it.eventCode == eventCode)
+                }
+            }
+            .forEach { it.revertFromEvent(scope) }
+        persistTasks()
+    }
+
+    /** Return the current event configs from the store. */
+    fun getEventConfigs(): List<EventConfig> = eventConfigStore.load()
+
+    /** Save event configs and reload the dispatcher's in-memory config. */
+    fun saveEventConfigs(configs: List<EventConfig>) {
+        eventConfigStore.save(configs)
+        eventDispatcher.reloadConfig()
+    }
+
+    /** Fetch all event definitions from the API (all pages). */
+    suspend fun getEventDefinitions(): List<EventDefinition> {
+        val defs = mutableListOf<EventDefinition>()
+        var page = 1
+        while (true) {
+            val result = client.events.getEvents(page = page, size = 100)
+            defs.addAll(result.data)
+            if (page >= (result.pages ?: Int.MAX_VALUE) || result.data.size < 100) break
+            page++
+        }
+        return defs
+    }
+
+    /** Fetch all items sold/bought by an NPC (all pages). */
+    suspend fun getNpcItems(npcCode: String): List<com.artifactsmmo.client.models.NPCItem> {
+        val items = mutableListOf<com.artifactsmmo.client.models.NPCItem>()
+        var page = 1
+        while (true) {
+            val result = client.content.getNPCItems(npcCode, page = page, size = 100)
+            items.addAll(result.data)
+            if (page >= (result.pages ?: Int.MAX_VALUE) || result.data.size < 100) break
+            page++
+        }
+        return items
+    }
+
+    /** Return the most recent WebSocket log entries from the ring buffer. */
+    fun getRecentWebSocketLogs(limit: Int = 500): List<WebSocketManager.WebSocketLogEntry> =
+        if (::webSocketManager.isInitialized) webSocketManager.getRecentLogs(limit) else emptyList()
+
+    /**
      * Stop a character's current task.
      */
     fun stopTask(characterName: String) {
@@ -300,6 +383,8 @@ class TaskManager(
      */
     fun stopAll() {
         runners.values.forEach { it.stopImmediate() }
+        if (::webSocketManager.isInitialized) webSocketManager.stop()
+        bankState.stop()
         // Don't clear persisted tasks on stopAll — they should resume on restart
     }
 
@@ -338,18 +423,11 @@ class TaskManager(
 
     /**
      * Fetch all bank items and enrich each with full item metadata from the content API.
+     * Reads from [bankState] snapshot — eliminates one API call from the GUI bank dialog.
      * Items whose metadata cannot be fetched are silently skipped.
      */
     suspend fun getBankItemsWithDetails(): List<BankItemDetail> {
-        val allItems = mutableListOf<SimpleItem>()
-        var page = 1
-        while (true) {
-            val result = client.bank.getBankItems(page = page, size = 100)
-            allItems.addAll(result.data)
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
+        val allItems = bankState.getItems()
 
         return allItems.mapNotNull { bankItem ->
             runCatching { contentCache.getItem(bankItem.code) }

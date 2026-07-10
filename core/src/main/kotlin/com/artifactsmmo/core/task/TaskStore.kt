@@ -18,7 +18,7 @@ private val json = Json {
  */
 @Serializable
 data class StoredTask(
-    val type: String, // "idle", "gather", "fight", "boss_fight", "craft", "task_master", "bank_withdraw", "bank_recycle", "inventory_deposit", "inventory_recycle", "bulk_bank_withdraw", "bulk_inventory_deposit"
+    val type: String, // "idle", "gather", "fight", "boss_fight", "craft", "task_master", "bank_withdraw", "bank_recycle", "inventory_deposit", "inventory_recycle", "bulk_bank_withdraw", "bulk_inventory_deposit", "event_gather", "event_npc"
     val skill: String? = null,
     @SerialName("resource_code") val resourceCode: String? = null,
     @SerialName("resource_name") val resourceName: String? = null,
@@ -41,7 +41,16 @@ data class StoredTask(
     // Boss fight fields
     @SerialName("initiator_name") val initiatorName: String? = null,
     @SerialName("participant_names") val participantNames: List<String>? = null,
-    @SerialName("is_initiator") val isInitiator: Boolean? = null
+    @SerialName("is_initiator") val isInitiator: Boolean? = null,
+    // Event task fields
+    @SerialName("event_code") val eventCode: String? = null,
+    @SerialName("event_map_x") val eventMapX: Int? = null,
+    @SerialName("event_map_y") val eventMapY: Int? = null,
+    @SerialName("event_map_layer") val eventMapLayer: String? = null,
+    @SerialName("npc_code") val npcCode: String? = null,
+    @SerialName("npc_name") val npcName: String? = null,
+    @SerialName("items_to_sell") val itemsToSell: List<StoredSimpleItem>? = null,
+    @SerialName("items_to_buy") val itemsToBuy: List<StoredSimpleItem>? = null
 )
 
 /**
@@ -196,6 +205,27 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 type = "bulk_inventory_deposit",
                 items = task.items.map { StoredSimpleItem(it.code, it.quantity) }
             )
+            is TaskType.EventGather -> StoredTask(
+                type = "event_gather",
+                eventCode = task.eventCode,
+                resourceCode = task.resourceCode,
+                resourceName = task.resourceName,
+                skill = task.skill,
+                eventMapX = task.eventMapX,
+                eventMapY = task.eventMapY,
+                eventMapLayer = task.eventMapLayer
+            )
+            is TaskType.EventNpc -> StoredTask(
+                type = "event_npc",
+                eventCode = task.eventCode,
+                npcCode = task.npcCode,
+                npcName = task.npcName,
+                eventMapX = task.eventMapX,
+                eventMapY = task.eventMapY,
+                eventMapLayer = task.eventMapLayer,
+                itemsToSell = task.itemsToSell.map { StoredSimpleItem(it.code, it.quantity) },
+                itemsToBuy = task.itemsToBuy.map { StoredSimpleItem(it.code, it.quantity) }
+            )
         }
     }
 
@@ -272,6 +302,25 @@ class TaskStore(private val file: File = File("tasks.json")) {
             )
             "bulk_inventory_deposit" -> TaskType.BulkInventoryDeposit(
                 items = (stored.items ?: emptyList()).map { SimpleItem(it.code, it.quantity) }
+            )
+            "event_gather" -> TaskType.EventGather(
+                eventCode = stored.eventCode ?: "",
+                resourceCode = stored.resourceCode ?: "",
+                resourceName = stored.resourceName ?: "",
+                skill = stored.skill ?: "",
+                eventMapX = stored.eventMapX ?: 0,
+                eventMapY = stored.eventMapY ?: 0,
+                eventMapLayer = stored.eventMapLayer ?: "overworld"
+            )
+            "event_npc" -> TaskType.EventNpc(
+                eventCode = stored.eventCode ?: "",
+                npcCode = stored.npcCode ?: "",
+                npcName = stored.npcName ?: "",
+                eventMapX = stored.eventMapX ?: 0,
+                eventMapY = stored.eventMapY ?: 0,
+                eventMapLayer = stored.eventMapLayer ?: "overworld",
+                itemsToSell = (stored.itemsToSell ?: emptyList()).map { SimpleItem(it.code, it.quantity) },
+                itemsToBuy = (stored.itemsToBuy ?: emptyList()).map { SimpleItem(it.code, it.quantity) }
             )
             else -> TaskType.Idle
         }

@@ -1,0 +1,74 @@
+{
+    "events": [
+        {
+            "eventCode": "fish_merchant",
+            "enabled": true,
+            "itemsToSell": [
+                {
+                    "code": "holey_boot",
+                    "quantity": 0
+                },
+                {
+                    "code": "golden_shrimp",
+                    "quantity": 0
+                },
+                {
+                    "code": "shell",
+                    "quantity": 0
+                }
+            ],
+            "designatedTrader": "Ront"
+        },
+        {
+            "eventCode": "nomadic_merchant",
+            "enabled": true,
+            "itemsToSell": [
+                {
+                    "code": "golden_egg",
+                    "quantity": 0
+                },
+                {
+                    "code": "old_boots",
+                    "quantity": 0
+                },
+                {
+                    "code": "forest_staff",
+                    "quantity": 0
+                },
+                {
+                    "code": "wolf_ears",
+                    "quantity": 0
+                },
+                {
+                    "code": "forest_ring",
+                    "quantity": 0
+                },
+                {
+                    "code": "highwayman_dagger",
+                    "quantity": 0
+                }
+            ],
+            "designatedTrader": "Ront"
+        },
+        {
+            "eventCode": "herbal_merchant"
+        },
+        {
+            "eventCode": "gemstone_merchant"
+        },
+        {
+            "eventCode": "magic_apparition",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Olivia"
+            ]
+        },
+        {
+            "eventCode": "strange_apparition",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Shuckle"
+            ]
+        }
+    ]
+}

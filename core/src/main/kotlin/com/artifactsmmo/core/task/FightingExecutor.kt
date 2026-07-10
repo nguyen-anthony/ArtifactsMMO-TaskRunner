@@ -226,7 +226,8 @@ class FightingExecutor(private val helper: ActionHelper) {
         for (info in cookAndUseDrops) {
             val bankQty = helper.getBankItemQuantity(info.cookedCode)
             if (bankQty > 0) {
-                val withdrawQty = minOf(bankQty, 50)
+                val freeCapacity = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
+                val withdrawQty = minOf(bankQty, 50, freeCapacity.coerceAtLeast(1))
                 onStatus("Withdrawing ${withdrawQty}x ${info.cookedCode} from bank...")
                 helper.bankWithdrawItems(characterName, listOf(SimpleItem(info.cookedCode, withdrawQty)))
 
@@ -242,7 +243,8 @@ class FightingExecutor(private val helper: ActionHelper) {
         val bankFood = helper.findBestFoodInBank(char)
         if (bankFood != null) {
             val (foodCode, healAmount, bankQty) = bankFood
-            val withdrawQty = minOf(bankQty, 25)
+            val freeCapacity = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
+            val withdrawQty = minOf(bankQty, 25, freeCapacity.coerceAtLeast(1))
             onStatus("Withdrawing ${withdrawQty}x $foodCode from bank...")
             helper.bankWithdrawItems(characterName, listOf(SimpleItem(foodCode, withdrawQty)))
 

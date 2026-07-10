@@ -28,7 +28,7 @@ plugins {
 }
 
 // Include all subprojects in the build.
-include(":app")
+// include(":app")  // TUI — not in use
 include(":utils")
 include(":client")
 include(":core")

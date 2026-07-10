@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.artifactsmmo.client.models.Character
+import com.artifactsmmo.gui.state.AppState
 
 /**
  * Side panel showing detailed stats for a single character.
@@ -28,6 +29,7 @@ import com.artifactsmmo.client.models.Character
 @Composable
 fun CharacterDetailPanel(
     character: Character,
+    appState: AppState,
     onClose: () -> Unit,
     onAssignTask: () -> Unit,
     onStopTask: () -> Unit,
@@ -105,6 +107,7 @@ fun CharacterDetailPanel(
                 EquipmentSection(character)
                 InventorySection(character)
                 CombatStatsSection(character)
+                EventsSection(character, appState)
             }
         }
     }
@@ -371,5 +374,105 @@ private fun CombatStatsSection(c: Character) {
         StatRow("RES Earth",     "${c.resEarth}%",   highlight = c.resEarth > 0)
         StatRow("RES Water",     "${c.resWater}%",   highlight = c.resWater > 0)
         StatRow("RES Air",       "${c.resAir}%",     highlight = c.resAir > 0)
+    }
+}
+
+// ── Events section ────────────────────────────────────────────────────────────
+
+@Composable
+private fun EventsSection(character: Character, appState: AppState) {
+    val eventConfigs by appState.eventConfigs.collectAsState()
+    val statuses by appState.statuses.collectAsState()
+    val status = statuses.find { it.characterName == character.name }
+
+    DetailSection(title = "Events", defaultExpanded = false) {
+        // Active event indicator
+        val activeCode = status?.activeEventCode
+        if (activeCode != null) {
+            Text(
+                text = "Active event: $activeCode",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        val enabledResourceEvents = eventConfigs.filter { it.enabled && it.itemsToSell.isEmpty() && it.itemsToBuy.isEmpty() }
+        val enabledNpcEvents = eventConfigs.filter { it.enabled && (it.itemsToSell.isNotEmpty() || it.itemsToBuy.isNotEmpty()) }
+
+        // Resource events — per-character eligibility toggle
+        for (cfg in enabledResourceEvents) {
+            val isEligible = cfg.eligibleCharacters.isEmpty() || cfg.eligibleCharacters.contains(character.name)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(cfg.eventCode, style = MaterialTheme.typography.bodySmall)
+                Switch(
+                    checked = isEligible,
+                    onCheckedChange = { nowEnabled ->
+                        val updatedList = if (nowEnabled) {
+                            // All chars eligible (or add this char explicitly if others are filtered)
+                            if (cfg.eligibleCharacters.isEmpty()) cfg.eligibleCharacters
+                            else cfg.eligibleCharacters + character.name
+                        } else {
+                            // Exclude this character
+                            if (cfg.eligibleCharacters.isEmpty()) {
+                                appState.taskManager.getCharacterNames().filter { it != character.name }
+                            } else {
+                                cfg.eligibleCharacters - character.name
+                            }
+                        }
+                        val updated = cfg.copy(eligibleCharacters = updatedList)
+                        val newConfigs = eventConfigs.toMutableList().also { list ->
+                            val idx = list.indexOfFirst { it.eventCode == cfg.eventCode }
+                            if (idx >= 0) list[idx] = updated else list.add(updated)
+                        }
+                        appState.saveEventConfigs(newConfigs)
+                    }
+                )
+            }
+        }
+
+        // NPC events — show trader designation
+        for (cfg in enabledNpcEvents) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(cfg.eventCode, style = MaterialTheme.typography.bodySmall)
+                if (cfg.designatedTrader == character.name) {
+                    Text(
+                        "Designated trader",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    TextButton(
+                        onClick = {
+                            val updated = cfg.copy(designatedTrader = character.name)
+                            val newConfigs = eventConfigs.toMutableList().also { list ->
+                                val idx = list.indexOfFirst { it.eventCode == cfg.eventCode }
+                                if (idx >= 0) list[idx] = updated else list.add(updated)
+                            }
+                            appState.saveEventConfigs(newConfigs)
+                        },
+                        contentPadding = PaddingValues(4.dp)
+                    ) {
+                        Text("Set as trader", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
+        if (enabledResourceEvents.isEmpty() && enabledNpcEvents.isEmpty() && activeCode == null) {
+            Text(
+                "No events enabled. Use the Events button in the toolbar to configure.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.SimpleItem
 import com.artifactsmmo.core.task.TaskManager
 import com.artifactsmmo.core.task.TaskType
@@ -22,12 +23,9 @@ private val RECYCLE_SKILLS = setOf("weaponcrafting", "gearcrafting", "jewelrycra
 /**
  * Dialog showing the character's bank contents.
  *
- * Each item row has:
- * - Item name, code, quantity
- * - "Withdraw" button → quantity prompt → assigns BankWithdraw quick task
- * - "Recycle" button (only for weapon/gear/jewelry craft items) → quantity prompt → assigns BankRecycle
- *
- * Multi-select mode allows withdrawing multiple items in a single task.
+ * Quantities come from the live [AppState.bankSnapshot] StateFlow so they update
+ * automatically as WebSocket deltas or periodic syncs change the snapshot.
+ * Item metadata (names, craft skills) is loaded once on open and cached in memory.
  */
 @Composable
 fun BankDialog(
@@ -37,32 +35,51 @@ fun BankDialog(
 ) {
     val scope = rememberCoroutineScope()
 
-    // Loading state
+    // Item metadata keyed by code — loaded once on open, never stale
+    var itemMeta by remember { mutableStateOf<Map<String, Item>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf<String?>(null) }
-    var bankItems by remember { mutableStateOf<List<TaskManager.BankItemDetail>>(emptyList()) }
+
+    // Live bank quantities from the StateFlow — updates automatically
+    val bankSnapshot by appState.bankSnapshot.collectAsState()
 
     // Quantity prompt state (single-item)
     var quantityTarget by remember { mutableStateOf<TaskManager.BankItemDetail?>(null) }
-    var quantityAction by remember { mutableStateOf<String>("withdraw") } // "withdraw" | "recycle"
+    var quantityAction by remember { mutableStateOf<String>("withdraw") }
     var quantityInput by remember { mutableStateOf("") }
 
     // Multi-select state
     var multiSelectMode by remember { mutableStateOf(false) }
-    var selectedItems by remember { mutableStateOf(setOf<String>()) } // keyed by item code
-    var selectedQuantities by remember { mutableStateOf(mapOf<String, String>()) } // itemCode -> qty string
+    var selectedItems by remember { mutableStateOf(setOf<String>()) }
+    var selectedQuantities by remember { mutableStateOf(mapOf<String, String>()) }
     var showBulkConfirm by remember { mutableStateOf(false) }
 
+    // Load metadata once — quantities come from the live snapshot above
     LaunchedEffect(Unit) {
         isLoading = true
         loadError = null
         try {
-            bankItems = appState.taskManager.getBankItemsWithDetails()
+            val details = appState.taskManager.getBankItemsWithDetails()
+            itemMeta = details.associate { it.item.code to it.item }
         } catch (e: Exception) {
             loadError = e.message ?: "Unknown error"
         } finally {
             isLoading = false
         }
+    }
+
+    // Build the display list: merge live quantities with loaded metadata.
+    // Items that appeared in the snapshot after open (new deposits) are shown
+    // if their metadata is already cached; otherwise they appear on next open.
+    val bankItems: List<TaskManager.BankItemDetail> = remember(bankSnapshot, itemMeta) {
+        bankSnapshot
+            .filter { (code, qty) -> qty > 0 }
+            .mapNotNull { (code, qty) ->
+                itemMeta[code]?.let { item ->
+                    TaskManager.BankItemDetail(SimpleItem(code, qty), item)
+                }
+            }
+            .sortedBy { it.item.name }
     }
 
     // Clear selection when exiting multi-select mode

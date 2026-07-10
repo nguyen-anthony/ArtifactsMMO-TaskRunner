@@ -149,6 +149,9 @@ class TerminalUI(
                             is TaskType.InventoryRecycle -> cyan("Recycle(inv): ${task.itemName}")
                             is TaskType.BulkBankWithdraw -> cyan("Bulk Withdraw: ${task.items.size} items")
                             is TaskType.BulkInventoryDeposit -> cyan("Bulk Deposit: ${task.items.size} items")
+                            is TaskType.BossFight -> red("Boss Fight: ${task.monsterName}")
+                            is TaskType.EventGather -> green("Event Gather: ${task.resourceName}")
+                            is TaskType.EventNpc -> green("Event Gather: ${task.eventCode}")
                         }
                         val craftsStr = if (s.recycleCount > 0) {
                             "${s.craftCount} (${s.recycleCount}r)"
@@ -773,6 +776,9 @@ class TerminalUI(
             is TaskType.InventoryRecycle -> "Recycle ${task.quantity}x ${task.itemName} (inventory)"
             is TaskType.BulkBankWithdraw -> "Bulk Withdraw: ${task.items.size} items"
             is TaskType.BulkInventoryDeposit -> "Bulk Deposit: ${task.items.size} items"
+            is TaskType.BossFight -> "Boss Fight: ${task.monsterName}"
+            is TaskType.EventGather -> "Event Gather: ${task.resourceName}"
+            is TaskType.EventNpc -> "Event NPC: ${task.npcName}"
         }
     }
 }

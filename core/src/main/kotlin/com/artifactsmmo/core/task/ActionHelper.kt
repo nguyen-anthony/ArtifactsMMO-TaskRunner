@@ -19,7 +19,7 @@ import kotlin.time.Instant
  * Handles cooldowns, movement, banking, equipping, and inventory management.
  */
 @OptIn(ExperimentalTime::class)
-class ActionHelper(private val client: ArtifactsMMOClient, private val contentCache: ContentCache) {
+class ActionHelper(private val client: ArtifactsMMOClient, private val contentCache: ContentCache, private val bankState: BankState) {
 
     // ── Cooldown ──
 
@@ -537,15 +537,9 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
     /**
      * Check how many of an item are in the bank.
+     * Reads from the shared [BankState] snapshot — no API call.
      */
-    suspend fun getBankItemQuantity(itemCode: String): Int {
-        return try {
-            val result = client.bank.getBankItems(itemCode)
-            result.data.firstOrNull()?.quantity ?: 0
-        } catch (_: Exception) {
-            0
-        }
-    }
+    suspend fun getBankItemQuantity(itemCode: String): Int = bankState.getQuantity(itemCode)
 
     /**
      * Fetch a single page of bank items (no item_code filter). Used by [CraftingExecutor]
@@ -554,47 +548,8 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     suspend fun getBankItems(page: Int = 1, size: Int = 100) =
         client.bank.getBankItems(page = page, size = size)
 
-    // ── Bank snapshot cache ──
-
-    /**
-     * Short-lived in-memory snapshot of bank contents: item code → quantity.
-     *
-     * TTL of [BANK_SNAPSHOT_TTL_MS] (10 seconds). All bank-reading functions
-     * (tool upgrade checks, food search, weapon selection, crafting) share this
-     * snapshot so that multiple functions executing within the same logical step
-     * issue at most one paginated GET /my/bank/items sweep instead of one each.
-     *
-     * 10 seconds is safely shorter than any action cooldown, so the snapshot is
-     * always stale by the time the next task iteration starts.
-     */
-    private var bankSnapshot: Map<String, Int> = emptyMap()
-    private var bankSnapshotTimestamp: Long = 0L
-    private val BANK_SNAPSHOT_TTL_MS = 10_000L
-
-    /**
-     * Return the cached bank snapshot if it is still within [BANK_SNAPSHOT_TTL_MS],
-     * otherwise fetch all bank pages, update the snapshot, and return it.
-     */
-    suspend fun getOrRefreshBankSnapshot(): Map<String, Int> {
-        val now = System.currentTimeMillis()
-        if (now - bankSnapshotTimestamp < BANK_SNAPSHOT_TTL_MS) return bankSnapshot
-        val fresh = mutableMapOf<String, Int>()
-        var page = 1
-        while (true) {
-            val result = try {
-                client.bank.getBankItems(page = page, size = 100)
-            } catch (_: Exception) { break }
-            for (item in result.data) {
-                fresh[item.code] = (fresh[item.code] ?: 0) + item.quantity
-            }
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
-            page++
-        }
-        bankSnapshot = fresh
-        bankSnapshotTimestamp = now
-        return bankSnapshot
-    }
+    /** Return the current bank snapshot from [BankState]. No API call. */
+    fun getBankSnapshot(): Map<String, Int> = bankState.snapshot.value
 
     // ── Food / Cooking discovery ──
 
@@ -696,8 +651,8 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
     suspend fun findBestFoodInBank(char: Character): Triple<String, Int, Int>? {
         var bestFood: Triple<String, Int, Int>? = null
 
-        // Use shared bank snapshot instead of an independent paginated sweep.
-        val bankItems = getOrRefreshBankSnapshot()
+        // Read from shared BankState snapshot.
+        val bankItems = bankState.snapshot.value
         for ((code, quantity) in bankItems) {
             if (quantity <= 0) continue
             val item = try {
@@ -816,6 +771,28 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             }
             throw e
         }
+    }
+
+    /**
+     * Sell [quantity] of [itemCode] to an NPC. Character must already be at the NPC tile.
+     * Returns the updated [Character] after the transaction cooldown drains.
+     */
+    suspend fun npcSell(characterName: String, itemCode: String, quantity: Int): Character {
+        val result = client.npc.sellItem(characterName, itemCode, quantity)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
+    }
+
+    /**
+     * Buy [quantity] of [itemCode] from an NPC by code, navigating if needed.
+     * Returns the updated [Character] after the transaction cooldown drains.
+     * Thin overload that takes itemCode + quantity directly (no npcCode navigation).
+     * Character must already be at the NPC tile.
+     */
+    suspend fun npcBuyDirect(characterName: String, itemCode: String, quantity: Int): Character {
+        val result = client.npc.buyItem(characterName, itemCode, quantity)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
     }
 
     /**
@@ -960,8 +937,8 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         val highestPossibleLevel = allTools.maxOfOrNull { it.level } ?: 0
         if (currentBestLevel >= highestPossibleLevel) return null
 
-        // Use shared bank snapshot instead of an independent paginated sweep.
-        val bankItems = getOrRefreshBankSnapshot()
+        // Read from shared BankState snapshot.
+        val bankItems = bankState.snapshot.value
 
         // Find the best tool in the bank that's better than what we have
         val bestInBank = allTools
@@ -1257,8 +1234,8 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
         // Build inventory lookup
         val inventoryMap = char.inventory.associate { it.code to it.quantity }
 
-        // Build bank lookup using shared snapshot instead of an independent paginated sweep.
-        val bankMap = getOrRefreshBankSnapshot()
+        // Build bank lookup using shared BankState snapshot.
+        val bankMap = bankState.snapshot.value
 
         // Build craftable lookup for this slot's craft skill
         val craftableMap = mutableMapOf<String, CraftableItemInfo>()
@@ -1373,7 +1350,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             .filter { it.quantity > 0 }
             .associate { it.code to "inventory" }
 
-        val bankCodes = getOrRefreshBankSnapshot()
+        val bankCodes = bankState.snapshot.value
             .filter { it.value > 0 }
             .mapValues { "bank" }
 
@@ -1399,22 +1376,30 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
 
         // ── Scoring ──────────────────────────────────────────────────────────
         fun score(weapon: Item): Double {
-            // Base damage contribution — keeps higher-level weapons ranked above
-            // lower-level elemental weapons when the elemental bonus is small
             val effectMap = weapon.effects.associate { it.code to it.value }
-            val baseDmg = (effectMap["dmg"] ?: effectMap["attack"] ?: 0).toDouble()
+            val globalDmgBonus = (effectMap["dmg"] ?: 0) / 100.0
 
-            // Elemental bonus using mean-subtracted resistances
-            val elementalBonus = if (monster != null) {
-                val meanRes = (monster.resFire + monster.resEarth + monster.resWater + monster.resAir) / 4.0
-                val fireContrib  = (effectMap["attack_fire"]  ?: 0) * (-(monster.resFire  - meanRes))
-                val earthContrib = (effectMap["attack_earth"] ?: 0) * (-(monster.resEarth - meanRes))
-                val waterContrib = (effectMap["attack_water"] ?: 0) * (-(monster.resWater - meanRes))
-                val airContrib   = (effectMap["attack_air"]   ?: 0) * (-(monster.resAir   - meanRes))
-                fireContrib + earthContrib + waterContrib + airContrib
-            } else 0.0
+            if (monster == null) {
+                // No monster context — rank by total raw attack output scaled by global dmg bonus
+                val totalAttack = listOf("attack_fire", "attack_earth", "attack_water", "attack_air")
+                    .sumOf { effectMap[it] ?: 0 }
+                return totalAttack * (1.0 + globalDmgBonus)
+            }
 
-            return baseDmg + elementalBonus
+            // Expected damage after resistance: attack * (1 + dmg%) * (1 - resistance%)
+            // Clamp resistance multiplier at 0 — fully immune elements deal 0, not negative damage
+            val elementMap = mapOf(
+                "attack_fire"  to monster.resFire  / 100.0,
+                "attack_earth" to monster.resEarth / 100.0,
+                "attack_water" to monster.resWater / 100.0,
+                "attack_air"   to monster.resAir   / 100.0
+            )
+
+            return elementMap.entries.sumOf { (attackKey, resRatio) ->
+                val baseAttack = effectMap[attackKey] ?: 0
+                val resMult = (1.0 - resRatio).coerceAtLeast(0.0)
+                baseAttack * (1.0 + globalDmgBonus) * resMult
+            }
         }
 
         // Select best: primary sort by score descending, tiebreaker by level descending

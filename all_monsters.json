@@ -1,0 +1,2314 @@
+{
+  "data": [
+    {
+      "name": "Chicken",
+      "code": "chicken",
+      "level": 1,
+      "type": "normal",
+      "hp": 60,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 4,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": 0,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 0,
+      "initiative": 50,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 3,
+      "drops": [
+        {
+          "code": "raw_chicken",
+          "rate": 2,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "egg",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "feather",
+          "rate": 8,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "golden_egg",
+          "rate": 1000,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Yellow Slime",
+      "code": "yellow_slime",
+      "level": 2,
+      "type": "normal",
+      "hp": 70,
+      "attack_fire": 0,
+      "attack_earth": 8,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": 25,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 0,
+      "initiative": 50,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 5,
+      "drops": [
+        {
+          "code": "yellow_slimeball",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "apple",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Green Slime",
+      "code": "green_slime",
+      "level": 4,
+      "type": "normal",
+      "hp": 80,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 12,
+      "res_fire": 0,
+      "res_earth": 0,
+      "res_water": 0,
+      "res_air": 25,
+      "critical_strike": 0,
+      "initiative": 50,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 5,
+      "drops": [
+        {
+          "code": "green_slimeball",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "apple",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Sheep",
+      "code": "sheep",
+      "level": 5,
+      "type": "normal",
+      "hp": 120,
+      "attack_fire": 0,
+      "attack_earth": 14,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 10,
+      "res_earth": 10,
+      "res_water": 10,
+      "res_air": 10,
+      "critical_strike": 0,
+      "initiative": 50,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 5,
+      "drops": [
+        {
+          "code": "wool",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Blue Slime",
+      "code": "blue_slime",
+      "level": 6,
+      "type": "normal",
+      "hp": 120,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 15,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": 0,
+      "res_water": 25,
+      "res_air": 0,
+      "critical_strike": 0,
+      "initiative": 100,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 5,
+      "drops": [
+        {
+          "code": "blue_slimeball",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "apple",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Red Slime",
+      "code": "red_slime",
+      "level": 7,
+      "type": "normal",
+      "hp": 120,
+      "attack_fire": 18,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 25,
+      "res_earth": 0,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 0,
+      "initiative": 100,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 5,
+      "drops": [
+        {
+          "code": "red_slimeball",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "apple",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Cow",
+      "code": "cow",
+      "level": 8,
+      "type": "normal",
+      "hp": 280,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 21,
+      "res_fire": 0,
+      "res_earth": -30,
+      "res_water": 30,
+      "res_air": 0,
+      "critical_strike": 0,
+      "initiative": 100,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 7,
+      "drops": [
+        {
+          "code": "raw_beef",
+          "rate": 2,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "milk_bucket",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "cowhide",
+          "rate": 8,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Mushmush",
+      "code": "mushmush",
+      "level": 10,
+      "type": "normal",
+      "hp": 350,
+      "attack_fire": 16,
+      "attack_earth": 0,
+      "attack_water": 16,
+      "attack_air": 0,
+      "res_fire": 20,
+      "res_earth": 20,
+      "res_water": 0,
+      "res_air": -30,
+      "critical_strike": 5,
+      "initiative": 100,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 7,
+      "drops": [
+        {
+          "code": "mushroom",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "forest_ring",
+          "rate": 200,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Flying Snake",
+      "code": "flying_snake",
+      "level": 12,
+      "type": "normal",
+      "hp": 360,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 34,
+      "res_fire": -20,
+      "res_earth": 0,
+      "res_water": -20,
+      "res_air": 40,
+      "critical_strike": 5,
+      "initiative": 125,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 8,
+      "drops": [
+        {
+          "code": "flying_wing",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "snake_hide",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 3
+        },
+        {
+          "code": "forest_staff",
+          "rate": 200,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Highwayman",
+      "code": "highwayman",
+      "level": 15,
+      "type": "normal",
+      "hp": 380,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 25,
+      "res_fire": 10,
+      "res_earth": 10,
+      "res_water": -10,
+      "res_air": -10,
+      "critical_strike": 35,
+      "initiative": 125,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 8,
+      "drops": [
+        {
+          "code": "highwayman_dagger",
+          "rate": 200,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "green_cloth",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "King Slime",
+      "code": "king_slime",
+      "level": 15,
+      "type": "boss",
+      "hp": 1000,
+      "attack_fire": 14,
+      "attack_earth": 14,
+      "attack_water": 14,
+      "attack_air": 14,
+      "res_fire": 20,
+      "res_earth": 20,
+      "res_water": 20,
+      "res_air": 20,
+      "critical_strike": 20,
+      "initiative": 150,
+      "effects": [
+        {
+          "code": "barrier",
+          "value": 100,
+          "description": "At the start of the fight and every 5 played turns, gain a protective barrier of 100 HP. All attacks are redirected to this barrier until it is destroyed."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 5,
+      "drops": [
+        {
+          "code": "king_slimeball",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Wolf",
+      "code": "wolf",
+      "level": 15,
+      "type": "normal",
+      "hp": 400,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 12,
+      "attack_air": 12,
+      "res_fire": -10,
+      "res_earth": -10,
+      "res_water": 10,
+      "res_air": 10,
+      "critical_strike": 50,
+      "initiative": 125,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 8,
+      "drops": [
+        {
+          "code": "wolf_ears",
+          "rate": 200,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "raw_wolf_meat",
+          "rate": 2,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "wolf_bone",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "wolf_hair",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Skeleton",
+      "code": "skeleton",
+      "level": 18,
+      "type": "normal",
+      "hp": 480,
+      "attack_fire": 26,
+      "attack_earth": 18,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 30,
+      "res_earth": 0,
+      "res_water": -10,
+      "res_air": -10,
+      "critical_strike": 5,
+      "initiative": 150,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 8,
+      "drops": [
+        {
+          "code": "skeleton_bone",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "skeleton_skull",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "lich_tomb_key",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Pig",
+      "code": "pig",
+      "level": 19,
+      "type": "normal",
+      "hp": 480,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 30,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": -10,
+      "res_water": 40,
+      "res_air": 0,
+      "critical_strike": 30,
+      "initiative": 100,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 8,
+      "drops": [
+        {
+          "code": "pig_skin",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "raw_porkchop",
+          "rate": 2,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Ogre",
+      "code": "ogre",
+      "level": 20,
+      "type": "normal",
+      "hp": 650,
+      "attack_fire": 0,
+      "attack_earth": 80,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": -20,
+      "res_earth": 30,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 150,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 10,
+      "drops": [
+        {
+          "code": "ogre_eye",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "ogre_skin",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "wooden_club",
+          "rate": 200,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Corrupted Ogre",
+      "code": "corrupted_ogre",
+      "level": 20,
+      "type": "normal",
+      "hp": 850,
+      "attack_fire": 0,
+      "attack_earth": 80,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 50,
+      "res_earth": 100,
+      "res_water": 70,
+      "res_air": 50,
+      "critical_strike": 5,
+      "initiative": 150,
+      "effects": [
+        {
+          "code": "corrupted",
+          "value": 6,
+          "description": "After every time the bearer of this effect is attacked, their resistance to the attack's element is reduced by 6%, and can go negative."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 10,
+      "drops": [
+        {
+          "code": "ogre_eye",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "ogre_skin",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "corrupted_gem",
+          "rate": 75,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Spider",
+      "code": "spider",
+      "level": 20,
+      "type": "normal",
+      "hp": 550,
+      "attack_fire": 40,
+      "attack_earth": 0,
+      "attack_water": 40,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": 5,
+      "res_water": -30,
+      "res_air": 5,
+      "critical_strike": 5,
+      "initiative": 100,
+      "effects": [
+        {
+          "code": "poison",
+          "value": 20,
+          "description": "At the start of its first turn, applies a 20 poison to its opponent. Loses 20 HP per turn."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 10,
+      "drops": [
+        {
+          "code": "old_boots",
+          "rate": 300,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "spider_leg",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Vampire",
+      "code": "vampire",
+      "level": 24,
+      "type": "normal",
+      "hp": 680,
+      "attack_fire": 20,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 50,
+      "res_fire": 0,
+      "res_earth": -15,
+      "res_water": -15,
+      "res_air": 30,
+      "critical_strike": 35,
+      "initiative": 150,
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 10,
+          "description": "Restores 10% of the total attack of all elements in HP after a critical strike."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 10,
+      "drops": [
+        {
+          "code": "vampire_blood",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "vampire_tooth",
+          "rate": 24,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "lich_tomb_key",
+          "rate": 40,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Full Moon Vampire",
+      "code": "full_moon_vampire",
+      "level": 24,
+      "type": "normal",
+      "hp": 760,
+      "attack_fire": 24,
+      "attack_earth": 0,
+      "attack_water": 40,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": -15,
+      "res_water": -15,
+      "res_air": 30,
+      "critical_strike": 35,
+      "initiative": 150,
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 10,
+          "description": "Restores 10% of the total attack of all elements in HP after a critical strike."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 10,
+      "drops": [
+        {
+          "code": "full_moon_vampire_cape",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "vampire_tooth",
+          "rate": 24,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "lich_tomb_key",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Bandit Lizard",
+      "code": "bandit_lizard",
+      "level": 25,
+      "type": "normal",
+      "hp": 780,
+      "attack_fire": 40,
+      "attack_earth": 0,
+      "attack_water": 40,
+      "attack_air": 0,
+      "res_fire": -5,
+      "res_earth": 25,
+      "res_water": -5,
+      "res_air": 25,
+      "critical_strike": 5,
+      "initiative": 200,
+      "effects": [
+        {
+          "code": "poison",
+          "value": 20,
+          "description": "At the start of its first turn, applies a 20 poison to its opponent. Loses 20 HP per turn."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "bandit_armor",
+          "rate": 600,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "lizard_eye",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "lizard_skin",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Rat",
+      "code": "rat",
+      "level": 25,
+      "type": "normal",
+      "hp": 800,
+      "attack_fire": 50,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 40,
+      "res_earth": -10,
+      "res_water": 5,
+      "res_air": 5,
+      "critical_strike": 50,
+      "initiative": 175,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 12,
+      "drops": [
+        {
+          "code": "rat_hide",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 3
+        },
+        {
+          "code": "raw_rat_meat",
+          "rate": 2,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Cyclops",
+      "code": "cyclops",
+      "level": 25,
+      "type": "normal",
+      "hp": 850,
+      "attack_fire": 0,
+      "attack_earth": 105,
+      "attack_water": 0,
+      "attack_air": 25,
+      "res_fire": -20,
+      "res_earth": 20,
+      "res_water": 10,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 175,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 12,
+      "drops": [
+        {
+          "code": "cyclops_eye",
+          "rate": 6,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Imp",
+      "code": "imp",
+      "level": 28,
+      "type": "normal",
+      "hp": 1750,
+      "attack_fire": 0,
+      "attack_earth": 45,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 10,
+      "res_earth": 60,
+      "res_water": 10,
+      "res_air": 10,
+      "critical_strike": 5,
+      "initiative": 175,
+      "effects": [
+        {
+          "code": "burn",
+          "value": 15,
+          "description": "On his first turn, apply a burn effect of 15% of your attack of all elements. The damage is applied each turn and decreases by 10% each time."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 12,
+      "drops": [
+        {
+          "code": "demoniac_dust",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "imp_tail",
+          "rate": 6,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "piece_of_obsidian",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Death Knight",
+      "code": "death_knight",
+      "level": 28,
+      "type": "normal",
+      "hp": 820,
+      "attack_fire": 28,
+      "attack_earth": 28,
+      "attack_water": 28,
+      "attack_air": 28,
+      "res_fire": -5,
+      "res_earth": -5,
+      "res_water": -5,
+      "res_air": -5,
+      "critical_strike": 5,
+      "initiative": 150,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 12,
+      "drops": [
+        {
+          "code": "death_knight_sword",
+          "rate": 600,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "red_cloth",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "lich_tomb_key",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Corrupted Owlbear",
+      "code": "corrupted_owlbear",
+      "level": 30,
+      "type": "normal",
+      "hp": 1500,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 115,
+      "attack_air": 0,
+      "res_fire": 70,
+      "res_earth": 50,
+      "res_water": 115,
+      "res_air": 70,
+      "critical_strike": 5,
+      "initiative": 250,
+      "effects": [
+        {
+          "code": "corrupted",
+          "value": 6,
+          "description": "After every time the bearer of this effect is attacked, their resistance to the attack's element is reduced by 6%, and can go negative."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "owlbear_hair",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "owlbear_claw",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "corrupted_gem",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Owlbear",
+      "code": "owlbear",
+      "level": 30,
+      "type": "normal",
+      "hp": 1450,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 105,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": -20,
+      "res_water": 45,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 250,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "owlbear_hair",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "owlbear_claw",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Demon",
+      "code": "demon",
+      "level": 30,
+      "type": "normal",
+      "hp": 1250,
+      "attack_fire": 110,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 20,
+      "res_earth": 0,
+      "res_water": -10,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 250,
+      "effects": [
+        {
+          "code": "burn",
+          "value": 20,
+          "description": "On his first turn, apply a burn effect of 20% of your attack of all elements. The damage is applied each turn and decreases by 10% each time."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 20,
+      "drops": [
+        {
+          "code": "demon_horn",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "piece_of_obsidian",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Lich",
+      "code": "lich",
+      "level": 30,
+      "type": "boss",
+      "hp": 6600,
+      "attack_fire": 140,
+      "attack_earth": 140,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 24,
+      "res_earth": 24,
+      "res_water": 18,
+      "res_air": 18,
+      "critical_strike": 5,
+      "initiative": 350,
+      "effects": [
+        {
+          "code": "reconstitution",
+          "value": 20,
+          "description": "Every 20 played turns, regains all HP."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "life_crystal_shard",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "lich_crown",
+          "rate": 600,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Goblin",
+      "code": "goblin",
+      "level": 33,
+      "type": "normal",
+      "hp": 1550,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 170,
+      "res_fire": 10,
+      "res_earth": 30,
+      "res_water": -20,
+      "res_air": -20,
+      "critical_strike": 5,
+      "initiative": 200,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "goblin_tooth",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "goblin_eye",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "priestess_hideout_key",
+          "rate": 40,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Cultist Acolyte",
+      "code": "cultist_acolyte",
+      "level": 33,
+      "type": "normal",
+      "hp": 1500,
+      "attack_fire": 0,
+      "attack_earth": 65,
+      "attack_water": 0,
+      "attack_air": 65,
+      "res_fire": -10,
+      "res_earth": 10,
+      "res_water": -10,
+      "res_air": 40,
+      "critical_strike": 5,
+      "initiative": 200,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "corrupted_stone",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "cursed_book",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Cursed Tree",
+      "code": "cursed_tree",
+      "level": 34,
+      "type": "normal",
+      "hp": 1550,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 130,
+      "attack_air": 0,
+      "res_fire": 5,
+      "res_earth": -5,
+      "res_water": -5,
+      "res_air": 5,
+      "critical_strike": 20,
+      "initiative": 250,
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 5,
+          "description": "Restores 5% of the total attack of all elements in HP after a critical strike."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "cursed_wood",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 3
+        }
+      ]
+    },
+    {
+      "name": "Goblin Priestess",
+      "code": "goblin_priestess",
+      "level": 35,
+      "type": "boss",
+      "hp": 6750,
+      "attack_fire": 75,
+      "attack_earth": 75,
+      "attack_water": 75,
+      "attack_air": 75,
+      "res_fire": 20,
+      "res_earth": 20,
+      "res_water": 20,
+      "res_air": 20,
+      "critical_strike": 20,
+      "initiative": 400,
+      "effects": [
+        {
+          "code": "protective_bubble",
+          "value": 65,
+          "description": "Grants 65% resistance to a random element (fire, earth, water, or air). The element changes at the start of each turn and cannot be the same as the previous one."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "priestess_orb",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Goblin Guard",
+      "code": "goblin_guard",
+      "level": 35,
+      "type": "normal",
+      "hp": 2300,
+      "attack_fire": 0,
+      "attack_earth": 140,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": -20,
+      "res_earth": -20,
+      "res_water": 30,
+      "res_air": 20,
+      "critical_strike": 5,
+      "initiative": 250,
+      "effects": [
+        {
+          "code": "barrier",
+          "value": 100,
+          "description": "At the start of the fight and every 5 played turns, gain a protective barrier of 100 HP. All attacks are redirected to this barrier until it is destroyed."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "goblin_guard_foot",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "goblin_guard_shield",
+          "rate": 600,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "priestess_hideout_key",
+          "rate": 30,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Cultist Emperor",
+      "code": "cultist_emperor",
+      "level": 35,
+      "type": "elite",
+      "hp": 1750,
+      "attack_fire": 0,
+      "attack_earth": 40,
+      "attack_water": 40,
+      "attack_air": 90,
+      "res_fire": 20,
+      "res_earth": 10,
+      "res_water": 0,
+      "res_air": -10,
+      "critical_strike": 5,
+      "initiative": 300,
+      "effects": [
+        {
+          "code": "healing",
+          "value": 5,
+          "description": "Every 3 played turns, restores 5% of HP at the start of the turn.\n"
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 18,
+      "drops": [
+        {
+          "code": "malefic_cloth",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "malefic_shard",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Orc",
+      "code": "orc",
+      "level": 38,
+      "type": "normal",
+      "hp": 2100,
+      "attack_fire": 115,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 115,
+      "res_fire": -20,
+      "res_earth": 20,
+      "res_water": -20,
+      "res_air": 20,
+      "critical_strike": 10,
+      "initiative": 250,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 17,
+      "drops": [
+        {
+          "code": "orc_skin",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "orc_bone",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Bat",
+      "code": "bat",
+      "level": 38,
+      "type": "normal",
+      "hp": 2000,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 80,
+      "attack_air": 80,
+      "res_fire": 5,
+      "res_earth": 5,
+      "res_water": 5,
+      "res_air": -20,
+      "critical_strike": 5,
+      "initiative": 200,
+      "effects": [
+        {
+          "code": "poison",
+          "value": 50,
+          "description": "At the start of its first turn, applies a 50 poison to its opponent. Loses 50 HP per turn."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 17,
+      "drops": [
+        {
+          "code": "bat_heart",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "bat_wing",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Echoless Bat",
+      "code": "echoless_bat",
+      "level": 38,
+      "type": "normal",
+      "hp": 2250,
+      "attack_fire": 80,
+      "attack_earth": 0,
+      "attack_water": 80,
+      "attack_air": 0,
+      "res_fire": -20,
+      "res_earth": 5,
+      "res_water": 5,
+      "res_air": 5,
+      "critical_strike": 5,
+      "initiative": 200,
+      "effects": [
+        {
+          "code": "poison",
+          "value": 50,
+          "description": "At the start of its first turn, applies a 50 poison to its opponent. Loses 50 HP per turn."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 17,
+      "drops": [
+        {
+          "code": "bat_heart",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "echoless_bat_wing",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Dryad",
+      "code": "dryad",
+      "level": 40,
+      "type": "normal",
+      "hp": 3000,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 140,
+      "res_fire": 10,
+      "res_earth": 10,
+      "res_water": 10,
+      "res_air": -10,
+      "critical_strike": 15,
+      "initiative": 300,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 30,
+      "drops": [
+        {
+          "code": "dryad_hair",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "enchanted_potion",
+          "rate": 100,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Goblin Wolfrider",
+      "code": "goblin_wolfrider",
+      "level": 40,
+      "type": "normal",
+      "hp": 2650,
+      "attack_fire": 0,
+      "attack_earth": 145,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 10,
+      "res_earth": -5,
+      "res_water": 10,
+      "res_air": 10,
+      "critical_strike": 5,
+      "initiative": 300,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 25,
+      "drops": [
+        {
+          "code": "broken_sword",
+          "rate": 16,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "wolfrider_hair",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "wolfrider_ponytail",
+          "rate": 6,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "priestess_hideout_key",
+          "rate": 30,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Pixie",
+      "code": "pixie",
+      "level": 40,
+      "type": "raid_boss",
+      "hp": 600000,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 675,
+      "res_fire": 10,
+      "res_earth": 5,
+      "res_water": 10,
+      "res_air": 5,
+      "critical_strike": 5,
+      "initiative": 800,
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 20,
+          "description": "Restores 20% of the total attack of all elements in HP after a critical strike."
+        },
+        {
+          "code": "enchanted_mirror",
+          "value": 50,
+          "description": "When the fighter takes damage, they deal back 50% of the damage taken. This can trigger once every 3 turns."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 0,
+      "drops": []
+    },
+    {
+      "name": "Cultist Alchemist",
+      "code": "cultist_alchemist",
+      "level": 40,
+      "type": "normal",
+      "hp": 3000,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 50,
+      "attack_air": 100,
+      "res_fire": 5,
+      "res_earth": -10,
+      "res_water": 5,
+      "res_air": -30,
+      "critical_strike": 5,
+      "initiative": 300,
+      "effects": [
+        {
+          "code": "healing",
+          "value": 5,
+          "description": "Every 3 played turns, restores 5% of HP at the start of the turn.\n"
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 15,
+      "drops": [
+        {
+          "code": "dark_essence",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "cursed_flask",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Rosenblood",
+      "code": "rosenblood",
+      "level": 40,
+      "type": "boss",
+      "hp": 8000,
+      "attack_fire": 400,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 10,
+      "res_earth": 10,
+      "res_water": 10,
+      "res_air": 10,
+      "critical_strike": 30,
+      "initiative": 400,
+      "effects": [
+        {
+          "code": "frenzy",
+          "value": 60,
+          "description": "Each time they land a critical hit, they give 60% damage to themselves and their allies until the end of their next turn."
+        },
+        {
+          "code": "barrier",
+          "value": 500,
+          "description": "At the start of the fight and every 5 played turns, gain a protective barrier of 500 HP. All attacks are redirected to this barrier until it is destroyed."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 30,
+      "drops": [
+        {
+          "code": "sanguine_edge_of_rosen",
+          "rate": 600,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "rosenblood_elixir",
+          "rate": 100,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "elemental_page",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Hellhound",
+      "code": "hellhound",
+      "level": 40,
+      "type": "normal",
+      "hp": 3250,
+      "attack_fire": 90,
+      "attack_earth": 50,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": -20,
+      "res_earth": 10,
+      "res_water": -20,
+      "res_air": 10,
+      "critical_strike": 5,
+      "initiative": 300,
+      "effects": [
+        {
+          "code": "burn",
+          "value": 10,
+          "description": "On his first turn, apply a burn effect of 10% of your attack of all elements. The damage is applied each turn and decreases by 10% each time."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 25,
+      "drops": [
+        {
+          "code": "hellhound_hair",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "raw_hellhound_meat",
+          "rate": 2,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "hellhound_collar",
+          "rate": 6,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Efreet Sultan",
+      "code": "efreet_sultan",
+      "level": 42,
+      "type": "elite",
+      "hp": 3600,
+      "attack_fire": 100,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 100,
+      "res_fire": 50,
+      "res_earth": 0,
+      "res_water": 50,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 400,
+      "effects": [
+        {
+          "code": "burn",
+          "value": 20,
+          "description": "On his first turn, apply a burn effect of 20% of your attack of all elements. The damage is applied each turn and decreases by 10% each time."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 30,
+      "drops": [
+        {
+          "code": "efreet_cloth",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "lava_bucket",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "page_from_hell",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Sand Snake",
+      "code": "sand_snake",
+      "level": 44,
+      "type": "normal",
+      "hp": 3200,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 180,
+      "res_fire": 5,
+      "res_earth": 0,
+      "res_water": 5,
+      "res_air": 10,
+      "critical_strike": 5,
+      "initiative": 250,
+      "effects": [
+        {
+          "code": "poison",
+          "value": 100,
+          "description": "At the start of its first turn, applies a 100 poison to its opponent. Loses 100 HP per turn."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 25,
+      "drops": [
+        {
+          "code": "sand_snake_hide",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 3
+        },
+        {
+          "code": "sand_snake_poison",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Grimlet",
+      "code": "grimlet",
+      "level": 45,
+      "type": "elite",
+      "hp": 7000,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 150,
+      "attack_air": 0,
+      "res_fire": 90,
+      "res_earth": 70,
+      "res_water": 90,
+      "res_air": 50,
+      "critical_strike": 5,
+      "initiative": 500,
+      "effects": [
+        {
+          "code": "corrupted",
+          "value": 10,
+          "description": "After every time the bearer of this effect is attacked, their resistance to the attack's element is reduced by 10%, and can go negative."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 30,
+      "drops": [
+        {
+          "code": "grimlet_bone",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "page_from_hell",
+          "rate": 40,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "corrupted_gem",
+          "rate": 5,
+          "min_quantity": 1,
+          "max_quantity": 3
+        }
+      ]
+    },
+    {
+      "name": "Sea Marauder",
+      "code": "sea_marauder",
+      "level": 45,
+      "type": "normal",
+      "hp": 2900,
+      "attack_fire": 190,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 190,
+      "res_fire": 10,
+      "res_earth": 10,
+      "res_water": 10,
+      "res_air": 10,
+      "critical_strike": 5,
+      "initiative": 500,
+      "effects": [
+        {
+          "code": "berserker_rage",
+          "value": 20,
+          "description": "When they drop below 25% HP, they gain 20 % damage permanently. Applies once per combat."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 25,
+      "drops": [
+        {
+          "code": "marauder_hand",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "sandwhisper_coin",
+          "rate": 30,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Dusk Beetle",
+      "code": "dusk_beetle",
+      "level": 47,
+      "type": "normal",
+      "hp": 3500,
+      "attack_fire": 120,
+      "attack_earth": 120,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 20,
+      "res_earth": -10,
+      "res_water": 20,
+      "res_air": -10,
+      "critical_strike": 5,
+      "initiative": 250,
+      "effects": [
+        {
+          "code": "barrier",
+          "value": 200,
+          "description": "At the start of the fight and every 5 played turns, gain a protective barrier of 200 HP. All attacks are redirected to this barrier until it is destroyed."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 25,
+      "drops": [
+        {
+          "code": "dusk_beetle_shell",
+          "rate": 12,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Duskworm",
+      "code": "duskworm",
+      "level": 48,
+      "type": "boss",
+      "hp": 25000,
+      "attack_fire": 0,
+      "attack_earth": 0,
+      "attack_water": 550,
+      "attack_air": 0,
+      "res_fire": -80,
+      "res_earth": -80,
+      "res_water": -80,
+      "res_air": -80,
+      "critical_strike": 20,
+      "initiative": 600,
+      "effects": [
+        {
+          "code": "void_drain",
+          "value": 10,
+          "description": "Every 4 turns, Drains 10% HP from each enemy to heal themselves."
+        },
+        {
+          "code": "lifesteal",
+          "value": 25,
+          "description": "Restores 25% of the total attack of all elements in HP after a critical strike."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 35,
+      "drops": [
+        {
+          "code": "adventurer_skull",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "duskworm_skin",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Sandwarden",
+      "code": "sandwarden",
+      "level": 50,
+      "type": "normal",
+      "hp": 4500,
+      "attack_fire": 220,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 220,
+      "res_fire": 0,
+      "res_earth": -20,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 600,
+      "effects": [],
+      "min_gold": 0,
+      "max_gold": 35,
+      "drops": [
+        {
+          "code": "desert_wrap",
+          "rate": 300,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "sandwhisper_coin",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 2
+        },
+        {
+          "code": "golden_dust",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "sandwhisper_key",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Desert Scorpion",
+      "code": "desert_scorpion",
+      "level": 50,
+      "type": "normal",
+      "hp": 4250,
+      "attack_fire": 0,
+      "attack_earth": 350,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": -10,
+      "res_earth": 0,
+      "res_water": -10,
+      "res_air": 0,
+      "critical_strike": 50,
+      "initiative": 600,
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 15,
+          "description": "Restores 15% of the total attack of all elements in HP after a critical strike."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 30,
+      "drops": [
+        {
+          "code": "desert_scorpion_meat",
+          "rate": 2,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "desert_scorpion_carapace",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Solar Desert Scorpion",
+      "code": "solar_desert_scorpion",
+      "level": 50,
+      "type": "normal",
+      "hp": 4250,
+      "attack_fire": 400,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": -10,
+      "res_water": 0,
+      "res_air": -10,
+      "critical_strike": 75,
+      "initiative": 600,
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 15,
+          "description": "Restores 15% of the total attack of all elements in HP after a critical strike."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 30,
+      "drops": [
+        {
+          "code": "desert_scorpion_meat",
+          "rate": 1,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "solar_desert_scorpion_tail",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Baby Red Dragon",
+      "code": "baby_red_dragon",
+      "level": 50,
+      "type": "normal",
+      "hp": 4500,
+      "attack_fire": 250,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 50,
+      "res_earth": 0,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 600,
+      "effects": [
+        {
+          "code": "greed",
+          "value": 10,
+          "description": "Each time the fighter loses 10% max HP, they gain 10% damage for the rest of the fight."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 35,
+      "drops": [
+        {
+          "code": "dragon_bone",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "baby_red_dragon_scale",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "sonnengott_key",
+          "rate": 40,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Red Dragon",
+      "code": "red_dragon",
+      "level": 51,
+      "type": "normal",
+      "hp": 5000,
+      "attack_fire": 300,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 80,
+      "res_earth": 0,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 600,
+      "effects": [
+        {
+          "code": "greed",
+          "value": 20,
+          "description": "Each time the fighter loses 10% max HP, they gain 20% damage for the rest of the fight."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 35,
+      "drops": [
+        {
+          "code": "dragon_bone",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "red_dragon_scale",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "sonnengott_key",
+          "rate": 40,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Flameche",
+      "code": "flameche",
+      "level": 52,
+      "type": "normal",
+      "hp": 2000,
+      "attack_fire": 1250,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": 0,
+      "res_earth": 0,
+      "res_water": -50,
+      "res_air": -50,
+      "critical_strike": 5,
+      "initiative": 2000,
+      "effects": [
+        {
+          "code": "burn",
+          "value": 20,
+          "description": "On his first turn, apply a burn effect of 20% of your attack of all elements. The damage is applied each turn and decreases by 10% each time."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 35,
+      "drops": [
+        {
+          "code": "fire_dust",
+          "rate": 20,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "sonnengott_key",
+          "rate": 200,
+          "min_quantity": 1,
+          "max_quantity": 1
+        }
+      ]
+    },
+    {
+      "name": "Fennec",
+      "code": "fennec",
+      "level": 52,
+      "type": "normal",
+      "hp": 5000,
+      "attack_fire": 0,
+      "attack_earth": 350,
+      "attack_water": 100,
+      "attack_air": 0,
+      "res_fire": -20,
+      "res_earth": 0,
+      "res_water": 0,
+      "res_air": 0,
+      "critical_strike": 5,
+      "initiative": 600,
+      "effects": [
+        {
+          "code": "berserker_rage",
+          "value": 30,
+          "description": "When they drop below 25% HP, they gain 30 % damage permanently. Applies once per combat."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 35,
+      "drops": [
+        {
+          "code": "fennec_tail",
+          "rate": 10,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "fennec_ear",
+          "rate": 16,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    },
+    {
+      "name": "Sonnengott",
+      "code": "sonnengott",
+      "level": 55,
+      "type": "raid_boss",
+      "hp": 1500000,
+      "attack_fire": 1100,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 0,
+      "res_fire": -20,
+      "res_earth": 10,
+      "res_water": -20,
+      "res_air": 5,
+      "critical_strike": 20,
+      "initiative": 700,
+      "effects": [
+        {
+          "code": "sun_shield",
+          "value": 50,
+          "description": "The first hit the monster takes each turn is reduced by 50%."
+        },
+        {
+          "code": "burn",
+          "value": 20,
+          "description": "On his first turn, apply a burn effect of 20% of your attack of all elements. The damage is applied each turn and decreases by 10% each time."
+        },
+        {
+          "code": "barrier",
+          "value": 350,
+          "description": "At the start of the fight and every 5 played turns, gain a protective barrier of 350 HP. All attacks are redirected to this barrier until it is destroyed."
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 0,
+      "drops": []
+    },
+    {
+      "name": "Sandwhisper Empress",
+      "code": "sandwhisper_empress",
+      "level": 55,
+      "type": "boss",
+      "hp": 13500,
+      "attack_fire": 400,
+      "attack_earth": 0,
+      "attack_water": 0,
+      "attack_air": 400,
+      "res_fire": 5,
+      "res_earth": 10,
+      "res_water": 10,
+      "res_air": 5,
+      "critical_strike": 5,
+      "initiative": 700,
+      "effects": [
+        {
+          "code": "berserker_rage",
+          "value": 50,
+          "description": "When they drop below 25% HP, they gain 50 % damage permanently. Applies once per combat."
+        },
+        {
+          "code": "healing",
+          "value": 10,
+          "description": "Every 3 played turns, restores 10% of HP at the start of the turn.\n"
+        }
+      ],
+      "min_gold": 0,
+      "max_gold": 50,
+      "drops": [
+        {
+          "code": "codex_page",
+          "rate": 50,
+          "min_quantity": 1,
+          "max_quantity": 1
+        },
+        {
+          "code": "sandwhisper_coin",
+          "rate": 5,
+          "min_quantity": 1,
+          "max_quantity": 2
+        }
+      ]
+    }
+  ],
+  "total": 58,
+  "page": 1,
+  "size": 100,
+  "pages": 1
+}

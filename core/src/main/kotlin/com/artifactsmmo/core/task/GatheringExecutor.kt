@@ -196,9 +196,19 @@ class GatheringExecutor(private val helper: ActionHelper) {
 
         if (cookable.isEmpty()) return
 
-        // Check bank for raw fish
+        // Collect the ingredient codes the character actually fishes so we only
+        // pull those specific raw items from the bank — not every cooking recipe
+        // the character has the level for (e.g. milk buckets, mushrooms, etc.).
+        val fishIngredientCodes = cookable.flatMap { (item, _) ->
+            item.craft?.items?.map { it.code } ?: emptyList()
+        }.toSet()
+
+        // Check bank for leftover raw fish of the same types only
         val bankCookable = helper.findCraftableRefinementsFromBank(char, "fishing")
             .filter { (item, _, _) -> item.craft?.items?.size == 1 }
+            .filter { (item, _, _) ->
+                item.craft?.items?.all { it.code in fishIngredientCodes } == true
+            }
 
         if (bankCookable.isEmpty()) return
 
@@ -560,4 +570,6 @@ sealed class StepResult {
      * (for a plain Fight task) or cancel the current task and try a new one (for TaskMaster).
      */
     data class TooManyDeaths(val monsterName: String, val deaths: Int) : StepResult()
+    /** Event task: the spawning event has expired. Runner should revert to previous task. */
+    data object EventExpired : StepResult()
 }

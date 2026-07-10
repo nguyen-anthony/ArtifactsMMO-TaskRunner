@@ -11,6 +11,7 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.3")
     implementation("io.ktor:ktor-client-auth:3.1.3")
     implementation("io.ktor:ktor-client-logging:3.1.3")
+    implementation("io.ktor:ktor-client-websockets:3.1.3")
 
     // Serialization - expose to consumers for model serialization
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")

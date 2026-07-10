@@ -85,6 +85,11 @@ class ArtifactsMMOClient(
     val account = AccountService(httpClient)
 
     /**
+     * Game events service
+     */
+    val events = EventService(httpClient)
+
+    /**
      * Close the HTTP client and release resources
      */
     override fun close() {

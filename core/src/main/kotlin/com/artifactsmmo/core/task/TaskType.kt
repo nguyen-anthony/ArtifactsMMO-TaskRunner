@@ -135,6 +135,29 @@ sealed class TaskType {
     data class BulkInventoryDeposit(
         val items: List<SimpleItem>
     ) : TaskType()
+
+    /** Event task: gather resources from an ephemeral event tile. */
+    data class EventGather(
+        val eventCode: String,
+        val resourceCode: String,
+        val resourceName: String,
+        val skill: String,
+        val eventMapX: Int,
+        val eventMapY: Int,
+        val eventMapLayer: String
+    ) : TaskType()
+
+    /** Event task: sell/buy items at an ephemeral NPC event tile (one-shot). */
+    data class EventNpc(
+        val eventCode: String,
+        val npcCode: String,
+        val npcName: String,
+        val eventMapX: Int,
+        val eventMapY: Int,
+        val eventMapLayer: String,
+        val itemsToSell: List<SimpleItem>,
+        val itemsToBuy: List<SimpleItem>
+    ) : TaskType()
 }
 
 /**
@@ -156,5 +179,7 @@ data class RunnerStatus(
     /** Number of consecutive fight losses without a win. Resets to 0 on any win. */
     val consecutiveDeaths: Int = 0,
     /** When non-null, this character is waiting for boss fight participants to be ready. */
-    val awaitingParticipants: List<String>? = null
+    val awaitingParticipants: List<String>? = null,
+    /** When non-null, identifies the event code this character is currently responding to. */
+    val activeEventCode: String? = null
 )
