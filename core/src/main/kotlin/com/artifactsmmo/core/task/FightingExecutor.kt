@@ -34,6 +34,25 @@ class FightingExecutor(private val helper: ActionHelper) {
      */
     private val weaponOptimisedForMonster = mutableMapOf<String, String?>()
 
+    /** Gear optimizer — used by TaskMaster and the re-optimize button. */
+    val gearOptimizer = GearOptimizer(helper)
+
+    /**
+     * Run a full or inventory-only gear optimization pass for TaskMaster use.
+     */
+    suspend fun optimizeGearForMonster(
+        characterName: String,
+        char: com.artifactsmmo.client.models.Character,
+        monsterCode: String,
+        inventoryOnly: Boolean = false
+    ): GearOptimizer.OptimizationResult {
+        return if (inventoryOnly) {
+            gearOptimizer.optimizeInventoryOnly(char, monsterCode)
+        } else {
+            gearOptimizer.optimize(char, monsterCode)
+        }
+    }
+
     /**
      * Execute a single iteration of the fight loop.
      *
@@ -101,7 +120,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         }
 
         // Check HP - heal if below 75%
-        if (!CharacterUtils.hasEnoughHP(char, 0.75)) {
+        if (!CharacterUtils.hasEnoughHP(char, 0.90)) {
             return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
         }
 
@@ -174,6 +193,24 @@ class FightingExecutor(private val helper: ActionHelper) {
             codes.add(info.cookedCode)
         }
         return codes
+    }
+
+    /**
+     * Internal entry point for [EventExecutor] to invoke the healing logic without
+     * going through the full [executeStep] (which requires a map-cache monster lookup).
+     */
+    internal suspend fun handleEventHealing(
+        characterName: String,
+        char: com.artifactsmmo.client.models.Character,
+        task: TaskType.Fight,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        val allCookableDrops = getCookableDrops(task.monsterCode, char)
+        val cookAndUseDrops = allCookableDrops.filter {
+            getDropStrategy(task, it.rawCode) == DropStrategy.COOK_AND_USE
+        }
+        val foodCodes = buildFoodCodes(cookAndUseDrops)
+        return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
     }
 
     /**

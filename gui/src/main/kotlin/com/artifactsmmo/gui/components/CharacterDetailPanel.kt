@@ -35,6 +35,7 @@ fun CharacterDetailPanel(
     onStopTask: () -> Unit,
     onOpenBank: () -> Unit = {},
     onOpenInventory: () -> Unit = {},
+    onReoptimize: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -43,6 +44,13 @@ fun CharacterDetailPanel(
         shape = RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            val statuses by appState.statuses.collectAsState()
+            val status = statuses.find { it.characterName == character.name }
+            val showReoptimize = status?.task?.let {
+                it is com.artifactsmmo.core.task.TaskType.Fight ||
+                it is com.artifactsmmo.core.task.TaskType.BossFight ||
+                (it is com.artifactsmmo.core.task.TaskType.TaskMaster && it.type == "monsters")
+            } ?: false
 
             // ── Header ────────────────────────────────────────────────────────
             Row(
@@ -73,6 +81,9 @@ fun CharacterDetailPanel(
                         )
                     ) {
                         Text("Stop")
+                    }
+                    if (showReoptimize) {
+                        OutlinedButton(onClick = onReoptimize) { Text("Re-optimize Gear") }
                     }
                     OutlinedButton(onClick = onOpenBank) { Text("Bank") }
                     OutlinedButton(onClick = onOpenInventory) { Text("Inventory") }

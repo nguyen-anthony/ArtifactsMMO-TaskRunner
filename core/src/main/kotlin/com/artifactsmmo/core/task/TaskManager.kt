@@ -24,14 +24,14 @@ class TaskManager(
 ) {
     private val contentCache = ContentCache(client.content)
     val bankState = BankState(client, scope, logger)
-    private val helper = ActionHelper(client, contentCache, bankState)
+    internal val helper = ActionHelper(client, contentCache, bankState)
     private val gatheringExecutor = GatheringExecutor(helper)
-    private val fightingExecutor = FightingExecutor(helper)
+    internal val fightingExecutor = FightingExecutor(helper)
     private val craftingExecutor = CraftingExecutor(helper)
     private val taskMasterExecutor = TaskMasterExecutor(helper, gatheringExecutor, fightingExecutor)
     private val bankExecutor = BankExecutor(helper)
     private val bossEncounterCoordinator = BossEncounterCoordinator()
-    private val eventExecutor = EventExecutor(helper)
+    private val eventExecutor = EventExecutor(helper, fightingExecutor)
     private val eventConfigStore = EventConfigStore()
     private lateinit var webSocketManager: WebSocketManager
     lateinit var eventDispatcher: EventDispatcher
@@ -54,6 +54,7 @@ class TaskManager(
 
         // Pre-warm the map cache before restoring tasks so findNearest* calls are ready
         contentCache.preWarmMaps(completedAchievements)
+        MonsterProfileStore.load()
 
         // Set up WebSocket and event dispatcher before creating runners
         webSocketManager = WebSocketManager(RealtimeClient(token), client.events, scope, bankState)
@@ -324,7 +325,8 @@ class TaskManager(
             .filter { r ->
                 r.currentTask.let {
                     (it is TaskType.EventGather && it.eventCode == eventCode) ||
-                    (it is TaskType.EventNpc && it.eventCode == eventCode)
+                    (it is TaskType.EventNpc    && it.eventCode == eventCode) ||
+                    (it is TaskType.EventFight  && it.eventCode == eventCode)
                 }
             }
             .forEach { it.revertFromEvent(scope) }
@@ -369,6 +371,38 @@ class TaskManager(
     /** Return the most recent WebSocket log entries from the ring buffer. */
     fun getRecentWebSocketLogs(limit: Int = 500): List<WebSocketManager.WebSocketLogEntry> =
         if (::webSocketManager.isInitialized) webSocketManager.getRecentLogs(limit) else emptyList()
+
+    /** Run a full gear optimization for [characterName] vs [monsterCode]. */
+    suspend fun optimizeGear(characterName: String, monsterCode: String): GearOptimizer.OptimizationResult {
+        val char = client.characters.getCharacter(characterName)
+        return fightingExecutor.gearOptimizer.optimize(char, monsterCode)
+    }
+
+    /** Find the best combat weapon for [characterName] vs [monsterCode]. */
+    suspend fun findBestWeapon(characterName: String, monsterCode: String): ActionHelper.EquipAction? {
+        val char = client.characters.getCharacter(characterName)
+        return helper.findBestCombatWeapon(char, monsterCode)
+    }
+
+    /**
+     * Re-optimize gear for [characterName]'s current fight task in the background.
+     * Equips the result immediately — the runner's fight loop uses the new gear next iteration.
+     */
+    suspend fun reoptimizeGear(characterName: String) {
+        val runner = runners[characterName] ?: return
+        val monsterCode = when (val task = runner.currentTask) {
+            is TaskType.Fight      -> task.monsterCode
+            is TaskType.TaskMaster -> client.characters.getCharacter(characterName).task
+                                          .takeIf { it.isNotEmpty() } ?: return
+            else -> return
+        }
+        val char = client.characters.getCharacter(characterName)
+        val result = fightingExecutor.gearOptimizer.optimize(char, monsterCode)
+        if (result.equipActions.isNotEmpty()) {
+            helper.retrieveAndEquipItems(characterName, result.equipActions)
+            fightingExecutor.gearOptimizer.markOptimized(characterName, monsterCode)
+        }
+    }
 
     /**
      * Stop a character's current task.

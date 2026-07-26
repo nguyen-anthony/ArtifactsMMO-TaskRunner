@@ -69,6 +69,41 @@
             "eligibleCharacters": [
                 "Shuckle"
             ]
+        },
+        {
+            "eventCode": "bandit_camp",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront",
+                "Shella"
+            ]
+        },
+        {
+            "eventCode": "full_moon",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront",
+                "Shella"
+            ]
+        },
+        {
+            "eventCode": "corrupted_portal"
+        },
+        {
+            "eventCode": "portal_demon",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront"
+            ],
+            "minWinRate": 0.75
+        },
+        {
+            "eventCode": "corrupted_owlbear",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront"
+            ],
+            "minWinRate": 0.75
         }
     ]
 }

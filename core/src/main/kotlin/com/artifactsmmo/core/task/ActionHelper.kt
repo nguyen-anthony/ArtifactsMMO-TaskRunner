@@ -19,7 +19,7 @@ import kotlin.time.Instant
  * Handles cooldowns, movement, banking, equipping, and inventory management.
  */
 @OptIn(ExperimentalTime::class)
-class ActionHelper(private val client: ArtifactsMMOClient, private val contentCache: ContentCache, private val bankState: BankState) {
+class ActionHelper(private val client: ArtifactsMMOClient, internal val contentCache: ContentCache, private val bankState: BankState) {
 
     // ── Cooldown ──
 
@@ -1299,6 +1299,30 @@ class ActionHelper(private val client: ArtifactsMMOClient, private val contentCa
             iterations = iterations
         )
         return client.simulation.simulateFight(request)
+    }
+
+    /**
+     * Simulate combat locally (no API call) after applying [slotOverrides] to [char]'s stats.
+     * For each overridden slot, fetches the currently-equipped item and the candidate item
+     * from ContentCache, then applies the stat delta via [Character.applyItemDelta].
+     * Falls back to simulating the unmodified character if any item fetch fails.
+     */
+    suspend fun simulateLocalWithOverrides(
+        char: Character,
+        monster: com.artifactsmmo.client.models.Monster,
+        slotOverrides: Map<String, String>,
+        iterations: Int = 50
+    ): LocalFightSimulator.Result {
+        var modifiedChar = char
+        for ((slot, newCode) in slotOverrides) {
+            val oldCode = getEquippedInSlot(char, slot)
+            val removedItem = if (oldCode.isNotEmpty()) try { contentCache.getItem(oldCode) } catch (_: Exception) { null } else null
+            val addedItem   = try { contentCache.getItem(newCode) } catch (_: Exception) { null }
+            if (addedItem != null || removedItem != null) {
+                modifiedChar = modifiedChar.applyItemDelta(removedItem, addedItem)
+            }
+        }
+        return LocalFightSimulator.simulate(modifiedChar, monster, iterations)
     }
 
     /**

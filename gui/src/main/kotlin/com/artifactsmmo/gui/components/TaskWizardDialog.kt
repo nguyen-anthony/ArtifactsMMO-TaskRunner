@@ -26,6 +26,7 @@ import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.CraftMode
 import com.artifactsmmo.core.task.DropStrategy
+import com.artifactsmmo.core.task.GearOptimizer
 import com.artifactsmmo.core.task.RunnerStatus
 import com.artifactsmmo.core.task.TaskType
 import com.artifactsmmo.gui.state.AppState
@@ -56,6 +57,13 @@ private sealed class WizardStep {
         val monster: Monster,
         val cookableDrops: List<ActionHelper.CookableDropInfo>,
         val equipActions: List<ActionHelper.EquipAction> = emptyList()
+    ) : WizardStep()
+    data class GearOptimization(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val cookableDrops: List<ActionHelper.CookableDropInfo>,
+        val result: GearOptimizer.OptimizationResult,
+        val weaponEquipActions: List<ActionHelper.EquipAction>
     ) : WizardStep()
     data class BossFightParticipants(
         val monsters: List<Monster>,
@@ -372,19 +380,15 @@ fun TaskWizardDialog(
                             step = s,
                             onBack = { step = WizardStep.FightMonster(s.monsters) },
                             onConfirm = {
-                                load("Checking monster drops...") {
+                                load("Optimizing gear for ${s.monster.name}...") {
+                                    val result = appState.taskManager.optimizeGear(characterName, s.monster.code)
                                     val cookable = appState.taskManager.getCookableDrops(characterName, s.monster.code)
-                                    if (cookable.isEmpty()) {
-                                        // No cookable drops — skip config, assign directly
-                                        assign(
-                                            TaskType.Fight(
-                                                monsterCode = s.monster.code,
-                                                monsterName = s.monster.name
-                                            )
-                                        )
-                                    } else {
-                                        step = WizardStep.FightDropConfig(s.monsters, s.monster, cookable)
-                                    }
+                                    val weaponSwap = try {
+                                        appState.taskManager.findBestWeapon(characterName, s.monster.code)
+                                    } catch (_: Exception) { null }
+                                    val weaponActions = if (weaponSwap != null && weaponSwap.itemCode.isNotEmpty())
+                                        listOf(weaponSwap) else emptyList()
+                                    step = WizardStep.GearOptimization(s.monsters, s.monster, cookable, result, weaponActions)
                                 }
                             },
                             onCheckEquipment = {
@@ -398,6 +402,42 @@ fun TaskWizardDialog(
                                     val statuses = appState.taskManager.getAllStatuses()
                                     val others = statuses.filter { it.characterName != characterName }
                                     step = WizardStep.BossFightParticipants(s.monsters, s.monster, s.sim, others)
+                                }
+                            }
+                        )
+
+                        is WizardStep.GearOptimization -> StepGearOptimization(
+                            step = s,
+                            characterName = characterName,
+                            onBack = {
+                                load("Re-simulating...") {
+                                    val sim = try {
+                                        appState.taskManager.simulateFight(characterName, s.monster.code, 100)
+                                    } catch (e: Exception) {
+                                        step = WizardStep.FightSim(s.monsters, s.monster, null, e.message)
+                                        return@load
+                                    }
+                                    step = WizardStep.FightSim(s.monsters, s.monster, sim, null)
+                                }
+                            },
+                            onReoptimize = {
+                                load("Re-optimizing gear for ${s.monster.name}...") {
+                                    val result = appState.taskManager.optimizeGear(characterName, s.monster.code)
+                                    step = s.copy(result = result)
+                                }
+                            },
+                            onConfirm = { confirmedEquipActions ->
+                                if (s.cookableDrops.isEmpty()) {
+                                    assign(TaskType.Fight(
+                                        monsterCode  = s.monster.code,
+                                        monsterName  = s.monster.name,
+                                        equipActions = confirmedEquipActions
+                                    ))
+                                } else {
+                                    step = WizardStep.FightDropConfig(
+                                        s.monsters, s.monster, s.cookableDrops,
+                                        equipActions = confirmedEquipActions
+                                    )
                                 }
                             }
                         )
@@ -2012,6 +2052,178 @@ private fun StepBossFightParticipants(
             confirmLabel = "Start Boss Fight",
             onConfirm = if (selected.value.isEmpty() || selected.value.size > 2) null
                         else { { onConfirm(selected.value.toList()) } }
+        )
+    }
+}
+
+// ── Step: Gear Optimization ────────────────────────────────────────────────────
+
+@Composable
+private fun StepGearOptimization(
+    step: WizardStep.GearOptimization,
+    characterName: String,
+    onBack: () -> Unit,
+    onReoptimize: () -> Unit,
+    onConfirm: (List<ActionHelper.EquipAction>) -> Unit
+) {
+    val baseline   = step.result.baselineScore
+    val optimized  = step.result.optimizedScore
+    val hasChanges = step.result.equipActions.isNotEmpty() || step.weaponEquipActions.isNotEmpty()
+    val allActions = step.weaponEquipActions + step.result.equipActions
+
+    fun winColor(rate: Double): Color = when {
+        rate >= 0.9  -> Color(0xFF388E3C)
+        rate >= 0.6  -> Color(0xFFF57C00)
+        else         -> Color(0xFFD32F2F)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = "Gear Optimization — ${step.monster.name}",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Bold
+        )
+
+        // Score comparison
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                color = winColor(baseline.winRate).copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Current gear", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${"%.0f".format(baseline.winRate * 100)}%",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = winColor(baseline.winRate)
+                    )
+                    if (baseline.avgWinTurns < Double.MAX_VALUE) {
+                        Text("avg ${"%.1f".format(baseline.avgWinTurns)} turns", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Surface(
+                color = winColor(optimized.winRate).copy(alpha = 0.18f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Optimized gear", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${"%.0f".format(optimized.winRate * 100)}%",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = winColor(optimized.winRate)
+                    )
+                    if (optimized.avgWinTurns < Double.MAX_VALUE) {
+                        Text("avg ${"%.1f".format(optimized.avgWinTurns)} turns", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    val delta = optimized.winRate - baseline.winRate
+                    if (delta != 0.0) {
+                        Text(
+                            "${if (delta >= 0) "+" else ""}${"%.0f".format(delta * 100)}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (delta >= 0) Color(0xFF388E3C) else Color(0xFFD32F2F)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Weapon changes
+        if (step.weaponEquipActions.isNotEmpty()) {
+            HorizontalDivider()
+            Text("Weapon", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            for (action in step.weaponEquipActions) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("weapon", style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(90.dp))
+                    Text("→ ${action.itemCode}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    SourceBadge(action.source)
+                }
+            }
+        }
+
+        // Gear slot changes
+        if (step.result.slotChanges.isNotEmpty()) {
+            HorizontalDivider()
+            Text("Gear changes", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            for (change in step.result.slotChanges) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        change.slot.replace('_', ' ').replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.width(90.dp)
+                    )
+                    Text(
+                        "${change.fromItemCode.ifEmpty { "empty" }} → ${change.toItemCode}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    SourceBadge(change.source)
+                }
+            }
+        }
+
+        if (!hasChanges) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Current gear is already optimal for ${step.monster.name}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        }
+
+        WizardNavRow(
+            onBack = onBack,
+            extraButton = {
+                OutlinedButton(onClick = onReoptimize) { Text("Re-optimize") }
+            },
+            confirmLabel = if (hasChanges) "Equip & Fight" else "Fight! (no changes)",
+            onConfirm = { onConfirm(allActions) }
+        )
+    }
+}
+
+@Composable
+private fun SourceBadge(source: String) {
+    val color = when (source) {
+        "inventory" -> MaterialTheme.colorScheme.primaryContainer
+        "bank"      -> MaterialTheme.colorScheme.tertiaryContainer
+        else        -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    Surface(color = color, shape = RoundedCornerShape(4.dp)) {
+        Text(
+            source,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
 }

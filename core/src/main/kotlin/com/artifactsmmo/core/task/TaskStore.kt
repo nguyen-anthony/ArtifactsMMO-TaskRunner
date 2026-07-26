@@ -18,7 +18,7 @@ private val json = Json {
  */
 @Serializable
 data class StoredTask(
-    val type: String, // "idle", "gather", "fight", "boss_fight", "craft", "task_master", "bank_withdraw", "bank_recycle", "inventory_deposit", "inventory_recycle", "bulk_bank_withdraw", "bulk_inventory_deposit", "event_gather", "event_npc"
+    val type: String, // "idle", "gather", "fight", "boss_fight", "craft", "task_master", "bank_withdraw", "bank_recycle", "inventory_deposit", "inventory_recycle", "bulk_bank_withdraw", "bulk_inventory_deposit", "event_gather", "event_npc", "event_fight"
     val skill: String? = null,
     @SerialName("resource_code") val resourceCode: String? = null,
     @SerialName("resource_name") val resourceName: String? = null,
@@ -226,6 +226,19 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 itemsToSell = task.itemsToSell.map { StoredSimpleItem(it.code, it.quantity) },
                 itemsToBuy = task.itemsToBuy.map { StoredSimpleItem(it.code, it.quantity) }
             )
+            is TaskType.EventFight -> StoredTask(
+                type = "event_fight",
+                eventCode = task.eventCode,
+                monsterCode = task.monsterCode,
+                monsterName = task.monsterName,
+                eventMapX = task.eventMapX,
+                eventMapY = task.eventMapY,
+                eventMapLayer = task.eventMapLayer,
+                dropStrategies = if (task.dropStrategies.isNotEmpty())
+                    task.dropStrategies.mapValues { it.value.name }
+                else null,
+                defaultDropStrategy = task.defaultDropStrategy.name
+            )
         }
     }
 
@@ -321,6 +334,20 @@ class TaskStore(private val file: File = File("tasks.json")) {
                 eventMapLayer = stored.eventMapLayer ?: "overworld",
                 itemsToSell = (stored.itemsToSell ?: emptyList()).map { SimpleItem(it.code, it.quantity) },
                 itemsToBuy = (stored.itemsToBuy ?: emptyList()).map { SimpleItem(it.code, it.quantity) }
+            )
+            "event_fight" -> TaskType.EventFight(
+                eventCode = stored.eventCode ?: "",
+                monsterCode = stored.monsterCode ?: "",
+                monsterName = stored.monsterName ?: "",
+                eventMapX = stored.eventMapX ?: 0,
+                eventMapY = stored.eventMapY ?: 0,
+                eventMapLayer = stored.eventMapLayer ?: "overworld",
+                dropStrategies = stored.dropStrategies?.mapValues { (_, v) ->
+                    try { DropStrategy.valueOf(v) } catch (_: Exception) { DropStrategy.BANK_RAW }
+                } ?: emptyMap(),
+                defaultDropStrategy = stored.defaultDropStrategy?.let {
+                    try { DropStrategy.valueOf(it) } catch (_: Exception) { DropStrategy.BANK_RAW }
+                } ?: DropStrategy.BANK_RAW
             )
             else -> TaskType.Idle
         }

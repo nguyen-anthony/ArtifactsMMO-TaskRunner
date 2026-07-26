@@ -86,7 +86,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(char, taskMaster.x, taskMaster.y)) {
             onStatus("Moving to task master to cancel after deaths...")
-            helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+            helper.navigateToTile(characterName, taskMaster)
         }
 
         onStatus("Cancelling task (too many deaths)...")
@@ -143,7 +143,7 @@ class TaskMasterExecutor(
             ?: return StepResult.Error("No $type task master found on map")
 
         onStatus("Moving to $type task master...")
-        helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+        helper.navigateToTile(characterName, taskMaster)
 
         onStatus("Accepting new task...")
         val taskData = helper.acceptTask(characterName)
@@ -249,6 +249,7 @@ class TaskMasterExecutor(
             if (monsterCode in acceptedMonsterCodes) {
                 onStatus("$monsterCode previously verified — skipping simulation")
                 optimiseWeaponForMonster(characterName, monsterCode, onStatus)
+                optimiseGearForMonster(characterName, monsterCode, onStatus, prevMonsterCode = null)
                 return StepResult.Waiting
             }
 
@@ -296,6 +297,7 @@ class TaskMasterExecutor(
                 onStatus("Win rate acceptable, proceeding with $monsterCode task")
                 acceptedMonsterCodes.add(monsterCode)
                 optimiseWeaponForMonster(characterName, monsterCode, onStatus)
+                optimiseGearForMonster(characterName, monsterCode, onStatus, prevMonsterCode = null)
                 return StepResult.Waiting
             }
 
@@ -312,7 +314,7 @@ class TaskMasterExecutor(
 
             if (!helper.isAt(updatedChar, taskMaster.x, taskMaster.y)) {
                 onStatus("Moving to task master to cancel...")
-                helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+            helper.navigateToTile(characterName, taskMaster)
             }
 
             onStatus("Cancelling task (low win rate)...")
@@ -357,6 +359,49 @@ class TaskMasterExecutor(
                 }
             }
         }
+    }
+
+    /**
+     * Run gear optimization for [monsterCode]. Uses inventory-only pass when the new
+     * monster is resistively similar to the previous one (distance < threshold); otherwise
+     * runs a full pass including bank candidates.
+     */
+    private suspend fun optimiseGearForMonster(
+        characterName: String,
+        monsterCode: String,
+        onStatus: (String) -> Unit,
+        prevMonsterCode: String?
+    ) {
+        val lastMonster = prevMonsterCode ?: fightingExecutor.gearOptimizer.getLastOptimizedMonster(characterName)
+        val needsFullOptimize = if (lastMonster == null) {
+            true
+        } else {
+            val prevProfile = MonsterProfileStore.getProfile(lastMonster)
+            val newProfile  = MonsterProfileStore.getProfile(monsterCode)
+            if (prevProfile == null || newProfile == null) true
+            else MonsterProfileStore.resistanceDistance(prevProfile, newProfile) >= GearOptimizer.DISTANCE_THRESHOLD
+        }
+
+        onStatus("Optimizing gear for $monsterCode (${if (needsFullOptimize) "full" else "inventory-only"})...")
+        val char = helper.refreshCharacter(characterName)
+        val result = try {
+            fightingExecutor.optimizeGearForMonster(characterName, char, monsterCode, inventoryOnly = !needsFullOptimize)
+        } catch (e: Exception) {
+            onStatus("Gear optimization failed: ${e.message}")
+            return
+        }
+
+        if (result.equipActions.isNotEmpty()) {
+            onStatus("Swapping ${result.equipActions.size} gear piece(s) for $monsterCode...")
+            try {
+                helper.retrieveAndEquipItems(characterName, result.equipActions)
+            } catch (e: Exception) {
+                onStatus("Gear swap failed: ${e.message}")
+            }
+        } else {
+            onStatus("Gear already optimal for $monsterCode")
+        }
+        fightingExecutor.gearOptimizer.markOptimized(characterName, monsterCode)
     }
 
     // ── Item Task Fulfillment ──
@@ -736,7 +781,7 @@ class TaskMasterExecutor(
             ?: return StepResult.Error("No ${currentChar.taskType} task master found")
 
         onStatus("Moving to task master to trade ${actualTradeQty}x $taskItemCode...")
-        helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+        helper.navigateToTile(characterName, taskMaster)
 
         // Trade
         onStatus("Trading ${actualTradeQty}x $taskItemCode...")
@@ -798,7 +843,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(char, taskMaster.x, taskMaster.y)) {
             onStatus("Moving to task master to complete task...")
-            helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+            helper.navigateToTile(characterName, taskMaster)
         }
 
         onStatus("Completing task...")
@@ -830,7 +875,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(char, taskMaster.x, taskMaster.y)) {
             onStatus("Moving to task master to cancel task...")
-            helper.moveTo(characterName, taskMaster.x, taskMaster.y)
+            helper.navigateToTile(characterName, taskMaster)
         }
 
         onStatus("Cancelling current task...")

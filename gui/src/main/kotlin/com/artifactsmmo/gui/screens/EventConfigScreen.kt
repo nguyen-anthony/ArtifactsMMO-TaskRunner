@@ -133,23 +133,19 @@ fun EventConfigScreen(
                             }
                         }
 
-                        // ── Monster events (disabled / coming soon) ──────────
+                        // ── Monster events ───────────────────────────────────
                         if (monsterEvents.isNotEmpty()) {
                             item {
                                 SectionHeader("Monster Events")
                             }
                             items(monsterEvents) { def ->
-                                Surface(
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = "${def.name} — coming soon (requires gear optimisation)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                                    )
-                                }
+                                val cfg = configFor(def.code)
+                                MonsterEventCard(
+                                    definition = def,
+                                    config = cfg,
+                                    characterNames = characterNames,
+                                    onUpdate = { updateConfig(it) }
+                                )
                                 HorizontalDivider()
                             }
                         }
@@ -410,9 +406,74 @@ private fun NpcEventCard(
                                 )
                             }
                         }
-                    }
+                    } // end if (buyable.isNotEmpty())
+                } // end else ->
+            } // end when
+        } // end if (config.enabled)
+    }
+}
+
+// ── Monster Event Card ────────────────────────────────────────────────────────
+
+@Composable
+private fun MonsterEventCard(
+    definition: EventDefinition,
+    config: EventConfig,
+    characterNames: List<String>,
+    onUpdate: (EventConfig) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(definition.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Switch(checked = config.enabled, onCheckedChange = { onUpdate(config.copy(enabled = it)) })
+        }
+
+        if (config.enabled) {
+            // Eligible characters
+            Text(
+                text = if (config.eligibleCharacters.isEmpty()) "All characters eligible"
+                       else "Selected: ${config.eligibleCharacters.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (name in characterNames) {
+                    val selected = config.eligibleCharacters.contains(name)
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            val updated = if (selected)
+                                config.eligibleCharacters - name
+                            else
+                                config.eligibleCharacters + name
+                            onUpdate(config.copy(eligibleCharacters = updated))
+                        },
+                        label = { Text(name, style = MaterialTheme.typography.labelSmall) }
+                    )
                 }
             }
+
+            // Min win rate slider
+            val winRatePct = (config.minWinRate * 100).toInt()
+            Text(
+                text = "$winRatePct% win rate required",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(
+                value = config.minWinRate.toFloat(),
+                onValueChange = { onUpdate(config.copy(minWinRate = it.toDouble())) },
+                valueRange = 0f..1f,
+                steps = 19, // 5% increments
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

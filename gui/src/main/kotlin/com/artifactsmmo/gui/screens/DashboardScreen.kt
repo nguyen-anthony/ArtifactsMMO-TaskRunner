@@ -254,6 +254,7 @@ fun DashboardScreen(
                             onStopTask = { appState.taskManager.stopTask(selName) },
                             onOpenBank = { bankDialogCharacter = selName },
                             onOpenInventory = { inventoryDialogCharacter = selName },
+                            onReoptimize = { scope.launch { appState.taskManager.reoptimizeGear(selName) } },
                             modifier = Modifier.weight(0.4f)
                         )
                     }

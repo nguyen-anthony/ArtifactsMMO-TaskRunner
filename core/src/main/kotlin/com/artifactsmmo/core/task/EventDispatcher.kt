@@ -8,7 +8,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-
 /**
  * Listens to [WebSocketManager.messages] and dispatches event tasks to characters.
  *
@@ -70,7 +69,7 @@ class EventDispatcher(
         when (event.content.type) {
             "resource" -> dispatchResourceEvent(event, config)
             "npc"      -> dispatchNpcEvent(event, config)
-            "monster"  -> taskManager.logger.log("EventDispatcher: monster event [${event.name}] skipped — deferred")
+            "monster"  -> dispatchMonsterEvent(event, config)
             else       -> taskManager.logger.log("EventDispatcher: unknown content type '${event.content.type}' for [${event.name}]")
         }
     }
@@ -149,6 +148,94 @@ class EventDispatcher(
                 eventMapLayer = event.map.layer,
                 itemsToSell = config.itemsToSell,
                 itemsToBuy = config.itemsToBuy
+            )
+        )
+    }
+
+    private fun dispatchMonsterEvent(event: ActiveEvent, config: EventConfig) {
+        val candidateNames = if (config.eligibleCharacters.isNotEmpty())
+            config.eligibleCharacters
+        else
+            taskManager.getCharacterNames()
+
+        taskManager.logger.log("EventDispatcher: monster event [${event.name}] — checking ${candidateNames.size} candidate(s): $candidateNames")
+
+        for (name in candidateNames) {
+            scope.launch {
+                dispatchMonsterEventToCharacter(name, event, config)
+            }
+        }
+    }
+
+    private suspend fun dispatchMonsterEventToCharacter(
+        characterName: String,
+        event: ActiveEvent,
+        config: EventConfig
+    ) {
+        val char = try {
+            taskManager.getCharacterDetails(characterName)
+        } catch (e: Exception) {
+            taskManager.logger.log("EventDispatcher: could not fetch $characterName — ${e.message}")
+            return
+        }
+
+        // Weapon optimization
+        taskManager.logger.log("EventDispatcher: optimizing weapon for $characterName vs ${event.name}...")
+        val weaponSwap = try {
+            taskManager.helper.findBestCombatWeapon(char, event.content.code)
+        } catch (_: Exception) { null }
+
+        // Gear optimization
+        taskManager.logger.log("EventDispatcher: optimizing gear for $characterName vs ${event.name}...")
+        val gearResult = try {
+            taskManager.fightingExecutor.gearOptimizer.optimize(char, event.content.code)
+        } catch (_: Exception) {
+            GearOptimizer.OptimizationResult(
+                emptyList(),
+                GearOptimizer.GearScore(0.0, Double.MAX_VALUE, char.prospecting, char.wisdom),
+                GearOptimizer.GearScore(0.0, Double.MAX_VALUE, char.prospecting, char.wisdom),
+                emptyList()
+            )
+        }
+
+        // Win rate gate
+        val winRate = gearResult.optimizedScore.winRate
+        taskManager.logger.log("EventDispatcher: $characterName vs ${event.name} — win rate ${(winRate * 100).toInt()}% (threshold ${(config.minWinRate * 100).toInt()}%)")
+        if (winRate < config.minWinRate) {
+            taskManager.logger.log("EventDispatcher: $characterName skipped — win rate below threshold")
+            return
+        }
+
+        // Build combined equip actions (weapon + gear)
+        val allEquipActions = buildList {
+            if (weaponSwap != null && weaponSwap.itemCode.isNotEmpty()) add(weaponSwap)
+            addAll(gearResult.equipActions)
+        }
+
+        // Execute equip actions before dispatching
+        if (allEquipActions.isNotEmpty()) {
+            taskManager.logger.log("EventDispatcher: equipping ${allEquipActions.size} item(s) for $characterName before event dispatch")
+            try {
+                taskManager.helper.retrieveAndEquipItems(characterName, allEquipActions)
+                taskManager.fightingExecutor.gearOptimizer.markOptimized(characterName, event.content.code)
+            } catch (e: Exception) {
+                taskManager.logger.log("EventDispatcher: equip failed for $characterName — ${e.message}. Dispatching with current gear.")
+            }
+        }
+
+        taskManager.logger.log("EventDispatcher: assigning EventFight [${event.name}] to $characterName")
+        taskManager.assignEventTask(
+            characterName,
+            TaskType.EventFight(
+                eventCode = event.code,
+                monsterCode = event.content.code,
+                monsterName = event.name,
+                eventMapX = event.map.x,
+                eventMapY = event.map.y,
+                eventMapLayer = event.map.layer,
+                equipActions = emptyList(),
+                dropStrategies = emptyMap(),
+                defaultDropStrategy = DropStrategy.BANK_RAW
             )
         )
     }

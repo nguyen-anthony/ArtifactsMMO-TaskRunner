@@ -15,7 +15,10 @@ import com.artifactsmmo.client.models.SimpleItem
  * EventNpc: one-shot sell/buy sequence at an ephemeral NPC event tile, then reverts.
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
-class EventExecutor(private val helper: ActionHelper) {
+class EventExecutor(
+    private val helper: ActionHelper,
+    private val fightingExecutor: FightingExecutor
+) {
 
     /**
      * Execute a single iteration of the event gather loop.
@@ -151,5 +154,83 @@ class EventExecutor(private val helper: ActionHelper) {
         }
 
         return StepResult.QuickTaskComplete
+    }
+
+    /**
+     * Execute a single iteration of the event fight loop.
+     *
+     * Does NOT delegate to [FightingExecutor.executeStep] because that method calls
+     * [helper.findNearest] to locate the monster tile, which fails for event monsters —
+     * the map cache is pre-warmed at startup and never reflects ephemeral event overlays.
+     *
+     * Instead, this method handles the full fight tick directly using the event tile
+     * coordinates stored on the task, bypassing the map cache entirely.
+     */
+    suspend fun executeEventFightStep(
+        characterName: String,
+        task: TaskType.EventFight,
+        isEventActive: () -> Boolean,
+        onStatus: (String) -> Unit,
+        previousChar: com.artifactsmmo.client.models.Character? = null
+    ): StepResult {
+        if (!isEventActive()) return StepResult.EventExpired
+
+        var char = previousChar ?: helper.refreshCharacter(characterName)
+
+        // Inventory full — bank before fighting
+        if (helper.isInventoryFull(char)) {
+            onStatus("Inventory full, banking before event fight...")
+            helper.bankDepositAll(characterName)
+            return StepResult.Banked
+        }
+
+        // Heal if HP is low
+        if (!com.artifactsmmo.client.utils.CharacterUtils.hasEnoughHP(char, 0.90)) {
+            // Delegate healing to FightingExecutor's existing handler via a minimal Fight task
+            val fightTask = TaskType.Fight(
+                monsterCode = task.monsterCode,
+                monsterName = task.monsterName,
+                dropStrategies = task.dropStrategies,
+                defaultDropStrategy = task.defaultDropStrategy
+            )
+            return fightingExecutor.handleEventHealing(characterName, char, fightTask, onStatus)
+        }
+
+        // Navigate to event tile using stored coordinates — never uses map cache
+        val eventTarget = com.artifactsmmo.client.models.MapInfo(
+            mapId = 0, name = "", skin = "",
+            x = task.eventMapX, y = task.eventMapY, layer = task.eventMapLayer,
+            access = com.artifactsmmo.client.models.MapAccess(type = "standard"),
+            interactions = com.artifactsmmo.client.models.MapInteraction()
+        )
+        if (!helper.isAt(char, task.eventMapX, task.eventMapY) || char.layer != task.eventMapLayer) {
+            onStatus("Moving to event: ${task.monsterName}...")
+            char = helper.navigateToTile(characterName, eventTarget)
+        }
+
+        onStatus("Fighting ${task.monsterName} (event)... (HP: ${char.hp}/${char.maxHp})")
+        return try {
+            val result = helper.fight(characterName)
+            val fight = result.fight
+            val charResult = fight.characters.find { it.characterName == characterName }
+            val updatedChar = result.characters.find { it.name == characterName }
+
+            if (fight.result == "win") {
+                val drops = charResult?.drops?.joinToString(", ") { "${it.quantity}x ${it.code}" } ?: ""
+                val xp = charResult?.xp ?: 0
+                val gold = charResult?.gold ?: 0
+                onStatus("Won! +${xp} XP, +${gold} gold${if (drops.isNotEmpty()) ", drops: $drops" else ""}")
+                StepResult.FightWon(xp, gold, updatedChar)
+            } else {
+                onStatus("Lost fight against ${task.monsterName} (event)")
+                StepResult.FightLost("Lost to ${task.monsterName}")
+            }
+        } catch (e: ArtifactsApiException) {
+            when (e.errorCode) {
+                486 -> StepResult.Waiting
+                598 -> StepResult.EventExpired  // tile changed — event ended
+                else -> throw e
+            }
+        }
     }
 }

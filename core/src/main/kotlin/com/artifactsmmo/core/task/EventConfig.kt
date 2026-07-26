@@ -18,5 +18,7 @@ data class EventConfig(
     /** Items to buy from the NPC when this is an NPC event. */
     val itemsToBuy: List<SimpleItem> = emptyList(),
     /** For NPC events: the specific character that should handle trading. Null = skip NPC dispatch. */
-    val designatedTrader: String? = null
+    val designatedTrader: String? = null,
+    /** Minimum simulation win rate (0.0–1.0) required before dispatching to a monster event. */
+    val minWinRate: Double = 0.90
 )

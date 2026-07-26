@@ -68,13 +68,14 @@ class CharacterTaskRunner(
     fun assignTask(task: TaskType, scope: CoroutineScope) {
         this.scope = scope
         val oldTask = currentTask
+        val oldJob = job
         job?.cancel()
 
         // Save previous task when assigning a craft, task master, or quick bank/inventory task (and current task isn't idle)
         val isQuickTask = task is TaskType.BankWithdraw || task is TaskType.BankRecycle ||
             task is TaskType.InventoryDeposit || task is TaskType.InventoryRecycle ||
             task is TaskType.BulkBankWithdraw || task is TaskType.BulkInventoryDeposit ||
-            task is TaskType.EventGather || task is TaskType.EventNpc
+            task is TaskType.EventGather || task is TaskType.EventNpc || task is TaskType.EventFight
         if ((task is TaskType.Craft || task is TaskType.TaskMaster || isQuickTask) && oldTask !is TaskType.Idle) {
             previousTask = oldTask
         } else if (task !is TaskType.Craft && task !is TaskType.TaskMaster && !isQuickTask) {
@@ -95,12 +96,20 @@ class CharacterTaskRunner(
         }
 
         job = scope.launch {
+            // Wait for the previous job to fully stop before doing anything.
+            // job?.cancel() is cooperative — the old coroutine may still be mid-action
+            // (e.g. inside an HTTP gather call or waitForCooldown). Joining ensures the
+            // old loop has fully exited before the new task's cleanup and cooldown wait
+            // begin, preventing both loops from making API calls simultaneously.
+            oldJob?.join()
+
             // Cleanup previous task before starting new one.
             // Skip cleanup when transitioning into or out of a BossFight or event task —
             // event tasks save and revert previousTask; BossFight participants are hard-cancelled.
             if (oldTask !is TaskType.BossFight && task !is TaskType.BossFight &&
                 oldTask !is TaskType.EventGather && task !is TaskType.EventGather &&
-                oldTask !is TaskType.EventNpc && task !is TaskType.EventNpc) {
+                oldTask !is TaskType.EventNpc && task !is TaskType.EventNpc &&
+                oldTask !is TaskType.EventFight && task !is TaskType.EventFight) {
                 runCleanup(oldTask)
             }
 
@@ -182,6 +191,7 @@ class CharacterTaskRunner(
      */
     fun stop() {
         val oldTask = currentTask
+        val oldJob = job
         job?.cancel()
         currentTask = TaskType.Idle
         previousTask = null
@@ -193,8 +203,9 @@ class CharacterTaskRunner(
 
         val s = scope
         if (s != null && oldTask !is TaskType.Idle) {
-            // Launch cleanup then go idle
+            // Join the old job before running cleanup so it isn't still making API calls
             job = s.launch {
+                oldJob?.join()
                 runCleanup(oldTask)
                 updateStatus { it.copy(task = TaskType.Idle, statusMessage = "Stopped", isRunning = false) }
                 job = null
@@ -253,7 +264,7 @@ class CharacterTaskRunner(
                 is TaskType.Craft -> cleanupCraftTask(onStatus)
                 is TaskType.TaskMaster -> cleanupTaskMasterTask(onStatus)
                 is TaskType.BossFight -> {} // no cleanup for boss fight — bank is handled per-loop
-                is TaskType.EventGather, is TaskType.EventNpc -> {} // no cleanup for event tasks
+                is TaskType.EventGather, is TaskType.EventNpc, is TaskType.EventFight -> {} // no cleanup for event tasks
                 is TaskType.BankWithdraw, is TaskType.BankRecycle,
                 is TaskType.InventoryDeposit, is TaskType.InventoryRecycle,
                 is TaskType.BulkBankWithdraw, is TaskType.BulkInventoryDeposit -> {} // no cleanup
@@ -505,6 +516,15 @@ class CharacterTaskRunner(
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg, activeEventCode = task.eventCode) }
                     }
+                    is TaskType.EventFight -> eventExecutor.executeEventFightStep(
+                        characterName, task,
+                        isEventActive = { eventDispatcher.activeEvents.value.containsKey(task.eventCode) },
+                        onStatus = { msg ->
+                            logger.log(characterName, msg)
+                            updateStatus { it.copy(statusMessage = msg, activeEventCode = task.eventCode) }
+                        },
+                        previousChar = previousChar
+                    )
                 }
 
                 // Update counters and thread character to next iteration where available.
@@ -549,6 +569,7 @@ class CharacterTaskRunner(
                             val monsterName = when (val t = task) {
                                 is TaskType.Fight -> t.monsterName
                                 is TaskType.BossFight -> t.monsterName
+                                is TaskType.EventFight -> t.monsterName
                                 is TaskType.TaskMaster -> result.message.removePrefix("Lost to ")
                                 else -> "unknown monster"
                             }
@@ -571,9 +592,12 @@ class CharacterTaskRunner(
                                     })
                                 }
                                 else -> {
-                                    // For plain Fight and BossFight: stop the runner
+                                    // For plain Fight, BossFight, and EventFight: revert to previous task
                                     if (task is TaskType.BossFight && task.isInitiator) {
                                         bossEncounterCoordinator.clearEncounter(characterName)
+                                    }
+                                    if (task is TaskType.EventFight) {
+                                        logger.log(characterName, "Too many deaths in event fight — reverting to previous task")
                                     }
                                     revertToPreviousTask()
                                     break
@@ -786,6 +810,7 @@ class CharacterTaskRunner(
             is TaskType.BulkInventoryDeposit -> "deposit ${task.items.size} items to bank"
             is TaskType.EventGather -> "event: gathering ${task.resourceName}"
             is TaskType.EventNpc -> "event: trading at ${task.npcName}"
+            is TaskType.EventFight -> "event: fighting ${task.monsterName}"
             is TaskType.Idle -> "idle"
         }
     }

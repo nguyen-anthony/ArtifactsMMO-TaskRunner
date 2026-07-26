@@ -158,6 +158,19 @@ sealed class TaskType {
         val itemsToSell: List<SimpleItem>,
         val itemsToBuy: List<SimpleItem>
     ) : TaskType()
+
+    /** Event task: fight a monster that spawned from an event. Reverts to previous task on event end or death threshold. */
+    data class EventFight(
+        val eventCode: String,
+        val monsterCode: String,
+        val monsterName: String,
+        val eventMapX: Int,
+        val eventMapY: Int,
+        val eventMapLayer: String,
+        val equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        val dropStrategies: Map<String, DropStrategy> = emptyMap(),
+        val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
+    ) : TaskType()
 }
 
 /**
