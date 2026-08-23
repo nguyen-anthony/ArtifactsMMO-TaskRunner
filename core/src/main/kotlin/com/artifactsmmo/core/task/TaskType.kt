@@ -168,6 +168,7 @@ sealed class TaskType {
         val eventMapY: Int,
         val eventMapLayer: String,
         val equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        val utilityActions: List<GearOptimizer.UtilityEquipAction> = emptyList(),
         val dropStrategies: Map<String, DropStrategy> = emptyMap(),
         val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
     ) : TaskType()

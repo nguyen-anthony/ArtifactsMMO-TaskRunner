@@ -248,8 +248,7 @@ class TaskMasterExecutor(
             // Skip simulation if we already know this monster is beatable
             if (monsterCode in acceptedMonsterCodes) {
                 onStatus("$monsterCode previously verified — skipping simulation")
-                optimiseWeaponForMonster(characterName, monsterCode, onStatus)
-                optimiseGearForMonster(characterName, monsterCode, onStatus, prevMonsterCode = null)
+                optimiseForMonster(characterName, monsterCode, onStatus)
                 return StepResult.Waiting
             }
 
@@ -281,7 +280,7 @@ class TaskMasterExecutor(
             } catch (e: Exception) {
                 onStatus("Simulation failed (${e.message}), proceeding with task")
                 acceptedMonsterCodes.add(monsterCode) // treat as viable to avoid retrying
-                optimiseWeaponForMonster(characterName, monsterCode, onStatus)
+                optimiseForMonster(characterName, monsterCode, onStatus)
                 return StepResult.Waiting
             }
 
@@ -296,8 +295,7 @@ class TaskMasterExecutor(
             if (winRate >= requiredWinRate) {
                 onStatus("Win rate acceptable, proceeding with $monsterCode task")
                 acceptedMonsterCodes.add(monsterCode)
-                optimiseWeaponForMonster(characterName, monsterCode, onStatus)
-                optimiseGearForMonster(characterName, monsterCode, onStatus, prevMonsterCode = null)
+                optimiseForMonster(characterName, monsterCode, onStatus)
                 return StepResult.Waiting
             }
 
@@ -331,76 +329,45 @@ class TaskMasterExecutor(
     }
 
     /**
-     * Check for and apply a better weapon for [monsterCode], handling both the normal
-     * weapon-swap case and the "unequip gathering tool" case.
+     * Unified weapon + gear + utility optimization for [monsterCode], using the session
+     * cache when possible. This replaces the previous separate weapon and gear passes —
+     * weapon is now part of the greedy optimization loop and can no longer end up out of
+     * sync with gear.
      */
-    private suspend fun optimiseWeaponForMonster(
+    private suspend fun optimiseForMonster(
         characterName: String,
         monsterCode: String,
         onStatus: (String) -> Unit
     ) {
-        onStatus("Checking best weapon for $monsterCode...")
-        val weaponSwap = try {
-            helper.findBestCombatWeapon(helper.refreshCharacter(characterName), monsterCode)
-        } catch (_: Exception) { null }
-
-        when {
-            weaponSwap == null -> onStatus("Current weapon is optimal for $monsterCode")
-            weaponSwap.itemCode.isEmpty() -> {
-                onStatus("No combat weapons available — unequipping gathering tool...")
-                try { helper.unequip(characterName, "weapon") } catch (_: Exception) {}
-            }
-            else -> {
-                onStatus("Switching to ${weaponSwap.itemCode} (better vs $monsterCode)...")
-                try {
-                    helper.retrieveAndEquipItems(characterName, listOf(weaponSwap))
-                } catch (_: Exception) {
-                    onStatus("Weapon swap failed, continuing with current weapon")
-                }
-            }
-        }
-    }
-
-    /**
-     * Run gear optimization for [monsterCode]. Uses inventory-only pass when the new
-     * monster is resistively similar to the previous one (distance < threshold); otherwise
-     * runs a full pass including bank candidates.
-     */
-    private suspend fun optimiseGearForMonster(
-        characterName: String,
-        monsterCode: String,
-        onStatus: (String) -> Unit,
-        prevMonsterCode: String?
-    ) {
-        val lastMonster = prevMonsterCode ?: fightingExecutor.gearOptimizer.getLastOptimizedMonster(characterName)
-        val needsFullOptimize = if (lastMonster == null) {
-            true
-        } else {
-            val prevProfile = MonsterProfileStore.getProfile(lastMonster)
-            val newProfile  = MonsterProfileStore.getProfile(monsterCode)
-            if (prevProfile == null || newProfile == null) true
-            else MonsterProfileStore.resistanceDistance(prevProfile, newProfile) >= GearOptimizer.DISTANCE_THRESHOLD
-        }
-
-        onStatus("Optimizing gear for $monsterCode (${if (needsFullOptimize) "full" else "inventory-only"})...")
+        onStatus("Optimizing loadout for $monsterCode...")
         val char = helper.refreshCharacter(characterName)
         val result = try {
-            fightingExecutor.optimizeGearForMonster(characterName, char, monsterCode, inventoryOnly = !needsFullOptimize)
+            fightingExecutor.optimizeGearForMonster(characterName, char, monsterCode)
         } catch (e: Exception) {
-            onStatus("Gear optimization failed: ${e.message}")
+            onStatus("Optimization failed: ${e.message}")
             return
         }
 
         if (result.equipActions.isNotEmpty()) {
-            onStatus("Swapping ${result.equipActions.size} gear piece(s) for $monsterCode...")
+            onStatus("Swapping ${result.equipActions.size} equipment piece(s) for $monsterCode...")
             try {
                 helper.retrieveAndEquipItems(characterName, result.equipActions)
             } catch (e: Exception) {
-                onStatus("Gear swap failed: ${e.message}")
+                onStatus("Equip swap failed: ${e.message}")
             }
         } else {
             onStatus("Gear already optimal for $monsterCode")
         }
+
+        if (result.utilityActions.isNotEmpty()) {
+            onStatus("Applying ${result.utilityActions.size} utility potion(s) for $monsterCode...")
+            try {
+                helper.retrieveAndEquipUtilities(characterName, result.utilityActions)
+            } catch (e: Exception) {
+                onStatus("Utility equip failed: ${e.message}")
+            }
+        }
+
         fightingExecutor.gearOptimizer.markOptimized(characterName, monsterCode)
     }
 

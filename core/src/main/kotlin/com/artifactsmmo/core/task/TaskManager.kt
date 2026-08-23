@@ -372,16 +372,16 @@ class TaskManager(
     fun getRecentWebSocketLogs(limit: Int = 500): List<WebSocketManager.WebSocketLogEntry> =
         if (::webSocketManager.isInitialized) webSocketManager.getRecentLogs(limit) else emptyList()
 
-    /** Run a full gear optimization for [characterName] vs [monsterCode]. */
+    /** Run a full gear+weapon+utility optimization for [characterName] vs [monsterCode]. */
     suspend fun optimizeGear(characterName: String, monsterCode: String): GearOptimizer.OptimizationResult {
         val char = client.characters.getCharacter(characterName)
-        return fightingExecutor.gearOptimizer.optimize(char, monsterCode)
+        return fightingExecutor.gearOptimizer.optimizeWithCacheHint(char, monsterCode)
     }
 
-    /** Find the best combat weapon for [characterName] vs [monsterCode]. */
+    /** Fast heuristic-only weapon lookup — used by the wizard's dedicated weapon preview. */
     suspend fun findBestWeapon(characterName: String, monsterCode: String): ActionHelper.EquipAction? {
         val char = client.characters.getCharacter(characterName)
-        return helper.findBestCombatWeapon(char, monsterCode)
+        return fightingExecutor.gearOptimizer.findBestWeapon(char, monsterCode)
     }
 
     /**
@@ -397,9 +397,14 @@ class TaskManager(
             else -> return
         }
         val char = client.characters.getCharacter(characterName)
-        val result = fightingExecutor.gearOptimizer.optimize(char, monsterCode)
+        val result = fightingExecutor.gearOptimizer.optimizeWithCacheHint(char, monsterCode)
         if (result.equipActions.isNotEmpty()) {
             helper.retrieveAndEquipItems(characterName, result.equipActions)
+        }
+        if (result.utilityActions.isNotEmpty()) {
+            helper.retrieveAndEquipUtilities(characterName, result.utilityActions)
+        }
+        if (result.equipActions.isNotEmpty() || result.utilityActions.isNotEmpty()) {
             fightingExecutor.gearOptimizer.markOptimized(characterName, monsterCode)
         }
     }

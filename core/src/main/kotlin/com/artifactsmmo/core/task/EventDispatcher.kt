@@ -160,8 +160,12 @@ class EventDispatcher(
 
         taskManager.logger.log("EventDispatcher: monster event [${event.name}] — checking ${candidateNames.size} candidate(s): $candidateNames")
 
-        for (name in candidateNames) {
-            scope.launch {
+        // Sequential dispatch: pairs with GearOptimizer's cache-and-verify so subsequent
+        // characters benefit from the first character's full optimization pass.
+        // Also naturally serializes API sim calls (which are rate-limited to 1/sec globally
+        // via SimulationRateLimiter) so we don't waste time queueing behind ourselves.
+        scope.launch {
+            for (name in candidateNames) {
                 dispatchMonsterEventToCharacter(name, event, config)
             }
         }
@@ -179,50 +183,33 @@ class EventDispatcher(
             return
         }
 
-        // Weapon optimization
-        taskManager.logger.log("EventDispatcher: optimizing weapon for $characterName vs ${event.name}...")
-        val weaponSwap = try {
-            taskManager.helper.findBestCombatWeapon(char, event.content.code)
-        } catch (_: Exception) { null }
-
-        // Gear optimization
-        taskManager.logger.log("EventDispatcher: optimizing gear for $characterName vs ${event.name}...")
-        val gearResult = try {
-            taskManager.fightingExecutor.gearOptimizer.optimize(char, event.content.code)
-        } catch (_: Exception) {
-            GearOptimizer.OptimizationResult(
-                emptyList(),
-                GearOptimizer.GearScore(0.0, Double.MAX_VALUE, char.prospecting, char.wisdom),
-                GearOptimizer.GearScore(0.0, Double.MAX_VALUE, char.prospecting, char.wisdom),
-                emptyList()
-            )
+        // Unified weapon + gear + utility optimization with session cache.
+        // First character does a full pass; subsequent same-level characters benefit from the cache.
+        taskManager.logger.log("EventDispatcher: optimizing for $characterName vs ${event.name}...")
+        val optResult = try {
+            taskManager.fightingExecutor.gearOptimizer.optimizeWithCacheHint(char, event.content.code)
+        } catch (e: Exception) {
+            taskManager.logger.log("EventDispatcher: optimization failed for $characterName: ${e.message}")
+            return
         }
 
-        // Win rate gate
-        val winRate = gearResult.optimizedScore.winRate
+        val winRate = optResult.optimizedScore.winRate
         taskManager.logger.log("EventDispatcher: $characterName vs ${event.name} — win rate ${(winRate * 100).toInt()}% (threshold ${(config.minWinRate * 100).toInt()}%)")
+
         if (winRate < config.minWinRate) {
             taskManager.logger.log("EventDispatcher: $characterName skipped — win rate below threshold")
             return
         }
 
-        // Build combined equip actions (weapon + gear)
-        val allEquipActions = buildList {
-            if (weaponSwap != null && weaponSwap.itemCode.isNotEmpty()) add(weaponSwap)
-            addAll(gearResult.equipActions)
+        if (optResult.equipActions.isNotEmpty() || optResult.utilityActions.isNotEmpty()) {
+            taskManager.logger.log("EventDispatcher: queuing ${optResult.equipActions.size} equip + ${optResult.utilityActions.size} utility action(s) for $characterName — runner will apply after cooldown")
+            taskManager.fightingExecutor.gearOptimizer.markOptimized(characterName, event.content.code)
         }
 
-        // Execute equip actions before dispatching
-        if (allEquipActions.isNotEmpty()) {
-            taskManager.logger.log("EventDispatcher: equipping ${allEquipActions.size} item(s) for $characterName before event dispatch")
-            try {
-                taskManager.helper.retrieveAndEquipItems(characterName, allEquipActions)
-                taskManager.fightingExecutor.gearOptimizer.markOptimized(characterName, event.content.code)
-            } catch (e: Exception) {
-                taskManager.logger.log("EventDispatcher: equip failed for $characterName — ${e.message}. Dispatching with current gear.")
-            }
-        }
-
+        // Assign the EventFight task with the equip/utility actions baked in. The runner's
+        // assignTask() waits for any active cooldown from the previous task before executing
+        // the equip actions, so we avoid the 499 race that used to occur when the dispatcher
+        // tried to equip while the character was still mid-action from a prior task.
         taskManager.logger.log("EventDispatcher: assigning EventFight [${event.name}] to $characterName")
         taskManager.assignEventTask(
             characterName,
@@ -233,7 +220,8 @@ class EventDispatcher(
                 eventMapX = event.map.x,
                 eventMapY = event.map.y,
                 eventMapLayer = event.map.layer,
-                equipActions = emptyList(),
+                equipActions = optResult.equipActions,
+                utilityActions = optResult.utilityActions,
                 dropStrategies = emptyMap(),
                 defaultDropStrategy = DropStrategy.BANK_RAW
             )

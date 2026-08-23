@@ -46,6 +46,14 @@
                 {
                     "code": "highwayman_dagger",
                     "quantity": 0
+                },
+                {
+                    "code": "wooden_club",
+                    "quantity": 0
+                },
+                {
+                    "code": "bandit_armor",
+                    "quantity": 0
                 }
             ],
             "designatedTrader": "Ront"
@@ -75,16 +83,22 @@
             "enabled": true,
             "eligibleCharacters": [
                 "Ront",
-                "Shella"
+                "Shella",
+                "Reila",
+                "Olivia",
+                "Shuckle"
             ]
         },
         {
             "eventCode": "full_moon",
-            "enabled": true,
             "eligibleCharacters": [
                 "Ront",
-                "Shella"
-            ]
+                "Shella",
+                "Olivia",
+                "Reila",
+                "Shuckle"
+            ],
+            "minWinRate": 0.699999988079071
         },
         {
             "eventCode": "corrupted_portal"
@@ -93,12 +107,40 @@
             "eventCode": "portal_demon",
             "enabled": true,
             "eligibleCharacters": [
-                "Ront"
+                "Ront",
+                "Shella",
+                "Reila",
+                "Olivia",
+                "Shuckle"
             ],
             "minWinRate": 0.75
         },
         {
             "eventCode": "corrupted_owlbear",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront",
+                "Shella",
+                "Reila",
+                "Olivia",
+                "Shuckle"
+            ],
+            "minWinRate": 0.75
+        },
+        {
+            "eventCode": "corrupted_ogre",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront",
+                "Shella",
+                "Reila",
+                "Olivia",
+                "Shuckle"
+            ],
+            "minWinRate": 0.75
+        },
+        {
+            "eventCode": "cult_of_darkness",
             "enabled": true,
             "eligibleCharacters": [
                 "Ront"

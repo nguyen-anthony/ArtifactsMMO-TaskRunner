@@ -383,12 +383,8 @@ fun TaskWizardDialog(
                                 load("Optimizing gear for ${s.monster.name}...") {
                                     val result = appState.taskManager.optimizeGear(characterName, s.monster.code)
                                     val cookable = appState.taskManager.getCookableDrops(characterName, s.monster.code)
-                                    val weaponSwap = try {
-                                        appState.taskManager.findBestWeapon(characterName, s.monster.code)
-                                    } catch (_: Exception) { null }
-                                    val weaponActions = if (weaponSwap != null && weaponSwap.itemCode.isNotEmpty())
-                                        listOf(weaponSwap) else emptyList()
-                                    step = WizardStep.GearOptimization(s.monsters, s.monster, cookable, result, weaponActions)
+                                    // Weapon is now included in the unified GearOptimizer result — no separate lookup needed.
+                                    step = WizardStep.GearOptimization(s.monsters, s.monster, cookable, result, emptyList())
                                 }
                             },
                             onCheckEquipment = {

@@ -38,19 +38,16 @@ class FightingExecutor(private val helper: ActionHelper) {
     val gearOptimizer = GearOptimizer(helper)
 
     /**
-     * Run a full or inventory-only gear optimization pass for TaskMaster use.
+     * Run a full gear+weapon+utility optimization for TaskMaster use.
+     * Delegates to [GearOptimizer.optimizeWithCacheHint] which reuses cached results
+     * across similarly-leveled characters when possible.
      */
     suspend fun optimizeGearForMonster(
         characterName: String,
         char: com.artifactsmmo.client.models.Character,
-        monsterCode: String,
-        inventoryOnly: Boolean = false
+        monsterCode: String
     ): GearOptimizer.OptimizationResult {
-        return if (inventoryOnly) {
-            gearOptimizer.optimizeInventoryOnly(char, monsterCode)
-        } else {
-            gearOptimizer.optimize(char, monsterCode)
-        }
+        return gearOptimizer.optimizeWithCacheHint(char, monsterCode)
     }
 
     /**
@@ -72,11 +69,14 @@ class FightingExecutor(private val helper: ActionHelper) {
         // ── One-time weapon optimisation per monster target ──
         // Runs once per character when a new monster code is encountered, then skips on every
         // subsequent iteration to avoid per-fight overhead.
+        // This is a fast heuristic fallback — Fight tasks assigned via the wizard already have
+        // gear+weapon optimized. The check here catches Fight tasks assigned externally or after
+        // gear changes since assignment.
         if (weaponOptimisedForMonster[characterName] != task.monsterCode) {
             weaponOptimisedForMonster[characterName] = task.monsterCode
             onStatus("Checking best weapon for ${task.monsterName}...")
             val weaponSwap = try {
-                helper.findBestCombatWeapon(char, task.monsterCode)
+                gearOptimizer.findBestWeapon(char, task.monsterCode)
             } catch (_: Exception) { null }
 
             when {

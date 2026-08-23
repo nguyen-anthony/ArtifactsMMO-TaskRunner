@@ -19,7 +19,7 @@ import kotlin.time.Instant
  * Handles cooldowns, movement, banking, equipping, and inventory management.
  */
 @OptIn(ExperimentalTime::class)
-class ActionHelper(private val client: ArtifactsMMOClient, internal val contentCache: ContentCache, private val bankState: BankState) {
+class ActionHelper(private val client: ArtifactsMMOClient, internal val contentCache: ContentCache, internal val bankState: BankState) {
 
     // ── Cooldown ──
 
@@ -827,8 +827,22 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
         return result.character
     }
 
+    /** Equip with a quantity — used for utility potion stacks. */
+    suspend fun equip(name: String, itemCode: String, slot: String, quantity: Int): Character {
+        val result = client.actions.equip(name, itemCode, slot, quantity)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
+    }
+
     suspend fun unequip(name: String, slot: String): Character {
         val result = client.actions.unequip(name, slot)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
+    }
+
+    /** Unequip with a quantity — used for utility potion stacks. */
+    suspend fun unequip(name: String, slot: String, quantity: Int): Character {
+        val result = client.actions.unequip(name, slot, quantity)
         waitForCooldown(result.cooldown.expiration)
         return result.character
     }
@@ -1032,7 +1046,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
                 monster = monsterCode,
                 iterations = iterations
             )
-            client.simulation.simulateFight(request)
+            SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
         } catch (e: Exception) {
             // API simulator failed (rate-limit, member-only, network error, etc.)
             // Fall back to the local simulator so the caller always gets a result.
@@ -1298,7 +1312,52 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
             monster    = monsterCode,
             iterations = iterations
         )
-        return client.simulation.simulateFight(request)
+        return SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
+    }
+
+    /**
+     * Simulate combat with both equipment and utility slot overrides.
+     * Utility slots (utility1, utility2) hold a stack of consumable potions with a quantity.
+     * Called by [GearOptimizer] during the utility optimization pass.
+     */
+    suspend fun simulateFightWithSlotAndUtilityOverrides(
+        char: Character,
+        monsterCode: String,
+        slotOverrides: Map<String, String>,
+        utilityOverrides: Map<String, String>,
+        utilityQuantities: Map<String, Int>,
+        iterations: Int = 20
+    ): com.artifactsmmo.client.models.CombatSimulationData {
+        val base = com.artifactsmmo.client.models.FakeCharacterRequest.fromCharacter(char)
+        val u1Code: String? = utilityOverrides["utility1"] ?: base.utility1Slot
+        val u2Code: String? = utilityOverrides["utility2"] ?: base.utility2Slot
+        val u1Qty: Int? = utilityQuantities["utility1"] ?: base.utility1SlotQuantity
+        val u2Qty: Int? = utilityQuantities["utility2"] ?: base.utility2SlotQuantity
+        val overridden = base.copy(
+            weaponSlot    = slotOverrides["weapon"]     ?: base.weaponSlot,
+            shieldSlot    = slotOverrides["shield"]     ?: base.shieldSlot,
+            helmetSlot    = slotOverrides["helmet"]     ?: base.helmetSlot,
+            bodyArmorSlot = slotOverrides["body_armor"] ?: base.bodyArmorSlot,
+            legArmorSlot  = slotOverrides["leg_armor"]  ?: base.legArmorSlot,
+            bootsSlot     = slotOverrides["boots"]      ?: base.bootsSlot,
+            ring1Slot     = slotOverrides["ring1"]      ?: base.ring1Slot,
+            ring2Slot     = slotOverrides["ring2"]      ?: base.ring2Slot,
+            amuletSlot    = slotOverrides["amulet"]     ?: base.amuletSlot,
+            artifact1Slot = slotOverrides["artifact1"]  ?: base.artifact1Slot,
+            artifact2Slot = slotOverrides["artifact2"]  ?: base.artifact2Slot,
+            artifact3Slot = slotOverrides["artifact3"]  ?: base.artifact3Slot,
+            runeSlot      = slotOverrides["rune"]       ?: base.runeSlot,
+            utility1Slot  = if (u1Code.isNullOrEmpty()) null else u1Code,
+            utility1SlotQuantity = if (u1Code.isNullOrEmpty()) null else u1Qty,
+            utility2Slot  = if (u2Code.isNullOrEmpty()) null else u2Code,
+            utility2SlotQuantity = if (u2Code.isNullOrEmpty()) null else u2Qty
+        )
+        val request = com.artifactsmmo.client.models.CombatSimulationRequest(
+            characters = listOf(overridden),
+            monster    = monsterCode,
+            iterations = iterations
+        )
+        return SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
     }
 
     /**
@@ -1326,133 +1385,18 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
     }
 
     /**
-     * Find the best combat weapon available to the character for fighting a specific monster.
-     *
-     * Strategy (single-phase, no simulation):
-     *
-     * Candidates: all weapons the character owns (inventory, bank, or currently equipped)
-     * that are within their character level and are NOT gathering tools (subtype != "tool").
-     *
-     * If the character has no combat weapons at all, returns an [EquipAction] with an empty
-     * itemCode ("") — the caller should treat this as "unequip current weapon" so the
-     * character doesn't fight with a gathering tool.
-     *
-     * Scoring per weapon:
-     *   score = baseDmg + elementalBonus
-     *
-     * where:
-     *   baseDmg      = the weapon's "dmg" effect value (or 0 if absent) — ensures higher-level
-     *                  weapons without elemental attacks are not incorrectly ranked below
-     *                  lower-level elemental weapons.
-     *   elementalBonus = Σ attack_element * -(res_element - meanRes)
-     *                  Uses mean-subtracted resistances so scoring only captures relative
-     *                  elemental advantage, not absolute resistance levels. When all resistances
-     *                  are equal the bonus is 0 and level/damage alone decides the ranking.
-     *
-     * The weapon with the highest score is selected. Ties are broken by item level descending.
-     * Returns null if the best weapon is already equipped (no swap needed) or if no weapons
-     * at all can be determined (monster data unavailable and no combat weapons owned).
-     */
-    suspend fun findBestCombatWeapon(
-        char: Character,
-        monsterCode: String
-    ): EquipAction? {
-        // All weapons in cache, filtered to character's level, excluding gathering tools
-        val allWeapons = try {
-            contentCache.getItemsByType("weapon").filter {
-                it.level <= char.level && it.subtype != "tool"
-            }
-        } catch (_: Exception) { return null }
-
-        // Fetch monster resistances for elemental scoring (cached in ContentCache via getItem)
-        val monster = try {
-            client.content.getMonster(monsterCode)
-        } catch (_: Exception) { null }
-
-        // Build inventory + bank availability map
-        val inventoryCodes = char.inventory
-            .filter { it.quantity > 0 }
-            .associate { it.code to "inventory" }
-
-        val bankCodes = bankState.snapshot.value
-            .filter { it.value > 0 }
-            .mapValues { "bank" }
-
-        val currentWeaponCode = char.weaponSlot.takeIf { it.isNotEmpty() }
-
-        // Build candidate list: owned combat weapons (inventory, bank, or currently equipped)
-        val ownedCombatCandidates = allWeapons.filter { weapon ->
-            weapon.code in inventoryCodes ||
-            weapon.code in bankCodes ||
-            weapon.code == currentWeaponCode
-        }
-
-        // If the character has a tool equipped but no combat weapons anywhere, unequip the tool
-        // so they don't fight with a fishing net / pickaxe / etc.
-        if (ownedCombatCandidates.isEmpty()) {
-            return if (currentWeaponCode != null) {
-                // Signal "unequip" by returning an action with an empty itemCode
-                EquipAction(slot = "weapon", itemCode = "", source = "unequip")
-            } else {
-                null // Nothing equipped, nothing to do
-            }
-        }
-
-        // ── Scoring ──────────────────────────────────────────────────────────
-        fun score(weapon: Item): Double {
-            val effectMap = weapon.effects.associate { it.code to it.value }
-            val globalDmgBonus = (effectMap["dmg"] ?: 0) / 100.0
-
-            if (monster == null) {
-                // No monster context — rank by total raw attack output scaled by global dmg bonus
-                val totalAttack = listOf("attack_fire", "attack_earth", "attack_water", "attack_air")
-                    .sumOf { effectMap[it] ?: 0 }
-                return totalAttack * (1.0 + globalDmgBonus)
-            }
-
-            // Expected damage after resistance: attack * (1 + dmg%) * (1 - resistance%)
-            // Clamp resistance multiplier at 0 — fully immune elements deal 0, not negative damage
-            val elementMap = mapOf(
-                "attack_fire"  to monster.resFire  / 100.0,
-                "attack_earth" to monster.resEarth / 100.0,
-                "attack_water" to monster.resWater / 100.0,
-                "attack_air"   to monster.resAir   / 100.0
-            )
-
-            return elementMap.entries.sumOf { (attackKey, resRatio) ->
-                val baseAttack = effectMap[attackKey] ?: 0
-                val resMult = (1.0 - resRatio).coerceAtLeast(0.0)
-                baseAttack * (1.0 + globalDmgBonus) * resMult
-            }
-        }
-
-        // Select best: primary sort by score descending, tiebreaker by level descending
-        val best = ownedCombatCandidates
-            .sortedWith(compareByDescending<Item> { score(it) }.thenByDescending { it.level })
-            .first()
-
-        // No swap needed if best is already equipped
-        if (best.code == currentWeaponCode) return null
-
-        val source = when {
-            best.code in inventoryCodes -> "inventory"
-            best.code in bankCodes      -> "bank"
-            else                        -> return null
-        }
-
-        return EquipAction(slot = "weapon", itemCode = best.code, source = source)
-    }
-
-    /**
      * Retrieve gear from inventory/bank/workshop (craftable) and equip it.
      *
-     * Flow:
-     *  1. Go to bank; unequip slots that are being replaced and deposit them.
-     *     Tools (subtype == "tool", e.g. pickaxes, axes) are never deposited —
-     *     they stay in inventory so characters keep their gathering tools.
-     *  2. Withdraw bank items and craftable ingredients.
-     *  3. Visit workshops and craft craftable items.
-     *  4. Equip all new items.
+     * Guarantees:
+     *  - Pre-verifies all required items are available before modifying anything.
+     *    If any item is missing, aborts without unequipping.
+     *  - Previous items are NOT deposited until AFTER new items are successfully equipped,
+     *    so rollback is possible on any per-slot failure.
+     *  - On withdrawal/craft failure, rolls back by re-equipping the previously equipped items.
+     *  - Explicit `println("[$name] ...")` logging on every failure for diagnosability.
+     *  - Safety net: after all swaps, verifies no critical combat slot was left empty.
+     *
+     * Tools (subtype == "tool", e.g. pickaxes, axes) are never deposited.
      */
     suspend fun retrieveAndEquipItems(
         characterName: String,
@@ -1462,62 +1406,146 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         var char = refreshCharacter(characterName)
 
-        // Fast path: if all equip actions are from inventory, skip bank entirely
-        if (equipActions.all { it.source == "inventory" }) {
-            // Unequip current items in each slot
+        // ── Step 1: Pre-verify all items are available ──
+        val bankActions = equipActions.filter { it.source == "bank" }
+        val invActions  = equipActions.filter { it.source == "inventory" }
+        val craftActions = equipActions.filter { it.source == "craftable" }
+
+        // Utility slot support: track cumulative bank withdrawals so multiple bank picks
+        // of the same code (e.g. two artifact slots picking the same artifact — shouldn't
+        // happen with dedup but be defensive) don't double-count against a single bank stack.
+        val bankNeeded = bankActions.groupingBy { it.itemCode }.eachCount()
+        for ((code, needed) in bankNeeded) {
+            val available = bankState.getQuantity(code)
+            if (available < needed) {
+                println("[$characterName] retrieveAndEquipItems: aborting — bank has $available x $code but need $needed")
+                return char
+            }
+        }
+        val invNeeded = invActions.groupingBy { it.itemCode }.eachCount()
+        for ((code, needed) in invNeeded) {
+            val available = getItemQuantity(char, code)
+            if (available < needed) {
+                println("[$characterName] retrieveAndEquipItems: aborting — inventory has $available x $code but need $needed")
+                return char
+            }
+        }
+        // Craftable: verify all ingredients present in bank
+        for (action in craftActions) {
+            val item = try { getItem(action.itemCode) } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipItems: aborting — cannot load craftable ${action.itemCode}: ${e.message}")
+                return char
+            }
+            val craft = item.craft ?: run {
+                println("[$characterName] retrieveAndEquipItems: aborting — ${action.itemCode} has no craft recipe")
+                return char
+            }
+            for (ingredient in craft.items) {
+                val available = bankState.getQuantity(ingredient.code)
+                if (available < ingredient.quantity) {
+                    println("[$characterName] retrieveAndEquipItems: aborting — bank has $available x ${ingredient.code} but need ${ingredient.quantity} to craft ${action.itemCode}")
+                    return char
+                }
+            }
+        }
+
+        // Snapshot what's currently equipped in each affected slot (used for rollback)
+        val prevEquipped: Map<String, String> = equipActions.associate { it.slot to getEquippedInSlot(char, it.slot) }
+
+        // Helper: attempt rollback by re-equipping any previously-equipped items
+        // Only re-equips items whose slots we've unequipped and whose previous code is non-empty.
+        // Silently swallows inner failures — this is a best-effort recovery.
+        suspend fun rollback(reason: String, unequippedSlots: Set<String>): Character {
+            println("[$characterName] retrieveAndEquipItems: rolling back — $reason")
+            var c = refreshCharacter(characterName)
+            for (slot in unequippedSlots) {
+                val prev = prevEquipped[slot] ?: continue
+                if (prev.isEmpty()) continue
+                try {
+                    c = equip(characterName, prev, slot)
+                    println("[$characterName] retrieveAndEquipItems: rollback restored $prev in $slot")
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipItems: rollback FAILED to restore $prev in $slot: ${e.message}")
+                }
+            }
+            return c
+        }
+
+        // ── Fast path: all inventory sources — no bank trip needed ──
+        if (bankActions.isEmpty() && craftActions.isEmpty()) {
+            val unequippedSlots = mutableSetOf<String>()
             for (action in equipActions) {
-                val equipped = getEquippedInSlot(char, action.slot)
+                val equipped = prevEquipped[action.slot] ?: ""
                 if (equipped.isNotEmpty()) {
-                    char = unequip(characterName, action.slot)
+                    try {
+                        char = unequip(characterName, action.slot)
+                        unequippedSlots.add(action.slot)
+                    } catch (e: Exception) {
+                        println("[$characterName] retrieveAndEquipItems: unequip failed for ${action.slot}: ${e.message}")
+                        return rollback("unequip failed for ${action.slot}", unequippedSlots)
+                    }
+                } else {
+                    unequippedSlots.add(action.slot) // slot was empty; still track for rollback semantics
                 }
             }
             // Equip new items
             for (action in equipActions) {
                 try {
                     char = equip(characterName, action.itemCode, action.slot)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipItems: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
+                    // Per-slot rollback: try to restore the original item for this slot
+                    val prev = prevEquipped[action.slot] ?: ""
+                    if (prev.isNotEmpty()) {
+                        try {
+                            char = equip(characterName, prev, action.slot)
+                            println("[$characterName] retrieveAndEquipItems: per-slot rollback restored $prev in ${action.slot}")
+                        } catch (e2: Exception) {
+                            println("[$characterName] retrieveAndEquipItems: per-slot rollback FAILED for ${action.slot}: ${e2.message} — SLOT LEFT EMPTY")
+                        }
+                    }
+                }
             }
             return char
         }
 
-        // Snapshot what's currently equipped in each affected slot
-        val prevEquipped = equipActions.associate { it.slot to getEquippedInSlot(char, it.slot) }
+        // ── Bank/craftable path ──
 
-        // ── Step 1: Go to bank, unequip replaced slots, deposit them ──
-        val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
+        // Step 2: Move to bank
+        val bank = findNearestBank(char) ?: run {
+            println("[$characterName] retrieveAndEquipItems: aborting — no bank found on map")
+            return char
+        }
         char = moveTo(characterName, bank.x, bank.y)
 
+        // Step 3: Unequip replaced slots (do NOT deposit yet — needed for rollback)
+        val unequippedSlots = mutableSetOf<String>()
         for ((slot, equipped) in prevEquipped) {
             if (equipped.isNotEmpty()) {
-                char = unequip(characterName, slot)
+                try {
+                    char = unequip(characterName, slot)
+                    unequippedSlots.add(slot)
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipItems: unequip failed for $slot: ${e.message}")
+                    return rollback("unequip failed for $slot", unequippedSlots)
+                }
             }
         }
 
-        // Deposit unequipped items — but keep tools (pickaxes, axes, etc.) in inventory
-        val itemsToDeposit = mutableListOf<SimpleItem>()
-        for (code in prevEquipped.values) {
-            if (code.isEmpty()) continue
-            if (contentCache.getItemOrNull(code)?.subtype != "tool") {
-                itemsToDeposit.add(SimpleItem(code, 1))
-            }
-        }
-        if (itemsToDeposit.isNotEmpty()) {
-            val result = client.bank.depositItems(characterName, itemsToDeposit)
-            waitForCooldown(result.cooldown.expiration)
-            char = result.character
-        }
-
-        // ── Step 2: Withdraw bank items ──
-        for (action in equipActions.filter { it.source == "bank" }) {
+        // Step 4: Withdraw bank items (explicit logging + rollback on failure)
+        for (action in bankActions) {
             try {
                 val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(action.itemCode, 1)))
                 waitForCooldown(result.cooldown.expiration)
                 char = result.character
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipItems: bank withdraw failed for ${action.itemCode}: ${e.message}")
+                return rollback("bank withdraw failed for ${action.itemCode}", unequippedSlots)
+            }
         }
 
-        // ── Step 3: Withdraw ingredients for craftable items ──
-        for (action in equipActions.filter { it.source == "craftable" }) {
+        // Step 5: Withdraw craft ingredients
+        for (action in craftActions) {
             try {
                 val item = getItem(action.itemCode)
                 val craft = item.craft ?: continue
@@ -1525,32 +1553,158 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
                 val result = client.bank.withdrawItems(characterName, ingredients)
                 waitForCooldown(result.cooldown.expiration)
                 char = result.character
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipItems: craft ingredient withdraw failed for ${action.itemCode}: ${e.message}")
+                return rollback("craft ingredient withdraw failed for ${action.itemCode}", unequippedSlots)
+            }
         }
 
-        // ── Step 4: Craft craftable items at workshops ──
-        val craftableActions = equipActions.filter { it.source == "craftable" }
-        val craftBySkill = craftableActions.groupBy { action ->
+        // Step 6: Craft craftable items at workshops
+        val craftBySkill = craftActions.groupBy { action ->
             try { getItem(action.itemCode).craft?.skill ?: "weaponcrafting" }
             catch (_: Exception) { "weaponcrafting" }
         }
         for ((skill, actions) in craftBySkill) {
-            val workshop = findNearestWorkshop(char, skill) ?: continue
+            val workshop = findNearestWorkshop(char, skill) ?: run {
+                println("[$characterName] retrieveAndEquipItems: no $skill workshop found — skipping craft actions")
+                continue
+            }
             char = moveTo(characterName, workshop.x, workshop.y)
             for (action in actions) {
                 try {
                     val result = client.actions.craft(characterName, action.itemCode, 1)
                     waitForCooldown(result.cooldown.expiration)
                     char = result.character
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipItems: craft failed for ${action.itemCode}: ${e.message}")
+                    return rollback("craft failed for ${action.itemCode}", unequippedSlots)
+                }
             }
         }
 
-        // ── Step 5: Equip all new items ──
+        // Step 7: Equip all new items — per-slot success tracking + rollback on failure
+        val successfullyEquippedSlots = mutableSetOf<String>()
         for (action in equipActions) {
             try {
                 char = equip(characterName, action.itemCode, action.slot)
-            } catch (_: Exception) {}
+                successfullyEquippedSlots.add(action.slot)
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipItems: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
+                // Per-slot rollback: try to restore the original item for this slot
+                val prev = prevEquipped[action.slot] ?: ""
+                if (prev.isNotEmpty()) {
+                    try {
+                        char = equip(characterName, prev, action.slot)
+                        println("[$characterName] retrieveAndEquipItems: per-slot rollback restored $prev in ${action.slot}")
+                    } catch (e2: Exception) {
+                        println("[$characterName] retrieveAndEquipItems: per-slot rollback FAILED for ${action.slot}: ${e2.message} — SLOT LEFT EMPTY")
+                    }
+                }
+            }
+        }
+
+        // Step 8: Deposit successfully replaced prev items (skip tools)
+        val itemsToDeposit = mutableListOf<SimpleItem>()
+        for ((slot, prevCode) in prevEquipped) {
+            if (prevCode.isEmpty()) continue
+            if (slot !in successfullyEquippedSlots) continue  // rollback restored the original — don't deposit
+            if (contentCache.getItemOrNull(prevCode)?.subtype == "tool") continue
+            itemsToDeposit.add(SimpleItem(prevCode, 1))
+        }
+        if (itemsToDeposit.isNotEmpty()) {
+            try {
+                val result = client.bank.depositItems(characterName, itemsToDeposit)
+                waitForCooldown(result.cooldown.expiration)
+                char = result.character
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipItems: final deposit of replaced items failed: ${e.message} (items still in inventory)")
+            }
+        }
+
+        // Step 9: Safety net — check no combat-critical slot was left empty when it shouldn't be
+        char = refreshCharacter(characterName)
+        for ((slot, prevCode) in prevEquipped) {
+            if (prevCode.isEmpty()) continue  // slot was already empty before — that's fine
+            val nowEquipped = getEquippedInSlot(char, slot)
+            if (nowEquipped.isNotEmpty()) continue  // something is equipped — good
+            // Slot ended up empty despite having something before. Try to recover.
+            val inInventory = getItemQuantity(char, prevCode)
+            if (inInventory >= 1) {
+                try {
+                    char = equip(characterName, prevCode, slot)
+                    println("[$characterName] retrieveAndEquipItems: safety-net restored $prevCode in $slot from inventory")
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipItems: safety-net could not restore $prevCode in $slot: ${e.message}")
+                }
+            } else {
+                println("[$characterName] retrieveAndEquipItems: WARNING — $slot ended up empty and $prevCode no longer in inventory")
+            }
+        }
+
+        return char
+    }
+
+    /**
+     * Retrieve utility potions from bank (if needed) and equip them in utility slots.
+     * Utility slots hold stacks (up to 100) — quantity is part of the equip action.
+     *
+     * Assumes candidates come from [GearOptimizer.UtilityEquipAction] which already
+     * carries the desired stack quantity and the source (inventory or bank).
+     */
+    suspend fun retrieveAndEquipUtilities(
+        characterName: String,
+        actions: List<GearOptimizer.UtilityEquipAction>
+    ): Character {
+        if (actions.isEmpty()) return refreshCharacter(characterName)
+
+        var char = refreshCharacter(characterName)
+
+        // Determine bank withdrawals: bring inventory up to desired quantity for each utility.
+        val bankWithdrawals = mutableListOf<SimpleItem>()
+        for (action in actions) {
+            val inInv = getItemQuantity(char, action.itemCode)
+            val deficit = action.quantity - inInv
+            if (deficit > 0) {
+                val bankQty = bankState.getQuantity(action.itemCode)
+                val toWithdraw = deficit.coerceAtMost(bankQty)
+                if (toWithdraw > 0) bankWithdrawals.add(SimpleItem(action.itemCode, toWithdraw))
+            }
+        }
+
+        // Travel to bank if we need to withdraw anything
+        if (bankWithdrawals.isNotEmpty()) {
+            val bank = findNearestBank(char)
+            if (bank == null) {
+                println("[$characterName] retrieveAndEquipUtilities: no bank found — skipping")
+                return char
+            }
+            char = navigateToTile(characterName, bank)
+            try {
+                val result = client.bank.withdrawItems(characterName, bankWithdrawals)
+                waitForCooldown(result.cooldown.expiration)
+                char = result.character
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipUtilities: bank withdraw failed: ${e.message}")
+                return char
+            }
+        }
+
+        // Unequip current utility items if different, then equip the new one with quantity.
+        for (action in actions) {
+            val current = getEquippedInSlot(char, action.slot)
+            try {
+                if (current.isNotEmpty() && current != action.itemCode) {
+                    char = unequip(characterName, action.slot)
+                }
+                if (current != action.itemCode) {
+                    // Cap quantity to what's actually in inventory
+                    val available = getItemQuantity(char, action.itemCode)
+                    val qty = action.quantity.coerceAtMost(available).coerceAtLeast(1)
+                    char = equip(characterName, action.itemCode, action.slot, qty)
+                }
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipUtilities: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
+            }
         }
 
         return char

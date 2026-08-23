@@ -155,6 +155,30 @@ class CharacterTaskRunner(
                 }
             }
 
+            // For event fight tasks, execute pending equipment + utility actions first.
+            // These are computed by EventDispatcher (weapon+gear optimization) and passed
+            // through the task, so the runner applies them in the proper sequence AFTER
+            // waitForActiveCooldown — avoiding 499 cooldown races between the previous task
+            // and the new equipping actions.
+            if (task is TaskType.EventFight && (task.equipActions.isNotEmpty() || task.utilityActions.isNotEmpty())) {
+                try {
+                    if (task.equipActions.isNotEmpty()) {
+                        logger.log(characterName, "Equipping ${task.equipActions.size} item(s) before event fight...")
+                        updateStatus { it.copy(statusMessage = "Equipping gear for event...") }
+                        helper.retrieveAndEquipItems(characterName, task.equipActions)
+                    }
+                    if (task.utilityActions.isNotEmpty()) {
+                        logger.log(characterName, "Applying ${task.utilityActions.size} utility potion(s) before event fight...")
+                        updateStatus { it.copy(statusMessage = "Applying utility potions for event...") }
+                        helper.retrieveAndEquipUtilities(characterName, task.utilityActions)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.log(characterName, "[event-equip] Error during gear/utility retrieval: ${e.message}")
+                }
+            }
+
             // For boss fight initiators with equip actions, execute them first
             if (task is TaskType.BossFight && task.isInitiator && task.equipActions.isNotEmpty()) {
                 try {
