@@ -15,6 +15,16 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 /**
+ * Thrown when a map transition has a `cost`/`has_item` condition that cannot be met —
+ * the character doesn't have the required item(s) in inventory or bank.
+ *
+ * Distinct from other exceptions so the runner ([CharacterTaskRunner]) can stop the
+ * current task cleanly instead of infinite-retrying (which would be pointless — the
+ * missing key items won't materialize).
+ */
+class TransitionConditionUnsatisfiableException(message: String) : Exception(message)
+
+/**
  * Common helper functions for character actions.
  * Handles cooldowns, movement, banking, equipping, and inventory management.
  */
@@ -55,7 +65,9 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
     /**
      * Move character to coordinates. Returns updated character.
-     * Handles "already at destination" (497) gracefully.
+     * Handles "already at destination" (490/497) gracefully. On other errors, logs
+     * diagnostic context (character position + layer + target) before re-throwing so
+     * 595 "no path" failures are easier to diagnose.
      */
     suspend fun moveTo(name: String, x: Int, y: Int): Character {
         return try {
@@ -66,7 +78,14 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
             if (e.errorCode == 490 || e.errorCode == 497) {
                 // Already at destination
                 refreshCharacter(name)
-            } else throw e
+            } else {
+                val ctx = try {
+                    val c = refreshCharacter(name)
+                    "current=(${c.x},${c.y},${c.layer})"
+                } catch (_: Exception) { "current=<unknown>" }
+                println("[$name] moveTo(x=$x, y=$y) failed [${e.errorCode}] ${e.message} — $ctx")
+                throw e
+            }
         }
     }
 
@@ -109,6 +128,14 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
                     "Cannot navigate: character is on layer '${char.layer}' with no exit transition"
                 )
             char = moveTo(name, exitTile.x, exitTile.y)
+            val exitConditions = exitTile.interactions.transition?.conditions ?: emptyList()
+            if (exitConditions.isNotEmpty()) {
+                char = satisfyTransitionConditions(name, char, exitConditions)
+                // If we banked, re-verify position (satisfyTransitionConditions may have moved us)
+                if (!isAt(char, exitTile.x, exitTile.y)) {
+                    char = moveTo(name, exitTile.x, exitTile.y)
+                }
+            }
             char = useTransition(name)
         }
 
@@ -119,12 +146,86 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
                     "Cannot navigate: no accessible overworld transition tile leads to layer '$targetLayer'"
                 )
             char = moveTo(name, entryTile.x, entryTile.y)
+            val entryConditions = entryTile.interactions.transition?.conditions ?: emptyList()
+            if (entryConditions.isNotEmpty()) {
+                char = satisfyTransitionConditions(name, char, entryConditions)
+                if (!isAt(char, entryTile.x, entryTile.y)) {
+                    char = moveTo(name, entryTile.x, entryTile.y)
+                }
+            }
             char = useTransition(name)
         }
 
         // ── Step 3: Move to the final destination on the correct layer ────────
         if (!isAt(char, targetMap.x, targetMap.y)) {
             char = moveTo(name, targetMap.x, targetMap.y)
+        }
+
+        return char
+    }
+
+    /**
+     * Ensure the character can pay any conditions attached to a transition tile.
+     *
+     * Handles the following [Condition.operator] values:
+     *  - `cost`: character must have [Condition.value] of [Condition.code] in inventory.
+     *    Withdraws from bank if inventory is insufficient. Item is consumed by the transition.
+     *  - `has_item`: same as cost but not consumed by the transition (still needs to be present).
+     *  - `achievement_unlocked`: should have been pre-filtered by [ContentCache.preWarmMaps].
+     *    Defensively logged if it reaches runtime.
+     *
+     * Throws [TransitionConditionUnsatisfiableException] if a condition cannot be satisfied
+     * — this is a distinct exception type so the runner can stop the task cleanly instead
+     * of infinite-retrying.
+     *
+     * The returned [Character] reflects any bank trip taken to withdraw items — the caller
+     * should verify the character is still at the transition tile after this returns.
+     */
+    private suspend fun satisfyTransitionConditions(
+        characterName: String,
+        charAtTile: Character,
+        conditions: List<com.artifactsmmo.client.models.Condition>
+    ): Character {
+        var char = charAtTile
+        val itemsToWithdraw = mutableListOf<SimpleItem>()
+
+        for (condition in conditions) {
+            when (condition.operator) {
+                "cost", "has_item" -> {
+                    val required = condition.value
+                    val inInventory = getItemQuantity(char, condition.code)
+                    if (inInventory >= required) continue
+                    val deficit = required - inInventory
+                    val inBank = bankState.getQuantity(condition.code)
+                    if (inBank < deficit) {
+                        throw TransitionConditionUnsatisfiableException(
+                            "Cannot satisfy transition condition: need $required ${condition.code}, " +
+                            "have $inInventory in inventory + $inBank in bank"
+                        )
+                    }
+                    itemsToWithdraw.add(SimpleItem(condition.code, deficit))
+                }
+                "achievement_unlocked" -> {
+                    println("[$characterName] Unexpected achievement_unlocked condition at runtime — $condition")
+                }
+                else -> {
+                    println("[$characterName] Unknown transition condition operator: ${condition.operator}")
+                }
+            }
+        }
+
+        if (itemsToWithdraw.isNotEmpty()) {
+            val bank = contentCache.findNearest(char, "bank", null, layer = "overworld")
+                ?: throw TransitionConditionUnsatisfiableException(
+                    "Need bank to satisfy transition, but no bank found"
+                )
+            // Use navigateToTile so we handle any layer transitions cleanly. If we're on a
+            // sub-layer at an exit transition tile whose exit itself is conditional, this
+            // could recurse — accept that risk; in practice exit transitions are unconditional.
+            char = navigateToTile(characterName, bank)
+            val result = client.bank.withdrawItems(characterName, itemsToWithdraw)
+            waitForCooldown(result.cooldown.expiration)
+            char = result.character
         }
 
         return char
@@ -1361,6 +1462,64 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
     }
 
     /**
+     * A single participant's full loadout for a cooperative fight simulation.
+     * Used by [simulateCoopFight] to describe each character in the multi-character
+     * simulation request.
+     */
+    data class CoopParticipantLoadout(
+        val char: Character,
+        val slotOverrides: Map<String, String> = emptyMap(),
+        val utilityOverrides: Map<String, String> = emptyMap(),
+        val utilityQuantities: Map<String, Int> = emptyMap()
+    )
+
+    /**
+     * Simulate a cooperative fight against [monsterCode] with the given multi-character
+     * loadouts. The /simulation/fight API endpoint accepts an array of characters and
+     * returns the aggregated coop team win rate.
+     *
+     * Rate-limited via [SimulationRateLimiter] like the single-character sim methods.
+     */
+    suspend fun simulateCoopFight(
+        monsterCode: String,
+        participantLoadouts: List<CoopParticipantLoadout>,
+        iterations: Int = 100
+    ): com.artifactsmmo.client.models.CombatSimulationData {
+        val fakeChars = participantLoadouts.map { p ->
+            val base = com.artifactsmmo.client.models.FakeCharacterRequest.fromCharacter(p.char)
+            val u1Code: String? = p.utilityOverrides["utility1"] ?: base.utility1Slot
+            val u2Code: String? = p.utilityOverrides["utility2"] ?: base.utility2Slot
+            val u1Qty: Int? = p.utilityQuantities["utility1"] ?: base.utility1SlotQuantity
+            val u2Qty: Int? = p.utilityQuantities["utility2"] ?: base.utility2SlotQuantity
+            base.copy(
+                weaponSlot    = p.slotOverrides["weapon"]     ?: base.weaponSlot,
+                shieldSlot    = p.slotOverrides["shield"]     ?: base.shieldSlot,
+                helmetSlot    = p.slotOverrides["helmet"]     ?: base.helmetSlot,
+                bodyArmorSlot = p.slotOverrides["body_armor"] ?: base.bodyArmorSlot,
+                legArmorSlot  = p.slotOverrides["leg_armor"]  ?: base.legArmorSlot,
+                bootsSlot     = p.slotOverrides["boots"]      ?: base.bootsSlot,
+                ring1Slot     = p.slotOverrides["ring1"]      ?: base.ring1Slot,
+                ring2Slot     = p.slotOverrides["ring2"]      ?: base.ring2Slot,
+                amuletSlot    = p.slotOverrides["amulet"]     ?: base.amuletSlot,
+                artifact1Slot = p.slotOverrides["artifact1"]  ?: base.artifact1Slot,
+                artifact2Slot = p.slotOverrides["artifact2"]  ?: base.artifact2Slot,
+                artifact3Slot = p.slotOverrides["artifact3"]  ?: base.artifact3Slot,
+                runeSlot      = p.slotOverrides["rune"]       ?: base.runeSlot,
+                utility1Slot  = if (u1Code.isNullOrEmpty()) null else u1Code,
+                utility1SlotQuantity = if (u1Code.isNullOrEmpty()) null else u1Qty,
+                utility2Slot  = if (u2Code.isNullOrEmpty()) null else u2Code,
+                utility2SlotQuantity = if (u2Code.isNullOrEmpty()) null else u2Qty
+            )
+        }
+        val request = com.artifactsmmo.client.models.CombatSimulationRequest(
+            characters = fakeChars,
+            monster    = monsterCode,
+            iterations = iterations
+        )
+        return SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
+    }
+
+    /**
      * Simulate combat locally (no API call) after applying [slotOverrides] to [char]'s stats.
      * For each overridden slot, fetches the currently-equipped item and the candidate item
      * from ContentCache, then applies the stat delta via [Character.applyItemDelta].
@@ -1511,12 +1670,52 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         // ── Bank/craftable path ──
 
-        // Step 2: Move to bank
+        // Step 2: Move to bank — use navigateToTile so cross-layer characters (e.g. a
+        // participant coming from an underground fight when boss dispatch fires) are
+        // properly routed back through the appropriate transition instead of failing 595.
         val bank = findNearestBank(char) ?: run {
             println("[$characterName] retrieveAndEquipItems: aborting — no bank found on map")
             return char
         }
-        char = moveTo(characterName, bank.x, bank.y)
+        char = navigateToTile(characterName, bank)
+
+        // Step 2.5: Pre-deposit non-essential inventory to make room for unequipped items
+        // + new bank withdrawals. Without this, characters with nearly-full inventory hit
+        // 497 during withdrawal (unequip fills inventory, then withdraw has no space).
+        //
+        // Reserve headroom = number of slots we'll unequip + number of items we'll withdraw
+        // + 5-slot safety margin.
+        val slotsToUnequip = prevEquipped.count { it.value.isNotEmpty() }
+        val itemsToWithdrawCount = bankActions.size + craftActions.sumOf {
+            try { getItem(it.itemCode).craft?.items?.size ?: 0 } catch (_: Exception) { 0 }
+        }
+        val headroomNeeded = slotsToUnequip + itemsToWithdrawCount + 5
+        val currentInvTotal = char.inventory.sumOf { it.quantity }
+        val invCapacity = char.inventoryMaxItems
+        val roomNeeded = (currentInvTotal + headroomNeeded) - invCapacity
+        if (roomNeeded > 0) {
+            val itemsToPreDeposit = mutableListOf<SimpleItem>()
+            for (slot in char.inventory) {
+                if (slot.quantity <= 0 || slot.code.isEmpty()) continue
+                val item = try { contentCache.getItemOrNull(slot.code) } catch (_: Exception) { null }
+                if (item == null) continue
+                // Never pre-deposit tools (subtype=="tool") or items we're about to equip
+                if (item.subtype == "tool") continue
+                if (equipActions.any { it.itemCode == slot.code }) continue
+                itemsToPreDeposit.add(SimpleItem(slot.code, slot.quantity))
+                if (itemsToPreDeposit.sumOf { it.quantity } >= roomNeeded) break
+            }
+            if (itemsToPreDeposit.isNotEmpty()) {
+                try {
+                    println("[$characterName] retrieveAndEquipItems: pre-depositing ${itemsToPreDeposit.size} item(s) to make room ($roomNeeded slots needed)")
+                    val result = client.bank.depositItems(characterName, itemsToPreDeposit)
+                    waitForCooldown(result.cooldown.expiration)
+                    char = result.character
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipItems: pre-deposit failed: ${e.message} — proceeding anyway")
+                }
+            }
+        }
 
         // Step 3: Unequip replaced slots (do NOT deposit yet — needed for rollback)
         val unequippedSlots = mutableSetOf<String>()

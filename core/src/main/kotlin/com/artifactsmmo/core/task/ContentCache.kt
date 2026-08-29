@@ -66,6 +66,15 @@ class ContentCache(private val contentService: ContentService) {
                         }
                         if (allMet) maps.add(tile)
                     }
+                    "restricted" -> {
+                        // Restricted tiles are only walkable from other restricted maps
+                        // (they're behind a transition, e.g. boss instances like the Lich Tomb).
+                        // We still include them so findNearest() can return the tile as a target
+                        // for navigateToTile(), which will route through the transition.
+                        // A* moveTo() to these tiles from a non-restricted layer will fail — but
+                        // navigateToTile handles that by transitioning first.
+                        maps.add(tile)
+                    }
                     // "blocked" and anything else — skip
                 }
             }
@@ -158,19 +167,27 @@ class ContentCache(private val contentService: ContentService) {
         destX: Int? = null,
         destY: Int? = null
     ): MapInfo? {
+        // Always pick the transition whose destination lands closest to the target —
+        // regardless of whether it has a condition. This is essential for correctness:
+        // sub-layers can contain multiple disconnected regions, and each region is
+        // reachable only through a specific transition. Choosing a DIFFERENT transition
+        // just because it's "free" will drop the character in the wrong region, from
+        // which A* movement to the true target is impossible (595 no path).
+        //
+        // If the closest transition has a condition (e.g. a key item cost), the caller
+        // must satisfy it — see [ActionHelper.satisfyTransitionConditions]. If the
+        // condition can't be satisfied, the caller should abort the task.
         val candidates = allMaps.filter { map ->
             map.layer == "overworld" &&
             map.interactions.transition?.layer == targetLayer
         }
         return if (destX != null && destY != null) {
-            // Pick the transition whose destination lands closest to the target tile
             candidates.minByOrNull { map ->
                 val tx = map.interactions.transition!!.x
                 val ty = map.interactions.transition!!.y
                 abs(tx - destX) + abs(ty - destY)
             }
         } else {
-            // No destination known — nearest transition tile to the character
             candidates.minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
         }
     }
@@ -178,6 +195,9 @@ class ContentCache(private val contentService: ContentService) {
     /**
      * Find the nearest overworld tile that has a transition back to the overworld — i.e.
      * the exit tile when the character is currently inside a sub-layer.
+     *
+     * Uses raw Manhattan distance to the character. If the closest exit has a condition,
+     * the caller must satisfy it — same principle as [findTransitionTile].
      */
     fun findExitTransitionTile(char: Character): MapInfo? {
         return allMaps

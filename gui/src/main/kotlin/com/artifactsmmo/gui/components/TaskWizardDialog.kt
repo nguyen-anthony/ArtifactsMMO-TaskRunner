@@ -71,6 +71,32 @@ private sealed class WizardStep {
         val sim: CombatSimulationData?,
         val availableParticipants: List<RunnerStatus>  // all characters except initiator
     ) : WizardStep()
+    /**
+     * Boss fight step for picking the tank (defensive character).
+     * Default = character with highest current threat stat (pre-optimization heuristic).
+     * "Auto-detect" checkbox lets the optimizer choose the tank based on post-gear threat.
+     */
+    data class BossFightTankSelection(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val sim: CombatSimulationData?,
+        val availableParticipants: List<RunnerStatus>,
+        val allParticipantNames: List<String>,  // includes initiator
+        val recommendedTank: String,             // pre-optimization heuristic pick
+        val autoDetect: Boolean = true,
+        val tankOverride: String? = null
+    ) : WizardStep()
+    /**
+     * Displays the coop optimization result. User can confirm, re-optimize, or go back.
+     */
+    data class BossFightOptimization(
+        val monsters: List<Monster>,
+        val monster: Monster,
+        val allParticipantNames: List<String>,
+        val initiatorName: String,
+        val tankOverride: String?,
+        val result: com.artifactsmmo.core.task.CoopOptimizer.CoopOptimizationResult
+    ) : WizardStep()
 
     // Equipment Browser (from FightSim → Check Equipment)
     data class EquipmentBrowser(
@@ -548,13 +574,97 @@ fun TaskWizardDialog(
                             characterName = characterName,
                             onBack = { step = WizardStep.FightSim(s.monsters, s.monster, s.sim, null) },
                             onConfirm = { selectedParticipants ->
-                                appState.taskManager.assignBossFight(
-                                    initiatorName = characterName,
-                                    participantNames = selectedParticipants,
-                                    monsterCode = s.monster.code,
-                                    monsterName = s.monster.name
+                                // Advance to tank-selection step.
+                                // Pre-optimization heuristic tank pick: character with highest current threat
+                                // stat, using the initiator's + participants' RunnerStatus (which carries the
+                                // last-observed character level; we need actual char threat from the API).
+                                load("Loading character details for tank selection...") {
+                                    val allNames = listOf(characterName) + selectedParticipants
+                                    val details = allNames.associateWith { name ->
+                                        appState.taskManager.getCharacterDetails(name)
+                                    }
+                                    val recommendedTank = details.maxByOrNull { it.value.threat }?.key ?: characterName
+                                    step = WizardStep.BossFightTankSelection(
+                                        monsters = s.monsters,
+                                        monster = s.monster,
+                                        sim = s.sim,
+                                        availableParticipants = s.availableParticipants,
+                                        allParticipantNames = allNames,
+                                        recommendedTank = recommendedTank,
+                                        autoDetect = true,
+                                        tankOverride = null
+                                    )
+                                }
+                            }
+                        )
+
+                        is WizardStep.BossFightTankSelection -> StepBossFightTankSelection(
+                            step = s,
+                            onBack = {
+                                step = WizardStep.BossFightParticipants(
+                                    monsters = s.monsters,
+                                    monster = s.monster,
+                                    sim = s.sim,
+                                    availableParticipants = s.availableParticipants
                                 )
-                                onDismiss()
+                            },
+                            onUpdate = { updatedStep -> step = updatedStep },
+                            onOptimize = { autoDetect, override ->
+                                load("Optimizing gear + utilities for ${s.monster.name} (this may take up to 60s)...") {
+                                    val result = appState.taskManager.optimizeForBossFight(
+                                        participantNames = s.allParticipantNames,
+                                        monsterCode = s.monster.code,
+                                        tankOverride = if (autoDetect) null else override
+                                    )
+                                    step = WizardStep.BossFightOptimization(
+                                        monsters = s.monsters,
+                                        monster = s.monster,
+                                        allParticipantNames = s.allParticipantNames,
+                                        initiatorName = characterName,
+                                        tankOverride = if (autoDetect) null else override,
+                                        result = result
+                                    )
+                                }
+                            }
+                        )
+
+                        is WizardStep.BossFightOptimization -> StepBossFightOptimization(
+                            step = s,
+                            onBack = {
+                                step = WizardStep.BossFightTankSelection(
+                                    monsters = s.monsters,
+                                    monster = s.monster,
+                                    sim = null,
+                                    availableParticipants = emptyList(),
+                                    allParticipantNames = s.allParticipantNames,
+                                    recommendedTank = s.result.tankName,
+                                    autoDetect = s.tankOverride == null,
+                                    tankOverride = s.tankOverride
+                                )
+                            },
+                            onReoptimize = {
+                                load("Re-optimizing for ${s.monster.name}...") {
+                                    val result = appState.taskManager.optimizeForBossFight(
+                                        participantNames = s.allParticipantNames,
+                                        monsterCode = s.monster.code,
+                                        tankOverride = s.tankOverride
+                                    )
+                                    step = s.copy(result = result)
+                                }
+                            },
+                            onConfirm = {
+                                load("Dispatching boss fight team (sequential — up to 2 minutes)...") {
+                                    val plansByName = s.result.participants.associateBy { it.characterName }
+                                    val participantNames = s.allParticipantNames.filter { it != s.initiatorName }
+                                    appState.taskManager.assignBossFight(
+                                        initiatorName = s.initiatorName,
+                                        participantNames = participantNames,
+                                        monsterCode = s.monster.code,
+                                        monsterName = s.monster.name,
+                                        participantPlans = plansByName
+                                    )
+                                    onDismiss()
+                                }
                             }
                         )
 
@@ -2048,6 +2158,205 @@ private fun StepBossFightParticipants(
             confirmLabel = "Start Boss Fight",
             onConfirm = if (selected.value.isEmpty() || selected.value.size > 2) null
                         else { { onConfirm(selected.value.toList()) } }
+        )
+    }
+}
+
+// ── Step: Boss Fight — tank selection ──────────────────────────────────────────
+
+@Composable
+private fun StepBossFightTankSelection(
+    step: WizardStep.BossFightTankSelection,
+    onBack: () -> Unit,
+    onUpdate: (WizardStep.BossFightTankSelection) -> Unit,
+    onOptimize: (autoDetect: Boolean, override: String?) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(
+                text = "Tank selection for ${step.monster.name}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "The tank draws boss aggro (highest threat). By default the optimizer picks the tank based on post-gear threat. You can override manually.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Auto-detect toggle
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 4.dp)
+                .clickable { onUpdate(step.copy(autoDetect = !step.autoDetect)) },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = step.autoDetect,
+                onCheckedChange = { onUpdate(step.copy(autoDetect = it)) }
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Auto-detect tank (recommended)", style = MaterialTheme.typography.bodyMedium)
+        }
+
+        Text(
+            text = if (step.autoDetect)
+                "Optimizer will pick the tank based on post-gear threat stats."
+            else
+                "Pick a character to force as tank:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+        )
+
+        // Character radio buttons (only usable when auto-detect is off)
+        for (name in step.allParticipantNames) {
+            val isRecommended = name == step.recommendedTank
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 4.dp)
+                    .clickable(enabled = !step.autoDetect) {
+                        onUpdate(step.copy(tankOverride = name))
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = if (step.autoDetect) name == step.recommendedTank
+                               else name == step.tankOverride,
+                    enabled = !step.autoDetect,
+                    onClick = { onUpdate(step.copy(tankOverride = name)) }
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = name + if (isRecommended) "  (recommended)" else "",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        Text(
+            text = "Optimization uses the multi-character sim endpoint. Expect up to 60 seconds for a full pass.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+
+        WizardNavRow(
+            onBack = onBack,
+            confirmLabel = "Optimize",
+            onConfirm = if (!step.autoDetect && step.tankOverride == null) null
+                        else { { onOptimize(step.autoDetect, step.tankOverride) } }
+        )
+    }
+}
+
+// ── Step: Boss Fight — optimization result ─────────────────────────────────────
+
+@Composable
+private fun StepBossFightOptimization(
+    step: WizardStep.BossFightOptimization,
+    onBack: () -> Unit,
+    onReoptimize: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val result = step.result
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Text(
+                text = "Boss fight prep: ${step.monster.name}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Tank: ${result.tankName}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Coop win-rate summary
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+            Text(
+                text = "Baseline coop win rate: ${(result.baselineWinRate * 100).toInt()}%",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = "Optimized coop win rate: ${(result.optimizedWinRate * 100).toInt()}%" +
+                       if (result.avgWinTurns > 0.0 && result.avgWinTurns < 1000.0)
+                           "  (avg ${"%.1f".format(result.avgWinTurns)} turns)"
+                       else "",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (result.optimizedWinRate >= 0.9)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.error
+            )
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+        // Per-participant loadout summary
+        LazyColumn(modifier = Modifier.heightIn(max = 340.dp)) {
+            items(result.participants) { plan ->
+                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = plan.characterName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            color = if (plan.role == com.artifactsmmo.core.task.CoopOptimizer.Role.TANK)
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            else
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = plan.role.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (plan.equipActions.isEmpty() && plan.utilityActions.isEmpty()) {
+                        Text(
+                            "No changes",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        for (action in plan.equipActions) {
+                            Text(
+                                "  ${action.slot}: → ${action.itemCode} (${action.source})",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        for (util in plan.utilityActions) {
+                            Text(
+                                "  ${util.slot}: ${util.itemCode} × ${util.quantity} (${util.source})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider()
+            }
+        }
+
+        WizardNavRow(
+            onBack = onBack,
+            confirmLabel = "Assign & Fight",
+            onConfirm = onConfirm,
+            extraButton = {
+                OutlinedButton(onClick = onReoptimize) { Text("Re-optimize") }
+            }
         )
     }
 }

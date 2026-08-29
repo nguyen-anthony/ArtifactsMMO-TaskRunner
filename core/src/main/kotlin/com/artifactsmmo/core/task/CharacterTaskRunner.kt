@@ -179,16 +179,26 @@ class CharacterTaskRunner(
                 }
             }
 
-            // For boss fight initiators with equip actions, execute them first
-            if (task is TaskType.BossFight && task.isInitiator && task.equipActions.isNotEmpty()) {
+            // For boss fights: apply equip actions and utility actions BEFORE the fight.
+            // Applies to both initiator and participants — CoopOptimizer computes plans for all
+            // participants. The runner's waitForActiveCooldown (above) already drained the
+            // previous task's cooldown, so equip/utility actions execute cleanly here.
+            if (task is TaskType.BossFight && (task.equipActions.isNotEmpty() || task.utilityActions.isNotEmpty())) {
                 try {
-                    logger.log(characterName, "Retrieving and equipping gear before boss fight...")
-                    updateStatus { it.copy(statusMessage = "Equipping gear...") }
-                    helper.retrieveAndEquipItems(characterName, task.equipActions)
+                    if (task.equipActions.isNotEmpty()) {
+                        logger.log(characterName, "Equipping ${task.equipActions.size} item(s) before boss fight...")
+                        updateStatus { it.copy(statusMessage = "Equipping gear for boss fight...") }
+                        helper.retrieveAndEquipItems(characterName, task.equipActions)
+                    }
+                    if (task.utilityActions.isNotEmpty()) {
+                        logger.log(characterName, "Applying ${task.utilityActions.size} utility potion(s) before boss fight...")
+                        updateStatus { it.copy(statusMessage = "Applying utility potions for boss fight...") }
+                        helper.retrieveAndEquipUtilities(characterName, task.utilityActions)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    logger.log(characterName, "[equip] Error during gear retrieval: ${e.message}")
+                    logger.log(characterName, "[boss-equip] Error during gear/utility retrieval: ${e.message}")
                 }
             }
 
@@ -709,6 +719,18 @@ class CharacterTaskRunner(
 
             } catch (e: CancellationException) {
                 throw e // Propagate cancellation
+            } catch (e: TransitionConditionUnsatisfiableException) {
+                // Character can't afford the transition condition (missing key item, etc.).
+                // Retrying won't help — the missing items won't appear. Stop the task cleanly.
+                previousChar = null
+                val msg = "Cannot reach destination: ${e.message}"
+                logger.log(characterName, msg)
+                updateStatus { it.copy(statusMessage = msg, lastError = msg, isRunning = false) }
+                // If stopping a boss fight initiator, unblock waiting participants
+                if (task is TaskType.BossFight && task.isInitiator) {
+                    bossEncounterCoordinator.clearEncounter(characterName)
+                }
+                break
             } catch (e: ArtifactsApiException) {
                 previousChar = null
                 val msg = "API Error ${e.errorCode}: ${e.message}"

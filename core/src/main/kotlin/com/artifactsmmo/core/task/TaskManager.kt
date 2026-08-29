@@ -32,6 +32,7 @@ class TaskManager(
     private val bankExecutor = BankExecutor(helper)
     private val bossEncounterCoordinator = BossEncounterCoordinator()
     private val eventExecutor = EventExecutor(helper, fightingExecutor)
+    internal val coopOptimizer = CoopOptimizer(helper, fightingExecutor.gearOptimizer, client)
     private val eventConfigStore = EventConfigStore()
     private lateinit var webSocketManager: WebSocketManager
     lateinit var eventDispatcher: EventDispatcher
@@ -243,18 +244,38 @@ class TaskManager(
     }
 
     /**
-     * Assign a cooperative boss fight to an initiator and one or two participants.
+     * Run cooperative gear + utility optimization for a boss fight.
+     * Called by the wizard before assignment so results can be displayed and confirmed.
+     *
+     * @see CoopOptimizer.optimizeForBossFight
+     */
+    suspend fun optimizeForBossFight(
+        participantNames: List<String>,
+        monsterCode: String,
+        tankOverride: String? = null
+    ): CoopOptimizer.CoopOptimizationResult {
+        return coopOptimizer.optimizeForBossFight(participantNames, monsterCode, tankOverride)
+    }
+
+    /**
+     * Assign a cooperative boss fight to an initiator and one or two participants
+     * with pre-computed [CoopOptimizer.ParticipantPlan]s for each character.
      *
      * The initiator fires the fight API; participants navigate to the boss tile and signal
      * ready via the [BossEncounterCoordinator] before each fight round. Any participant
      * with an active task has that task cancelled immediately (no cleanup, per spec).
+     *
+     * **Sequential dispatch:** the initiator is assigned FIRST and this function waits
+     * until their runner has finished the equip/utility phase before dispatching the
+     * participants. This avoids bank contention when the whole team shares gear from
+     * the same bank. Wait uses a bounded poll on the runner status message.
      */
-    fun assignBossFight(
+    suspend fun assignBossFight(
         initiatorName: String,
         participantNames: List<String>,
         monsterCode: String,
         monsterName: String,
-        equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        participantPlans: Map<String, CoopOptimizer.ParticipantPlan> = emptyMap(),
         dropStrategies: Map<String, DropStrategy> = emptyMap(),
         defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
     ) {
@@ -265,6 +286,8 @@ class TaskManager(
         }
         require(participantNames.size <= 2) { "Boss fights support at most 2 participants" }
 
+        val initiatorPlan = participantPlans[initiatorName]
+
         // Register the encounter before launching runners so the coordinator is ready
         bossEncounterCoordinator.registerEncounter(initiatorName, participantNames, monsterCode)
 
@@ -273,23 +296,7 @@ class TaskManager(
             runners[name]!!.stopImmediate()
         }
 
-        // Assign participant tasks
-        for (name in participantNames) {
-            runners[name]!!.assignTask(
-                TaskType.BossFight(
-                    monsterCode = monsterCode,
-                    monsterName = monsterName,
-                    initiatorName = initiatorName,
-                    participantNames = emptyList(),
-                    isInitiator = false,
-                    dropStrategies = dropStrategies,
-                    defaultDropStrategy = defaultDropStrategy
-                ),
-                scope
-            )
-        }
-
-        // Assign initiator task
+        // ── Sequential dispatch: initiator first, wait for equip to complete ──
         initiatorRunner.assignTask(
             TaskType.BossFight(
                 monsterCode = monsterCode,
@@ -297,14 +304,63 @@ class TaskManager(
                 initiatorName = initiatorName,
                 participantNames = participantNames,
                 isInitiator = true,
-                equipActions = equipActions,
+                equipActions = initiatorPlan?.equipActions ?: emptyList(),
+                utilityActions = initiatorPlan?.utilityActions ?: emptyList(),
                 dropStrategies = dropStrategies,
                 defaultDropStrategy = defaultDropStrategy
             ),
             scope
         )
 
+        // Wait for the initiator's runner to finish its equip/utility phase before
+        // dispatching participants. This avoids bank contention when multiple characters
+        // withdraw from the same bank simultaneously. Bounded timeout as safety net.
+        waitForEquipCompletion(initiatorName, timeoutMs = 120_000L)
+
+        // Now dispatch participants (each waits for their own equip step to complete before
+        // the next is dispatched — same bank-contention safety)
+        for (name in participantNames) {
+            val plan = participantPlans[name]
+            runners[name]!!.assignTask(
+                TaskType.BossFight(
+                    monsterCode = monsterCode,
+                    monsterName = monsterName,
+                    initiatorName = initiatorName,
+                    participantNames = emptyList(),
+                    isInitiator = false,
+                    equipActions = plan?.equipActions ?: emptyList(),
+                    utilityActions = plan?.utilityActions ?: emptyList(),
+                    dropStrategies = dropStrategies,
+                    defaultDropStrategy = defaultDropStrategy
+                ),
+                scope
+            )
+            waitForEquipCompletion(name, timeoutMs = 120_000L)
+        }
+
         persistTasks()
+    }
+
+    /**
+     * Poll the runner's status until its statusMessage indicates the equip phase has
+     * completed (i.e. it's moved past "Equipping gear..." / "Applying utility potions...").
+     * Bounded by [timeoutMs] as a safety net.
+     */
+    private suspend fun waitForEquipCompletion(characterName: String, timeoutMs: Long) {
+        val runner = runners[characterName] ?: return
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            val msg = runner.status.value.statusMessage
+            val stillEquipping = msg.contains("Equipping gear", ignoreCase = true) ||
+                                 msg.contains("Applying utility potions", ignoreCase = true) ||
+                                 msg == "Starting..." ||
+                                 msg == "Idle"  // hasn't started yet
+            if (!stillEquipping) return
+            kotlinx.coroutines.delay(500)
+        }
+        // Timeout — log and proceed anyway (safety net; caller should notice via
+        // subsequent fight failures if this character is truly stuck)
+        logger.log(characterName, "assignBossFight: timeout waiting for equip completion — proceeding anyway")
     }
 
     /**

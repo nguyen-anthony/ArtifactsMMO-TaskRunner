@@ -73,6 +73,7 @@ sealed class TaskType {
         val participantNames: List<String>,
         val isInitiator: Boolean,
         val equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        val utilityActions: List<GearOptimizer.UtilityEquipAction> = emptyList(),
         val dropStrategies: Map<String, DropStrategy> = emptyMap(),
         /**
          * Fallback strategy for cookable drops not explicitly listed in [dropStrategies].

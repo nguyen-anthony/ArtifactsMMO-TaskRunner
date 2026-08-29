@@ -58,6 +58,23 @@ class GearOptimizer(private val helper: ActionHelper) {
         const val CACHE_MAX_ENTRIES = 20
         const val CACHE_VERIFY_MIN_WINRATE = 0.85
         const val UTILITY_MAX_QUANTITY = 100
+
+        /**
+         * Effect codes that identify a consumable as a valid UTILITY potion (utility1/utility2).
+         *
+         * Distinct from food/use consumables whose effects are `heal`, `gold`, or `teleport`
+         * — those go to the /action/use endpoint and are NOT valid utility slot items.
+         * Kept in sync with [CoopOptimizer]'s equivalent set.
+         */
+        val UTILITY_EFFECT_CODES = setOf(
+            "restore",
+            "splash_restore",
+            "antipoison", "antidote",
+            "boost_hp",
+            "boost_dmg", "boost_dmg_fire", "boost_dmg_earth", "boost_dmg_water", "boost_dmg_air",
+            "boost_res_fire", "boost_res_earth", "boost_res_water", "boost_res_air",
+            "boost_prospecting", "boost_critical_strike"
+        )
     }
 
     /** Records which monster each character was most recently optimized for. */
@@ -405,7 +422,15 @@ class GearOptimizer(private val helper: ActionHelper) {
         return results
     }
 
-    /** Owned consumables (potions) usable by this character. */
+    /**
+     * Owned utility-slot-eligible potions usable by this character.
+     *
+     * Utility slots hold items of `type == "utility"` (subtype = "potion").
+     * NOT `type == "consumable"` — that's food (used via /action/use).
+     *
+     * We additionally filter by [UTILITY_EFFECT_CODES] as a safety net so any misclassified
+     * item without a real utility effect is excluded.
+     */
     private suspend fun getOwnedUtilityCandidates(char: Character): List<Item> {
         val ownedCodes = (char.inventory.map { it.code } + helper.bankState.snapshot.value.keys)
             .filter { it.isNotEmpty() }
@@ -413,8 +438,9 @@ class GearOptimizer(private val helper: ActionHelper) {
         return ownedCodes.mapNotNull { code ->
             try {
                 val item = helper.contentCache.getItemOrNull(code) ?: return@mapNotNull null
-                if (item.type != "consumable") return@mapNotNull null
+                if (item.type != "utility") return@mapNotNull null
                 if (item.level > char.level) return@mapNotNull null
+                if (item.effects.none { it.code in UTILITY_EFFECT_CODES }) return@mapNotNull null
                 item
             } catch (_: Exception) { null }
         }
