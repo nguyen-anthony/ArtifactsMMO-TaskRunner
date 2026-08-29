@@ -572,4 +572,9 @@ sealed class StepResult {
     data class TooManyDeaths(val monsterName: String, val deaths: Int) : StepResult()
     /** Event task: the spawning event has expired. Runner should revert to previous task. */
     data object EventExpired : StepResult()
+    /**
+     * Boss fight loop: the character needs a full resupply (food exhausted, potions depleted,
+     * or inventory full of loot). Runner will execute a bank restock trip then resume the loop.
+     */
+    data object NeedsRestock : StepResult()
 }

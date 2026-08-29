@@ -1320,7 +1320,21 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
             "artifact2"  -> char.artifact2Slot
             "artifact3"  -> char.artifact3Slot
             "rune"       -> char.runeSlot
+            "utility1"   -> char.utility1Slot
+            "utility2"   -> char.utility2Slot
             else         -> ""
+        }
+    }
+
+    /**
+     * Return the remaining quantity in a utility slot ("utility1" or "utility2").
+     * Returns 0 for unknown slot names or empty slots.
+     */
+    fun getEquippedUtilityQuantity(char: Character, slot: String): Int {
+        return when (slot) {
+            "utility1" -> char.utility1SlotQuantity
+            "utility2" -> char.utility2SlotQuantity
+            else       -> 0
         }
     }
 
@@ -1565,45 +1579,40 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         var char = refreshCharacter(characterName)
 
-        // ── Step 1: Pre-verify all items are available ──
+        // ── Step 1: Soft-verify item availability via bankState snapshot ──
+        // bankState is an eventually-consistent snapshot — it may lag behind actual bank
+        // contents when another character recently withdrew items in the same boss fight
+        // equip sequence. We log warnings here but do NOT abort; the actual withdrawal
+        // API call at Step 4 is the authoritative check. If it fails, rollback handles it.
         val bankActions = equipActions.filter { it.source == "bank" }
         val invActions  = equipActions.filter { it.source == "inventory" }
         val craftActions = equipActions.filter { it.source == "craftable" }
 
-        // Utility slot support: track cumulative bank withdrawals so multiple bank picks
-        // of the same code (e.g. two artifact slots picking the same artifact — shouldn't
-        // happen with dedup but be defensive) don't double-count against a single bank stack.
         val bankNeeded = bankActions.groupingBy { it.itemCode }.eachCount()
         for ((code, needed) in bankNeeded) {
             val available = bankState.getQuantity(code)
             if (available < needed) {
-                println("[$characterName] retrieveAndEquipItems: aborting — bank has $available x $code but need $needed")
-                return char
+                println("[$characterName] retrieveAndEquipItems: WARNING — bankState shows $available x $code but need $needed (may be stale; proceeding to attempt withdrawal)")
             }
         }
         val invNeeded = invActions.groupingBy { it.itemCode }.eachCount()
         for ((code, needed) in invNeeded) {
             val available = getItemQuantity(char, code)
             if (available < needed) {
-                println("[$characterName] retrieveAndEquipItems: aborting — inventory has $available x $code but need $needed")
-                return char
+                println("[$characterName] retrieveAndEquipItems: WARNING — inventory has $available x $code but need $needed (proceeding anyway)")
             }
         }
-        // Craftable: verify all ingredients present in bank
+        // Craftable: check ingredients in bank — warn only, don't abort
         for (action in craftActions) {
             val item = try { getItem(action.itemCode) } catch (e: Exception) {
-                println("[$characterName] retrieveAndEquipItems: aborting — cannot load craftable ${action.itemCode}: ${e.message}")
-                return char
+                println("[$characterName] retrieveAndEquipItems: WARNING — cannot load craftable ${action.itemCode}: ${e.message}")
+                continue
             }
-            val craft = item.craft ?: run {
-                println("[$characterName] retrieveAndEquipItems: aborting — ${action.itemCode} has no craft recipe")
-                return char
-            }
+            val craft = item.craft ?: continue
             for (ingredient in craft.items) {
                 val available = bankState.getQuantity(ingredient.code)
                 if (available < ingredient.quantity) {
-                    println("[$characterName] retrieveAndEquipItems: aborting — bank has $available x ${ingredient.code} but need ${ingredient.quantity} to craft ${action.itemCode}")
-                    return char
+                    println("[$characterName] retrieveAndEquipItems: WARNING — bank shows $available x ${ingredient.code} but need ${ingredient.quantity} to craft ${action.itemCode} (may be stale)")
                 }
             }
         }
@@ -1731,15 +1740,36 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
             }
         }
 
-        // Step 4: Withdraw bank items (explicit logging + rollback on failure)
-        for (action in bankActions) {
-            try {
-                val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(action.itemCode, 1)))
+        // Step 4: Withdraw all bank items in a single batched API call.
+        // Previously withdrawn one-at-a-time, which cost one API call + cooldown per item
+        // (up to 13 calls for a full gear swap). Batching collapses this to a single round-trip,
+        // saving ~12 cooldown waits per character during boss fight equip phases.
+        // Fallback: if the batch fails (e.g. one item is no longer available due to cross-character
+        // contention), retry per-item — skip individual 404s so the character equips as much as
+        // possible rather than rolling back entirely.
+        if (bankActions.isNotEmpty()) {
+            val withdrawList = bankActions.map { SimpleItem(it.itemCode, 1) }
+            val batchSuccess = try {
+                val result = client.bank.withdrawItems(characterName, withdrawList)
                 waitForCooldown(result.cooldown.expiration)
                 char = result.character
+                true
             } catch (e: Exception) {
-                println("[$characterName] retrieveAndEquipItems: bank withdraw failed for ${action.itemCode}: ${e.message}")
-                return rollback("bank withdraw failed for ${action.itemCode}", unequippedSlots)
+                println("[$characterName] retrieveAndEquipItems: batched bank withdraw failed (${e.message}) — retrying per-item")
+                false
+            }
+
+            if (!batchSuccess) {
+                // Per-item fallback: attempt each item individually, skip those that fail
+                for (action in bankActions) {
+                    try {
+                        val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(action.itemCode, 1)))
+                        waitForCooldown(result.cooldown.expiration)
+                        char = result.character
+                    } catch (e: Exception) {
+                        println("[$characterName] retrieveAndEquipItems: skipping ${action.itemCode} — ${e.message}")
+                    }
+                }
             }
         }
 
@@ -1859,10 +1889,15 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
         var char = refreshCharacter(characterName)
 
         // Determine bank withdrawals: bring inventory up to desired quantity for each utility.
+        // Exclude quantities already equipped in the slot — if the right item is already
+        // equipped with sufficient quantity, no withdrawal is needed.
         val bankWithdrawals = mutableListOf<SimpleItem>()
         for (action in actions) {
+            val currentEquipped = getEquippedInSlot(char, action.slot)
+            val equippedQty = if (currentEquipped == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
             val inInv = getItemQuantity(char, action.itemCode)
-            val deficit = action.quantity - inInv
+            val alreadyHave = inInv + equippedQty
+            val deficit = action.quantity - alreadyHave
             if (deficit > 0) {
                 val bankQty = bankState.getQuantity(action.itemCode)
                 val toWithdraw = deficit.coerceAtMost(bankQty)
@@ -1878,6 +1913,37 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
                 return char
             }
             char = navigateToTile(characterName, bank)
+
+            // Pre-deposit non-essential inventory items if there isn't enough room to
+            // withdraw the utility potions. Items being equipped are excluded from deposit.
+            val withdrawTotal = bankWithdrawals.sumOf { it.quantity }
+            val freeSlots = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
+            if (freeSlots < withdrawTotal) {
+                val keepCodes = bankWithdrawals.map { it.code }.toSet() +
+                    actions.map { it.itemCode }.toSet()
+                val toPreDeposit = char.inventory
+                    .filter { it.quantity > 0 && it.code !in keepCodes }
+                    .map { SimpleItem(it.code, it.quantity) }
+                val depositNeeded = withdrawTotal - freeSlots
+                val depositList = mutableListOf<SimpleItem>()
+                var freed = 0
+                for (item in toPreDeposit) {
+                    if (freed >= depositNeeded) break
+                    depositList.add(item)
+                    freed += item.quantity
+                }
+                if (depositList.isNotEmpty()) {
+                    try {
+                        println("[$characterName] retrieveAndEquipUtilities: pre-depositing ${depositList.size} item(s) to make room for utility potions")
+                        val result = client.bank.depositItems(characterName, depositList)
+                        waitForCooldown(result.cooldown.expiration)
+                        char = result.character
+                    } catch (e: Exception) {
+                        println("[$characterName] retrieveAndEquipUtilities: pre-deposit failed: ${e.message} — proceeding anyway")
+                    }
+                }
+            }
+
             try {
                 val result = client.bank.withdrawItems(characterName, bankWithdrawals)
                 waitForCooldown(result.cooldown.expiration)
@@ -1888,17 +1954,22 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
             }
         }
 
-        // Unequip current utility items if different, then equip the new one with quantity.
+        // Equip utility items. If the same item is already equipped:
+        //  - skip entirely if already at or above the desired quantity
+        //  - re-equip with the updated quantity if more potions are now in inventory
         for (action in actions) {
             val current = getEquippedInSlot(char, action.slot)
+            val currentQty = if (current == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
             try {
                 if (current.isNotEmpty() && current != action.itemCode) {
                     char = unequip(characterName, action.slot)
                 }
-                if (current != action.itemCode) {
-                    // Cap quantity to what's actually in inventory
-                    val available = getItemQuantity(char, action.itemCode)
-                    val qty = action.quantity.coerceAtMost(available).coerceAtLeast(1)
+                val available = getItemQuantity(char, action.itemCode)
+                val desiredQty = action.quantity.coerceAtMost(available + currentQty).coerceAtLeast(1)
+                if (current != action.itemCode || currentQty < desiredQty) {
+                    // Equip (or re-equip with higher quantity) from inventory
+                    val invQty = available.coerceAtLeast(if (current == action.itemCode) 0 else 1)
+                    val qty = (currentQty + invQty).coerceAtMost(action.quantity).coerceAtLeast(1)
                     char = equip(characterName, action.itemCode, action.slot, qty)
                 }
             } catch (e: Exception) {
@@ -1907,6 +1978,91 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
         }
 
         return char
+    }
+
+    /**
+     * Determine what item costs a character will incur transitioning to [targetMap],
+     * WITHOUT navigating. Inspects the in-memory [ContentCache] tile data only.
+     *
+     * Returns a map of itemCode → quantity consumed for each transition on the path:
+     *  - If [char] is on a sub-layer and needs to exit first, the exit transition
+     *    conditions are included.
+     *  - If [targetMap] is on a sub-layer, the entry transition conditions are included.
+     *  - Only `operator == "cost"` conditions are returned — `has_item` conditions are
+     *    NOT costs (item is not consumed) and are excluded.
+     *
+     * Returns an empty map when the path has no cost conditions or the target is on the
+     * same overworld layer.
+     */
+    fun getTransitionCosts(char: com.artifactsmmo.client.models.Character, targetMap: MapInfo): Map<String, Int> {
+        val costs = mutableMapOf<String, Int>()
+
+        fun collectCosts(conditions: List<com.artifactsmmo.client.models.Condition>?) {
+            conditions?.filter { it.operator == "cost" }?.forEach { condition ->
+                costs[condition.code] = (costs[condition.code] ?: 0) + condition.value
+            }
+        }
+
+        val targetLayer = targetMap.layer
+
+        // If character is on a sub-layer and needs to exit to reach overworld first
+        if (char.layer != "overworld" && char.layer != targetLayer) {
+            val exitTile = contentCache.findExitTransitionTile(char)
+            collectCosts(exitTile?.interactions?.transition?.conditions)
+        }
+
+        // If target is on a sub-layer, inspect the entry transition tile
+        if (targetLayer != "overworld") {
+            val entryTile = contentCache.findTransitionTile(char, targetLayer, targetMap.x, targetMap.y)
+            collectCosts(entryTile?.interactions?.transition?.conditions)
+        }
+
+        return costs
+    }
+
+    /**
+     * Withdraw reserve potion stacks from the bank into the character's inventory for
+     * boss fight loop sustainability. These stacks are carried in inventory and re-equipped
+     * mid-loop when a utility slot drops to [CoopOptimizer.UTILITY_REEQUIP_THRESHOLD].
+     *
+     * Only withdraws what is needed — if the character already has some of a given potion
+     * in inventory, the deficit is calculated and only the missing quantity is withdrawn.
+     * Skips silently if the bank has none of a requested potion.
+     */
+    suspend fun withdrawReservePotions(
+        characterName: String,
+        reservePotions: Map<String, Int>
+    ): Character {
+        if (reservePotions.isEmpty()) return refreshCharacter(characterName)
+
+        var char = refreshCharacter(characterName)
+
+        val toWithdraw = mutableListOf<SimpleItem>()
+        for ((code, desiredQty) in reservePotions) {
+            val inInv = getItemQuantity(char, code)
+            val deficit = desiredQty - inInv
+            if (deficit <= 0) continue
+            val bankQty = bankState.getQuantity(code)
+            val qty = deficit.coerceAtMost(bankQty)
+            if (qty > 0) toWithdraw.add(SimpleItem(code, qty))
+        }
+
+        if (toWithdraw.isEmpty()) return char
+
+        val bank = findNearestBank(char)
+        if (bank == null) {
+            println("[$characterName] withdrawReservePotions: no bank found — skipping")
+            return char
+        }
+        char = navigateToTile(characterName, bank)
+        return try {
+            val result = client.bank.withdrawItems(characterName, toWithdraw)
+            waitForCooldown(result.cooldown.expiration)
+            result.character
+        } catch (e: Exception) {
+            println("[$characterName] withdrawReservePotions: withdraw failed: ${e.message}")
+            char
+        }
     }
 
     // ── Task Master ──

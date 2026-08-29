@@ -306,16 +306,21 @@ class TaskManager(
                 isInitiator = true,
                 equipActions = initiatorPlan?.equipActions ?: emptyList(),
                 utilityActions = initiatorPlan?.utilityActions ?: emptyList(),
+                reservePotions = initiatorPlan?.reservePotions ?: emptyMap(),
+                foodCode = initiatorPlan?.foodCode,
+                foodQuantity = initiatorPlan?.foodQuantity ?: 0,
+                transitionCosts = initiatorPlan?.transitionCosts ?: emptyMap(),
+                spareKeys = initiatorPlan?.spareKeys ?: emptyMap(),
                 dropStrategies = dropStrategies,
                 defaultDropStrategy = defaultDropStrategy
             ),
             scope
         )
 
-        // Wait for the initiator's runner to finish its equip/utility phase before
+        // Wait for the initiator's runner to finish its equip/utility/reserve phase before
         // dispatching participants. This avoids bank contention when multiple characters
-        // withdraw from the same bank simultaneously. Bounded timeout as safety net.
-        waitForEquipCompletion(initiatorName, timeoutMs = 120_000L)
+        // withdraw from the same bank simultaneously. Timeout is proportional to equip count.
+        waitForEquipCompletion(initiatorName, equipActionCount = initiatorPlan?.equipActions?.size ?: 0)
 
         // Now dispatch participants (each waits for their own equip step to complete before
         // the next is dispatched — same bank-contention safety)
@@ -330,12 +335,17 @@ class TaskManager(
                     isInitiator = false,
                     equipActions = plan?.equipActions ?: emptyList(),
                     utilityActions = plan?.utilityActions ?: emptyList(),
+                    reservePotions = plan?.reservePotions ?: emptyMap(),
+                    foodCode = plan?.foodCode,
+                    foodQuantity = plan?.foodQuantity ?: 0,
+                    transitionCosts = plan?.transitionCosts ?: emptyMap(),
+                    spareKeys = plan?.spareKeys ?: emptyMap(),
                     dropStrategies = dropStrategies,
                     defaultDropStrategy = defaultDropStrategy
                 ),
                 scope
             )
-            waitForEquipCompletion(name, timeoutMs = 120_000L)
+            waitForEquipCompletion(name, equipActionCount = plan?.equipActions?.size ?: 0)
         }
 
         persistTasks()
@@ -343,23 +353,29 @@ class TaskManager(
 
     /**
      * Poll the runner's status until its statusMessage indicates the equip phase has
-     * completed (i.e. it's moved past "Equipping gear..." / "Applying utility potions...").
-     * Bounded by [timeoutMs] as a safety net.
+     * completed (i.e. it's moved past all gear/utility/reserve phases).
+     *
+     * Timeout is proportional to the number of equip actions (30s base + 15s per item)
+     * so a 13-item gear swap gets ~225s instead of the previous fixed 120s, which was
+     * too tight for a full gear overhaul + utility equip + reserve potion withdrawal.
      */
-    private suspend fun waitForEquipCompletion(characterName: String, timeoutMs: Long) {
+    private suspend fun waitForEquipCompletion(characterName: String, equipActionCount: Int = 0) {
         val runner = runners[characterName] ?: return
+        val timeoutMs = 30_000L + (equipActionCount.coerceAtLeast(1) * 15_000L)
         val start = System.currentTimeMillis()
         while (System.currentTimeMillis() - start < timeoutMs) {
             val msg = runner.status.value.statusMessage
             val stillEquipping = msg.contains("Equipping gear", ignoreCase = true) ||
                                  msg.contains("Applying utility potions", ignoreCase = true) ||
+                                 msg.contains("Withdrawing reserve potions", ignoreCase = true) ||
+                                 msg.contains("Withdrawing food", ignoreCase = true) ||
+                                 msg.contains("Withdrawing dungeon keys", ignoreCase = true) ||
                                  msg == "Starting..." ||
                                  msg == "Idle"  // hasn't started yet
             if (!stillEquipping) return
             kotlinx.coroutines.delay(500)
         }
-        // Timeout — log and proceed anyway (safety net; caller should notice via
-        // subsequent fight failures if this character is truly stuck)
+        // Timeout — log and proceed anyway (safety net)
         logger.log(characterName, "assignBossFight: timeout waiting for equip completion — proceeding anyway")
     }
 

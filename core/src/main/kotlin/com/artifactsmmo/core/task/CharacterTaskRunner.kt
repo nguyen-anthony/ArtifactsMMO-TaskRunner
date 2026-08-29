@@ -183,7 +183,7 @@ class CharacterTaskRunner(
             // Applies to both initiator and participants — CoopOptimizer computes plans for all
             // participants. The runner's waitForActiveCooldown (above) already drained the
             // previous task's cooldown, so equip/utility actions execute cleanly here.
-            if (task is TaskType.BossFight && (task.equipActions.isNotEmpty() || task.utilityActions.isNotEmpty())) {
+            if (task is TaskType.BossFight && (task.equipActions.isNotEmpty() || task.utilityActions.isNotEmpty() || task.reservePotions.isNotEmpty() || task.foodQuantity > 0 || task.transitionCosts.isNotEmpty() || task.spareKeys.isNotEmpty())) {
                 try {
                     if (task.equipActions.isNotEmpty()) {
                         logger.log(characterName, "Equipping ${task.equipActions.size} item(s) before boss fight...")
@@ -194,6 +194,24 @@ class CharacterTaskRunner(
                         logger.log(characterName, "Applying ${task.utilityActions.size} utility potion(s) before boss fight...")
                         updateStatus { it.copy(statusMessage = "Applying utility potions for boss fight...") }
                         helper.retrieveAndEquipUtilities(characterName, task.utilityActions)
+                    }
+                    if (task.reservePotions.isNotEmpty()) {
+                        logger.log(characterName, "Withdrawing reserve potions for boss fight loop (${task.reservePotions.entries.joinToString { "${it.value}x ${it.key}" }})...")
+                        updateStatus { it.copy(statusMessage = "Withdrawing reserve potions...") }
+                        helper.withdrawReservePotions(characterName, task.reservePotions)
+                    }
+                    if (task.foodCode != null && task.foodQuantity > 0) {
+                        logger.log(characterName, "Withdrawing food for boss fight (${task.foodQuantity}x ${task.foodCode})...")
+                        updateStatus { it.copy(statusMessage = "Withdrawing food for boss fight...") }
+                        helper.bankWithdrawItems(characterName, listOf(com.artifactsmmo.client.models.SimpleItem(task.foodCode, task.foodQuantity)))
+                    }
+                    val allKeys = (task.transitionCosts.entries + task.spareKeys.entries)
+                        .groupBy({ it.key }, { it.value })
+                        .mapValues { (_, values) -> values.sum() }
+                    if (allKeys.isNotEmpty()) {
+                        logger.log(characterName, "Withdrawing dungeon keys (${allKeys.entries.joinToString { "${it.value}x ${it.key}" }})...")
+                        updateStatus { it.copy(statusMessage = "Withdrawing dungeon keys...") }
+                        helper.bankWithdrawItems(characterName, allKeys.map { (code, qty) -> com.artifactsmmo.client.models.SimpleItem(code, qty) })
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -644,6 +662,17 @@ class CharacterTaskRunner(
                     is StepResult.Rested -> {
                         previousChar = null
                         updateStatus { it.copy(lastError = null) }
+                    }
+                    is StepResult.NeedsRestock -> {
+                        previousChar = null
+                        if (task is TaskType.BossFight) {
+                            logger.log(characterName, "Boss fight restock — full resupply trip")
+                            updateStatus { it.copy(bankTrips = it.bankTrips + 1, lastError = null) }
+                            fightingExecutor.restockForBossFight(characterName, task) { msg ->
+                                logger.log(characterName, msg)
+                                updateStatus { it.copy(statusMessage = msg) }
+                            }
+                        }
                     }
                     is StepResult.Waiting -> {
                         previousChar = null

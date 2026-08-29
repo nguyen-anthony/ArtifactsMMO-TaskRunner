@@ -263,8 +263,10 @@ class FightingExecutor(private val helper: ActionHelper) {
         for (info in cookAndUseDrops) {
             val bankQty = helper.getBankItemQuantity(info.cookedCode)
             if (bankQty > 0) {
-                val freeCapacity = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
-                val withdrawQty = minOf(bankQty, 50, freeCapacity.coerceAtLeast(1))
+                val freeCapacity = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity })
+                    .coerceAtLeast(0)
+                if (freeCapacity == 0) break  // no room — skip to rest
+                val withdrawQty = minOf(bankQty, freeCapacity)
                 onStatus("Withdrawing ${withdrawQty}x ${info.cookedCode} from bank...")
                 helper.bankWithdrawItems(characterName, listOf(SimpleItem(info.cookedCode, withdrawQty)))
 
@@ -280,16 +282,19 @@ class FightingExecutor(private val helper: ActionHelper) {
         val bankFood = helper.findBestFoodInBank(char)
         if (bankFood != null) {
             val (foodCode, healAmount, bankQty) = bankFood
-            val freeCapacity = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
-            val withdrawQty = minOf(bankQty, 25, freeCapacity.coerceAtLeast(1))
-            onStatus("Withdrawing ${withdrawQty}x $foodCode from bank...")
-            helper.bankWithdrawItems(characterName, listOf(SimpleItem(foodCode, withdrawQty)))
+            val freeCapacity = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity })
+                .coerceAtLeast(0)
+            if (freeCapacity > 0) {
+                val withdrawQty = minOf(bankQty, freeCapacity)
+                onStatus("Withdrawing ${withdrawQty}x $foodCode from bank...")
+                helper.bankWithdrawItems(characterName, listOf(SimpleItem(foodCode, withdrawQty)))
 
-            val qty = minOf(withdrawQty, maxOf(1, hpMissing / healAmount))
-            onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
-            val useResult = helper.useItem(characterName, foodCode, qty)
-            onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
-            return StepResult.Rested
+                val qty = minOf(withdrawQty, maxOf(1, hpMissing / healAmount))
+                onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
+                val useResult = helper.useItem(characterName, foodCode, qty)
+                onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
+                return StepResult.Rested
+            }
         }
 
         // 5. Last resort: rest
@@ -428,15 +433,77 @@ class FightingExecutor(private val helper: ActionHelper) {
     ): StepResult {
         var char = previousChar ?: helper.refreshCharacter(characterName)
 
-        // Heal to full HP if below 75%
+        // ── Restock check — evaluate BEFORE healing so we don't waste a rest action ──
+        // Conditions that require leaving the dungeon for a full bank resupply:
+        //   1. Inventory is full of loot (no room for boss drops)
+        //   2. Both utility slots are empty AND no inventory reserves remain
+        //   3. No food left AND HP is too low to fight safely
+        val protectedCodes = task.reservePotions.keys + setOfNotNull(task.foodCode)
+        val nonProtectedUsed = char.inventory
+            .filter { it.quantity > 0 && it.code !in protectedCodes }
+            .sumOf { it.quantity }
+        val totalUsed = char.inventory.filter { it.quantity > 0 }.sumOf { it.quantity }
+        val inventoryFull = totalUsed >= char.inventoryMaxItems && nonProtectedUsed > 0
+
+        val u1Code = helper.getEquippedInSlot(char, "utility1")
+        val u2Code = helper.getEquippedInSlot(char, "utility2")
+        val u1Empty = u1Code.isEmpty() || helper.getEquippedUtilityQuantity(char, "utility1") == 0
+        val u2Empty = u2Code.isEmpty() || helper.getEquippedUtilityQuantity(char, "utility2") == 0
+        val noReserves = task.reservePotions.keys.all { helper.getItemQuantity(char, it) == 0 }
+        val potionsExhausted = u1Empty && u2Empty && noReserves
+
+        val noFood = helper.findBestFoodInInventory(char) == null
+        val hpTooLow = !CharacterUtils.hasEnoughHP(char, 0.75)
+
+        if (inventoryFull || potionsExhausted || (noFood && hpTooLow)) {
+            val reason = when {
+                inventoryFull -> "inventory full of loot"
+                potionsExhausted -> "utility potions exhausted"
+                else -> "no food and HP too low"
+            }
+            onStatus("Restock needed ($reason) — heading to bank...")
+            return StepResult.NeedsRestock
+        }
+
+        // ── Heal from inventory food only (no bank trips inside the dungeon) ──
         if (!CharacterUtils.hasEnoughHP(char, 0.75)) {
-            return handleHealing(
-                characterName = characterName,
-                char = char,
-                cookAndUseDrops = emptyList(),
-                foodCodes = emptySet(),
-                onStatus = onStatus
-            )
+            val bestFood = helper.findBestFoodInInventory(char)
+            if (bestFood != null) {
+                val (foodCode, healAmount, available) = bestFood
+                val hpMissing = char.maxHp - char.hp
+                val qty = minOf(available, maxOf(1, hpMissing / healAmount))
+                onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
+                val useResult = helper.useItem(characterName, foodCode, qty)
+                onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
+                return StepResult.Rested
+            }
+            // No food in inventory — rest as last resort
+            onStatus("HP low (${char.hp}/${char.maxHp}), no food in inventory, resting...")
+            helper.rest(characterName)
+            return StepResult.Rested
+        }
+
+        // ── Utility slot reserve re-equip ──────────────────────────────────────
+        // If any utility slot has dropped to or below the re-equip threshold AND the
+        // character still has reserve potions in inventory for that slot's potion type,
+        // re-equip from inventory now — before moving to the boss tile.
+        if (task.reservePotions.isNotEmpty()) {
+            val reequipActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
+            for (utilitySlot in listOf("utility1", "utility2")) {
+                val equippedCode = helper.getEquippedInSlot(char, utilitySlot)
+                if (equippedCode.isEmpty()) continue
+                val equippedQty = helper.getEquippedUtilityQuantity(char, utilitySlot)
+                if (equippedQty > CoopOptimizer.UTILITY_REEQUIP_THRESHOLD) continue
+                // Slot is below threshold — check if we have reserves in inventory
+                val reserveInInv = helper.getItemQuantity(char, equippedCode)
+                if (reserveInInv <= 0) continue
+                val newQty = (equippedQty + reserveInInv).coerceAtMost(CoopOptimizer.UTILITY_MAX_QUANTITY)
+                onStatus("Refilling $utilitySlot ($equippedCode: ${equippedQty} → ${newQty})...")
+                reequipActions.add(GearOptimizer.UtilityEquipAction(utilitySlot, equippedCode, newQty, "inventory"))
+            }
+            if (reequipActions.isNotEmpty()) {
+                char = helper.retrieveAndEquipUtilities(characterName, reequipActions)
+            }
         }
 
         // Navigate to boss tile
@@ -446,13 +513,6 @@ class FightingExecutor(private val helper: ActionHelper) {
         if (!helper.isAt(char, monsterMap.x, monsterMap.y) || char.layer != monsterMap.layer) {
             onStatus("Moving to ${task.monsterName}...")
             char = helper.navigateToTile(characterName, monsterMap)
-        }
-
-        // Ensure at least 1 free inventory slot — bank all if full
-        if (helper.isInventoryFull(char)) {
-            onStatus("Inventory full, banking items before boss fight...")
-            helper.bankDepositAll(characterName)
-            char = helper.refreshCharacter(characterName)
         }
 
         if (task.isInitiator) {
@@ -517,6 +577,114 @@ class FightingExecutor(private val helper: ActionHelper) {
 
             onStatus("Ready for next boss fight round...")
             return StepResult.Waiting
+        }
+    }
+
+    /**
+     * Full resupply trip for a boss fight loop. Called when [StepResult.NeedsRestock]
+     * is returned by [executeBossStep].
+     *
+     * Single bank trip that:
+     *  1. Deposits all loot (keeps reserve potions, food, and dungeon keys)
+     *  2. Refills reserve potions to their target quantities
+     *  3. Re-equips utility slots to 100
+     *  4. Withdraws food up to [CoopOptimizer.FOOD_BUFFER]
+     *  5. Withdraws transition costs + spare keys for re-entry
+     *  6. Navigates back to the boss tile (consuming keys at the transition)
+     */
+    suspend fun restockForBossFight(
+        characterName: String,
+        task: TaskType.BossFight,
+        onStatus: (String) -> Unit
+    ) {
+        var char = helper.refreshCharacter(characterName)
+
+        // Navigate to bank (exits dungeon if character is still inside)
+        onStatus("Restocking — heading to bank...")
+        val bank = helper.findNearestBank(char)
+            ?: run { onStatus("No bank found — cannot restock"); return }
+        char = helper.navigateToTile(characterName, bank)
+
+        // 1. Deposit all loot — keep reserve potions, food, and keys
+        val keepCodes = task.reservePotions.keys +
+            setOfNotNull(task.foodCode) +
+            task.transitionCosts.keys +
+            task.spareKeys.keys
+        val lootToDeposit = char.inventory
+            .filter { it.quantity > 0 && it.code !in keepCodes }
+            .map { com.artifactsmmo.client.models.SimpleItem(it.code, it.quantity) }
+        if (lootToDeposit.isNotEmpty()) {
+            onStatus("Depositing ${lootToDeposit.sumOf { it.quantity }} loot items...")
+            helper.bankDepositItems(characterName, lootToDeposit)
+            char = helper.refreshCharacter(characterName)
+        }
+
+        // 2. Refill reserve potions to target quantities
+        if (task.reservePotions.isNotEmpty()) {
+            onStatus("Restocking reserve potions...")
+            helper.withdrawReservePotions(characterName, task.reservePotions)
+            char = helper.refreshCharacter(characterName)
+        }
+
+        // 3. Re-equip utility slots to 100 (from refilled reserves or bank)
+        val reequipActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
+        for (utilitySlot in listOf("utility1", "utility2")) {
+            val equippedCode = helper.getEquippedInSlot(char, utilitySlot)
+            if (equippedCode.isEmpty()) continue
+            val equippedQty = helper.getEquippedUtilityQuantity(char, utilitySlot)
+            if (equippedQty >= CoopOptimizer.UTILITY_MAX_QUANTITY) continue
+            val inInv = helper.getItemQuantity(char, equippedCode)
+            if (inInv > 0) {
+                val newQty = (equippedQty + inInv).coerceAtMost(CoopOptimizer.UTILITY_MAX_QUANTITY)
+                reequipActions.add(GearOptimizer.UtilityEquipAction(utilitySlot, equippedCode, newQty, "inventory"))
+            }
+        }
+        if (reequipActions.isNotEmpty()) {
+            onStatus("Refilling utility slots...")
+            char = helper.retrieveAndEquipUtilities(characterName, reequipActions)
+        }
+
+        // 4. Restock food
+        if (task.foodCode != null && task.foodQuantity > 0) {
+            val currentFood = helper.getItemQuantity(char, task.foodCode)
+            val foodDeficit = task.foodQuantity - currentFood
+            if (foodDeficit > 0) {
+                val bankQty = helper.getBankItemQuantity(task.foodCode)
+                val toWithdraw = foodDeficit.coerceAtMost(bankQty)
+                if (toWithdraw > 0) {
+                    onStatus("Restocking food (${toWithdraw}x ${task.foodCode})...")
+                    helper.bankWithdrawItems(characterName, listOf(com.artifactsmmo.client.models.SimpleItem(task.foodCode, toWithdraw)))
+                    char = helper.refreshCharacter(characterName)
+                }
+            }
+        }
+
+        // 5. Restock transition keys (entry cost + spare)
+        val allKeys = (task.transitionCosts.entries + task.spareKeys.entries)
+            .groupBy({ it.key }, { it.value })
+            .mapValues { (_, values) -> values.sum() }
+        if (allKeys.isNotEmpty()) {
+            val keyWithdrawals = mutableListOf<com.artifactsmmo.client.models.SimpleItem>()
+            for ((code, needed) in allKeys) {
+                val inInv = helper.getItemQuantity(char, code)
+                val deficit = needed - inInv
+                if (deficit > 0) {
+                    val bankQty = helper.getBankItemQuantity(code)
+                    val toWithdraw = deficit.coerceAtMost(bankQty)
+                    if (toWithdraw > 0) keyWithdrawals.add(com.artifactsmmo.client.models.SimpleItem(code, toWithdraw))
+                }
+            }
+            if (keyWithdrawals.isNotEmpty()) {
+                onStatus("Restocking dungeon keys (${keyWithdrawals.joinToString { "${it.quantity}x ${it.code}" }})...")
+                helper.bankWithdrawItems(characterName, keyWithdrawals)
+            }
+        }
+
+        // 6. Navigate back to boss tile (transition consumes keys automatically)
+        onStatus("Restock complete — returning to ${task.monsterName}...")
+        val monsterMap = helper.findNearest(char, "monster", task.monsterCode)
+        if (monsterMap != null) {
+            helper.navigateToTile(characterName, monsterMap)
         }
     }
 }

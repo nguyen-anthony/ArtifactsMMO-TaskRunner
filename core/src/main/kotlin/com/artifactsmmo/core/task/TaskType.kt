@@ -74,11 +74,25 @@ sealed class TaskType {
         val isInitiator: Boolean,
         val equipActions: List<ActionHelper.EquipAction> = emptyList(),
         val utilityActions: List<GearOptimizer.UtilityEquipAction> = emptyList(),
-        val dropStrategies: Map<String, DropStrategy> = emptyMap(),
         /**
-         * Fallback strategy for cookable drops not explicitly listed in [dropStrategies].
-         * Defaults to BANK_RAW — drops are stored raw unless explicitly configured otherwise.
+         * Potion reserves to withdraw into inventory before the fight loop begins.
+         * Map of itemCode -> quantity. Re-equipped mid-loop when utility slot quantity
+         * drops to or below [CoopOptimizer.UTILITY_REEQUIP_THRESHOLD].
          */
+        val reservePotions: Map<String, Int> = emptyMap(),
+        /** Food to pre-load into inventory for out-of-combat healing between fights. */
+        val foodCode: String? = null,
+        val foodQuantity: Int = 0,
+        /**
+         * Item costs consumed by the dungeon entry transition (e.g. lich_tomb_key).
+         * Pre-withdrawn during provisioning so no mid-travel bank detour is needed.
+         */
+        val transitionCosts: Map<String, Int> = emptyMap(),
+        /**
+         * One spare set of transition keys for re-entry after a restock bank trip.
+         */
+        val spareKeys: Map<String, Int> = emptyMap(),
+        val dropStrategies: Map<String, DropStrategy> = emptyMap(),
         val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
     ) : TaskType()
 
