@@ -677,8 +677,11 @@ class FightingExecutor(private val helper: ActionHelper) {
             }
         }
 
-        // 5. Restock transition keys (entry cost + spare)
+        // 5. Restock transition keys (entry cost + spare).
+        //    Gold costs are NOT stocked from bank — gold is on the character and deducted
+        //    automatically by the server at transition time. Only item costs are restocked.
         val allKeys = (task.transitionCosts.entries + task.spareKeys.entries)
+            .filter { it.key != "gold" }   // skip gold — not a bank-withdrawable item
             .groupBy({ it.key }, { it.value })
             .mapValues { (_, values) -> values.sum() }
         if (allKeys.isNotEmpty()) {

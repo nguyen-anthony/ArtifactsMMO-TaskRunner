@@ -465,6 +465,21 @@ class CoopOptimizer(
             println("CoopOptimizer: detected transition costs to $monsterCode: ${transitionCosts.entries.joinToString { "${it.value}x ${it.key}" }}")
         }
 
+        // Gold cost warning: gold is on the character and not bank-withdrawable.
+        // Warn if any character may not have enough gold for the round-trip (entry + spare trip).
+        val goldCost = transitionCosts["gold"] ?: 0
+        if (goldCost > 0) {
+            val roundTripGold = goldCost * 2  // entry + restock re-entry
+            for (name in participantNames) {
+                val charGold = chars[name]!!.gold
+                if (charGold < roundTripGold) {
+                    println("[$name] CoopOptimizer: WARNING — gold transition cost ${goldCost}g/entry ($roundTripGold for round-trip), character has ${charGold}g")
+                } else {
+                    println("[$name] CoopOptimizer: gold transition cost ${goldCost}g — character has ${charGold}g (sufficient)")
+                }
+            }
+        }
+
         val plans = participantNames.map { name ->
             val role = if (name == tankName) Role.TANK else Role.SUPPORT
             val char = chars[name]!!

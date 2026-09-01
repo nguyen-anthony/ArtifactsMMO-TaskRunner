@@ -31,6 +31,17 @@ class ContentCache(private val contentService: ContentService) {
     private var allMaps: List<MapInfo> = emptyList()
 
     /**
+     * Maps (destX, destY, destLayer) → the tile you stand on to reach that destination.
+     * "To be deposited at (dx,dy,dl) after a transition, stand on this tile."
+     *
+     * Built during [preWarmMaps]. Used by:
+     *  - [findSameLayerTransitionTo]: proactive detection of same-layer transition gates.
+     *  - [findNearestSameLayerTransitionToward]: reactive fallback after 595/596 errors.
+     */
+    @Volatile
+    private var transitionDestToSource: Map<Triple<Int,Int,String>, MapInfo> = emptyMap()
+
+    /**
      * Fetch every accessible map tile from the API (all pages) and store them in memory.
      *
      * Tiles with access type "blocked" are excluded via the API's hideBlockedMaps filter.
@@ -83,6 +94,14 @@ class ContentCache(private val contentService: ContentService) {
             page++
         }
         allMaps = maps
+
+        // Build the transition destination lookup — used for same-layer transition detection.
+        transitionDestToSource = maps
+            .filter { it.interactions.transition != null }
+            .associate { tile ->
+                val t = tile.interactions.transition!!
+                Triple(t.x, t.y, t.layer) to tile
+            }
     }
 
     // ── Item caches (lazy, 24-hour TTL) ──────────────────────────────────────
@@ -193,11 +212,19 @@ class ContentCache(private val contentService: ContentService) {
     }
 
     /**
-     * Find the nearest overworld tile that has a transition back to the overworld — i.e.
-     * the exit tile when the character is currently inside a sub-layer.
+     * Find the nearest tile on [char]'s current layer that has an outgoing transition
+     * back to the OVERWORLD — the hub layer that all sub-layers connect through.
      *
-     * Uses raw Manhattan distance to the character. If the closest exit has a condition,
-     * the caller must satisfy it — same principle as [findTransitionTile].
+     * Only overworld exits are considered (not "any other layer"). Sub-layer regions
+     * (interior, underground) can have multiple exit tiles leading to different layers;
+     * picking the nearest one regardless of destination layer previously caused characters
+     * to wander into the wrong layer (e.g. exiting interior into underground when overworld
+     * was needed), producing a routing loop that never reached the actual destination.
+     *
+     * Restricting to overworld exits matches [getTransitionCosts]'s existing assumption
+     * that sub-layer exits always route through overworld.
+     *
+     * Uses raw Manhattan distance to the character.
      */
     fun findExitTransitionTile(char: Character): MapInfo? {
         return allMaps
@@ -206,6 +233,50 @@ class ContentCache(private val contentService: ContentService) {
                 map.interactions.transition?.layer == "overworld"
             }
             .minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
+    }
+
+    /**
+     * If the tile at (toX, toY, toLayer) can only be reached via a same-layer transition
+     * (i.e. it is a known transition destination AND the source tile is on the same layer),
+     * returns that source tile — the tile the character must stand on to use the transition.
+     *
+     * Returns null if the tile is freely walkable or if it is a destination of a cross-layer
+     * return transition (e.g. underground→overworld return deposits at an overworld tile, but
+     * that overworld tile is still freely walkable from the rest of the overworld).
+     *
+     * Used by [ActionHelper.navigateToTile] for proactive same-layer transition detection.
+     */
+    fun findSameLayerTransitionTo(toX: Int, toY: Int, toLayer: String): MapInfo? {
+        val sourceTile = transitionDestToSource[Triple(toX, toY, toLayer)] ?: return null
+        // Only a same-layer gate if the source tile is on the SAME layer as the destination.
+        // Cross-layer return transitions (e.g. interior(-3,12)→overworld(-3,12)) have a source
+        // on a different layer — those overworld tiles are freely walkable.
+        return if (sourceTile.layer == toLayer) sourceTile else null
+    }
+
+    /**
+     * When a moveTo fails with 595 (no path) or 596 (map blocked), search for the nearest
+     * same-layer transition tile on [char]'s layer whose destination is closest to (toX,toY).
+     *
+     * This is the reactive fallback in [ActionHelper.navigateToTile]: the character tried
+     * to walk somewhere and hit a wall, water, or gate that requires a transition to cross.
+     *
+     * Returns null if no same-layer transition is found.
+     */
+    fun findNearestSameLayerTransitionToward(
+        char: Character,
+        toX: Int, toY: Int, toLayer: String
+    ): MapInfo? {
+        return allMaps
+            .filter { tile ->
+                tile.layer == char.layer &&                         // reachable by character
+                tile.interactions.transition?.layer == toLayer &&   // leads to target layer
+                tile.layer == toLayer                              // same-layer (source == dest layer)
+            }
+            .minByOrNull { tile ->
+                val dest = tile.interactions.transition!!
+                abs(dest.x - toX) + abs(dest.y - toY)
+            }
     }
 
     fun findNearestBank(char: Character): MapInfo? = findNearest(char, "bank")

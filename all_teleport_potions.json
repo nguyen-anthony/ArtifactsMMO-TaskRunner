@@ -1,0 +1,185 @@
+{
+  "data": [
+    {
+      "name": "Recall Potion",
+      "code": "recall_potion",
+      "level": 5,
+      "type": "consumable",
+      "subtype": "potion",
+      "description": "A swirling blue potion that instantly transports you back to the world's spawn point when consumed.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "teleport",
+          "value": 271,
+          "description": "Teleports to map ID 271 when the item is used."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 5,
+        "items": [
+          {
+            "code": "sunflower",
+            "quantity": 1
+          },
+          {
+            "code": "gudgeon",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Forest Bank Potion",
+      "code": "forest_bank_potion",
+      "level": 20,
+      "type": "consumable",
+      "subtype": "potion",
+      "description": "A shimmering green potion that instantly transports you to the forest bank when consumed.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "teleport",
+          "value": 955,
+          "description": "Teleports to map ID 955 when the item is used."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 20,
+        "items": [
+          {
+            "code": "nettle_leaf",
+            "quantity": 1
+          },
+          {
+            "code": "trout",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Enchanted Potion",
+      "code": "enchanted_potion",
+      "level": 40,
+      "type": "consumable",
+      "subtype": "potion",
+      "description": "A luminous potion brewed with enchanted ingredients, teleporting its drinker to a hidden magical grove.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "teleport",
+          "value": 715,
+          "description": "Teleports to map ID 715 when the item is used."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "enchanted_mushroom",
+            "quantity": 1
+          },
+          {
+            "code": "salmon",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Sandwhisper Potion",
+      "code": "sandwhisper_potion",
+      "level": 50,
+      "type": "consumable",
+      "subtype": "potion",
+      "description": "A sunlit desert potion that carries its drinker to the hidden paths of the Sandwhisper lands.",
+      "conditions": [
+        {
+          "code": "secure_the_island",
+          "operator": "achievement_unlocked",
+          "value": 1
+        }
+      ],
+      "effects": [
+        {
+          "code": "teleport",
+          "value": 1234,
+          "description": "Teleports to map ID 1234 when the item is used."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 50,
+        "items": [
+          {
+            "code": "torch_cactus_flower",
+            "quantity": 1
+          },
+          {
+            "code": "swordfish",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Lava Underground Potion",
+      "code": "lava_underground_potion",
+      "level": 50,
+      "type": "consumable",
+      "subtype": "potion",
+      "description": "A blazing potion brewed with enchanted mushroom and lava fish, teleporting its drinker to the scorching depths of the lava underground.",
+      "conditions": [
+        {
+          "code": "draconic_harvest",
+          "operator": "achievement_unlocked",
+          "value": 1
+        }
+      ],
+      "effects": [
+        {
+          "code": "teleport",
+          "value": 545,
+          "description": "Teleports to map ID 545 when the item is used."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 50,
+        "items": [
+          {
+            "code": "enchanted_mushroom",
+            "quantity": 1
+          },
+          {
+            "code": "lava_fish",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    }
+  ],
+  "total": 5,
+  "page": 1,
+  "size": 50,
+  "pages": 1
+}

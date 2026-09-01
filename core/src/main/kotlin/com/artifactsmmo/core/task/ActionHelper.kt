@@ -97,80 +97,150 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
     }
 
     /**
-     * Navigate to a map tile, handling layer transitions transparently.
+     * Navigate to a map tile, handling all transitions transparently.
      *
-     * The game has three layers: "overworld" (the default), "underground", and "interior".
-     * Resources, monsters, and other content may exist on any layer. Travelling between
-     * layers requires:
-     *   1. Moving to the transition tile on the current layer.
-     *   2. POSTing to /action/transition to cross to the other layer.
-     *   3. Moving to the final destination on the target layer.
+     * Routing logic (loop-based, max [MAX_NAV_ITERATIONS] hops):
      *
-     * This method handles all three steps automatically:
-     * - If [targetMap] is on the same layer as the character → plain [moveTo].
-     * - If the character is on a sub-layer (underground/interior) but the target is
-     *   on a different layer → find and use the exit transition first to return to
-     *   the overworld, then navigate from there.
-     * - If the target is on a sub-layer → find the overworld transition tile leading
-     *   to that layer, move there, cross, then move to the final destination.
+     *   Case 1 — On a sub-layer, target is on a DIFFERENT layer:
+     *     Exit the current layer to overworld (or nearest other layer) first.
+     *     Supports multi-hop chains: underground → interior → overworld via repeated iterations.
      *
-     * Returns the updated [Character] after all movement and transitions are complete.
+     *   Case 2 — On overworld, target is on a sub-layer:
+     *     Find and use the cross-layer entry transition closest to the target.
+     *
+     *   Case 3 — Same layer, proactive same-layer transition detection:
+     *     If the destination tile is only reachable via a same-layer transition gate
+     *     (e.g. overworld sub-region behind a gold gate, or underground sub-region behind
+     *     a key gate), use that transition before attempting moveTo.
+     *
+     *   Case 4 — Same layer, no known gate: plain moveTo with reactive 595/596 fallback.
+     *     If A* fails (terrain wall, water, blocked map), [moveToWithTransitionFallback]
+     *     searches for a nearby same-layer transition and routes through it.
+     *
+     * Each transition's conditions (item cost, gold cost, has_item) are satisfied
+     * automatically via [satisfyTransitionConditions]. Throws
+     * [TransitionConditionUnsatisfiableException] if a condition cannot be met.
      */
     suspend fun navigateToTile(name: String, targetMap: MapInfo): Character {
         var char = refreshCharacter(name)
-        val targetLayer = targetMap.layer
+        var iterations = 0
 
-        // ── Step 1: If on a sub-layer and the target is not on the same layer,
-        //            exit back to the overworld first ──────────────────────────
-        if (char.layer != "overworld" && char.layer != targetLayer) {
-            val exitTile = contentCache.findExitTransitionTile(char)
-                ?: throw IllegalStateException(
-                    "Cannot navigate: character is on layer '${char.layer}' with no exit transition"
-                )
-            char = moveTo(name, exitTile.x, exitTile.y)
-            val exitConditions = exitTile.interactions.transition?.conditions ?: emptyList()
-            if (exitConditions.isNotEmpty()) {
-                char = satisfyTransitionConditions(name, char, exitConditions)
-                // If we banked, re-verify position (satisfyTransitionConditions may have moved us)
-                if (!isAt(char, exitTile.x, exitTile.y)) {
-                    char = moveTo(name, exitTile.x, exitTile.y)
+        while (iterations++ < MAX_NAV_ITERATIONS) {
+            val targetLayer = targetMap.layer
+
+            // Already at destination
+            if (isAt(char, targetMap.x, targetMap.y) && char.layer == targetLayer) break
+
+            // ── Case 1: On a sub-layer, need to exit toward a different layer ────
+            if (char.layer != "overworld" && char.layer != targetLayer) {
+                val exitTile = contentCache.findExitTransitionTile(char)
+                    ?: throw TransitionConditionUnsatisfiableException(
+                        "Cannot navigate: on layer '${char.layer}' with no exit transition"
+                    )
+                char = moveTo(name, exitTile.x, exitTile.y)
+                val conditions = exitTile.interactions.transition?.conditions ?: emptyList()
+                if (conditions.isNotEmpty()) {
+                    char = satisfyTransitionConditions(name, char, conditions)
+                    if (!isAt(char, exitTile.x, exitTile.y)) char = moveTo(name, exitTile.x, exitTile.y)
+                }
+                char = useTransition(name)
+                continue
+            }
+
+            // ── Case 2: On overworld, target is on a sub-layer ──────────────────
+            if (char.layer == "overworld" && targetLayer != "overworld") {
+                val entryTile = contentCache.findTransitionTile(char, targetLayer, targetMap.x, targetMap.y)
+                    ?: throw TransitionConditionUnsatisfiableException(
+                        "Cannot navigate: no overworld transition leads to layer '$targetLayer'"
+                    )
+                char = moveTo(name, entryTile.x, entryTile.y)
+                val conditions = entryTile.interactions.transition?.conditions ?: emptyList()
+                if (conditions.isNotEmpty()) {
+                    char = satisfyTransitionConditions(name, char, conditions)
+                    if (!isAt(char, entryTile.x, entryTile.y)) char = moveTo(name, entryTile.x, entryTile.y)
+                }
+                char = useTransition(name)
+                continue
+            }
+
+            // ── Case 3: Same layer — proactive same-layer transition check ───────
+            // Detects tiles that are only reachable via a same-layer gate (gold-gated
+            // overworld sub-regions, key-gated underground sub-regions, etc.).
+            if (char.layer == targetLayer) {
+                val sameLayerEntry = contentCache.findSameLayerTransitionTo(targetMap.x, targetMap.y, targetLayer)
+                if (sameLayerEntry != null) {
+                    char = moveTo(name, sameLayerEntry.x, sameLayerEntry.y)
+                    val conditions = sameLayerEntry.interactions.transition?.conditions ?: emptyList()
+                    if (conditions.isNotEmpty()) {
+                        char = satisfyTransitionConditions(name, char, conditions)
+                        if (!isAt(char, sameLayerEntry.x, sameLayerEntry.y)) char = moveTo(name, sameLayerEntry.x, sameLayerEntry.y)
+                    }
+                    char = useTransition(name)
+                    continue
                 }
             }
-            char = useTransition(name)
-        }
 
-        // ── Step 2: If the target is on a sub-layer, cross to it ─────────────
-        if (targetLayer != "overworld" && char.layer == "overworld") {
-            val entryTile = contentCache.findTransitionTile(char, targetLayer, targetMap.x, targetMap.y)
-                ?: throw IllegalStateException(
-                    "Cannot navigate: no accessible overworld transition tile leads to layer '$targetLayer'"
-                )
-            char = moveTo(name, entryTile.x, entryTile.y)
-            val entryConditions = entryTile.interactions.transition?.conditions ?: emptyList()
-            if (entryConditions.isNotEmpty()) {
-                char = satisfyTransitionConditions(name, char, entryConditions)
-                if (!isAt(char, entryTile.x, entryTile.y)) {
-                    char = moveTo(name, entryTile.x, entryTile.y)
-                }
-            }
-            char = useTransition(name)
-        }
-
-        // ── Step 3: Move to the final destination on the correct layer ────────
-        if (!isAt(char, targetMap.x, targetMap.y)) {
-            char = moveTo(name, targetMap.x, targetMap.y)
+            // ── Case 4: Same layer, freely walkable — moveTo with reactive fallback
+            char = moveToWithTransitionFallback(name, char, targetMap.x, targetMap.y, targetLayer)
+            break
         }
 
         return char
+    }
+
+    /** Safety cap on the number of transitions allowed in a single [navigateToTile] call. */
+    private val MAX_NAV_ITERATIONS = 8
+
+    /**
+     * Move character to (toX, toY) on [toLayer] with a reactive fallback for 595/596 errors.
+     *
+     * Error codes 595 ("No path to destination") and 596 ("Map is blocked") indicate that
+     * direct A* movement failed — there is likely terrain, water, or a gate between the
+     * character and the target. When this happens, search for a nearby same-layer transition
+     * that routes toward the destination, satisfy its conditions, cross it, then attempt
+     * the final move.
+     *
+     * If no same-layer transition is found after a 595/596, rethrows as
+     * [TransitionConditionUnsatisfiableException] with a clear message.
+     */
+    private suspend fun moveToWithTransitionFallback(
+        name: String,
+        char: Character,
+        toX: Int, toY: Int, toLayer: String
+    ): Character {
+        return try {
+            moveTo(name, toX, toY)
+        } catch (e: ArtifactsApiException) {
+            if (e.errorCode == 595 || e.errorCode == 596) {
+                println("[$name] Navigation: ${e.errorCode} moving to ($toX,$toY,$toLayer) — searching for same-layer transition")
+                val freshChar = refreshCharacter(name)
+                val transitionTile = contentCache.findNearestSameLayerTransitionToward(
+                    freshChar, toX, toY, toLayer
+                ) ?: throw TransitionConditionUnsatisfiableException(
+                    "No path to ($toX,$toY,$toLayer) and no same-layer transition found [${e.errorCode}]"
+                )
+                var c = moveTo(name, transitionTile.x, transitionTile.y)
+                val conditions = transitionTile.interactions.transition?.conditions ?: emptyList()
+                if (conditions.isNotEmpty()) {
+                    c = satisfyTransitionConditions(name, c, conditions)
+                    if (!isAt(c, transitionTile.x, transitionTile.y)) c = moveTo(name, transitionTile.x, transitionTile.y)
+                }
+                c = useTransition(name)
+                // After transition, attempt the final move to destination
+                if (!isAt(c, toX, toY)) moveTo(name, toX, toY) else c
+            } else throw e
+        }
     }
 
     /**
      * Ensure the character can pay any conditions attached to a transition tile.
      *
      * Handles the following [Condition.operator] values:
-     *  - `cost`: character must have [Condition.value] of [Condition.code] in inventory.
-     *    Withdraws from bank if inventory is insufficient. Item is consumed by the transition.
-     *  - `has_item`: same as cost but not consumed by the transition (still needs to be present).
+     *  - `cost` where `code == "gold"`: character must have [Condition.value] gold on hand.
+     *    Withdraws from bank if inventory gold is insufficient (mirrors item-cost handling).
+     *  - `cost` (item): character must have [Condition.value] of [Condition.code] in inventory.
+     *    Withdraws from bank if inventory is insufficient.
+     *  - `has_item`: same as item cost but item is not consumed.
      *  - `achievement_unlocked`: should have been pre-filtered by [ContentCache.preWarmMaps].
      *    Defensively logged if it reaches runtime.
      *
@@ -178,8 +248,8 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
      * — this is a distinct exception type so the runner can stop the task cleanly instead
      * of infinite-retrying.
      *
-     * The returned [Character] reflects any bank trip taken to withdraw items — the caller
-     * should verify the character is still at the transition tile after this returns.
+     * The returned [Character] reflects any bank trip taken to withdraw gold/items — the
+     * caller should verify the character is still at the transition tile after this returns.
      */
     private suspend fun satisfyTransitionConditions(
         characterName: String,
@@ -188,10 +258,38 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
     ): Character {
         var char = charAtTile
         val itemsToWithdraw = mutableListOf<SimpleItem>()
+        var goldToWithdraw = 0
 
         for (condition in conditions) {
             when (condition.operator) {
-                "cost", "has_item" -> {
+                "cost" -> {
+                    val required = condition.value
+                    if (condition.code == "gold") {
+                        if (char.gold >= required) continue
+                        val deficit = required - char.gold
+                        val bankGold = client.bank.getBankDetails().gold
+                        if (bankGold < deficit) {
+                            throw TransitionConditionUnsatisfiableException(
+                                "Cannot satisfy transition: need $required gold, have ${char.gold} in inventory + $bankGold in bank"
+                            )
+                        }
+                        goldToWithdraw += deficit
+                    } else {
+                        // Item cost — withdraw from bank if not in inventory
+                        val inInventory = getItemQuantity(char, condition.code)
+                        if (inInventory >= required) continue
+                        val deficit = required - inInventory
+                        val inBank = bankState.getQuantity(condition.code)
+                        if (inBank < deficit) {
+                            throw TransitionConditionUnsatisfiableException(
+                                "Cannot satisfy transition condition: need $required ${condition.code}, " +
+                                "have $inInventory in inventory + $inBank in bank"
+                            )
+                        }
+                        itemsToWithdraw.add(SimpleItem(condition.code, deficit))
+                    }
+                }
+                "has_item" -> {
                     val required = condition.value
                     val inInventory = getItemQuantity(char, condition.code)
                     if (inInventory >= required) continue
@@ -214,18 +312,23 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
             }
         }
 
-        if (itemsToWithdraw.isNotEmpty()) {
+        if (itemsToWithdraw.isNotEmpty() || goldToWithdraw > 0) {
             val bank = contentCache.findNearest(char, "bank", null, layer = "overworld")
                 ?: throw TransitionConditionUnsatisfiableException(
                     "Need bank to satisfy transition, but no bank found"
                 )
-            // Use navigateToTile so we handle any layer transitions cleanly. If we're on a
-            // sub-layer at an exit transition tile whose exit itself is conditional, this
-            // could recurse — accept that risk; in practice exit transitions are unconditional.
             char = navigateToTile(characterName, bank)
-            val result = client.bank.withdrawItems(characterName, itemsToWithdraw)
-            waitForCooldown(result.cooldown.expiration)
-            char = result.character
+
+            if (goldToWithdraw > 0) {
+                val goldResult = client.bank.withdrawGold(characterName, goldToWithdraw)
+                waitForCooldown(goldResult.cooldown.expiration)
+                char = goldResult.character
+            }
+            if (itemsToWithdraw.isNotEmpty()) {
+                val result = client.bank.withdrawItems(characterName, itemsToWithdraw)
+                waitForCooldown(result.cooldown.expiration)
+                char = result.character
+            }
         }
 
         return char
@@ -1566,7 +1669,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
      *  - Previous items are NOT deposited until AFTER new items are successfully equipped,
      *    so rollback is possible on any per-slot failure.
      *  - On withdrawal/craft failure, rolls back by re-equipping the previously equipped items.
-     *  - Explicit `println("[$name] ...")` logging on every failure for diagnosability.
+     *  - Explicit `println("name ...")` logging on every failure for diagnosability.
      *  - Safety net: after all swaps, verifies no critical combat slot was left empty.
      *
      * Tools (subtype == "tool", e.g. pickaxes, axes) are never deposited.
@@ -2041,41 +2144,42 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
     }
 
     /**
-     * Determine what item costs a character will incur transitioning to [targetMap],
-     * WITHOUT navigating. Inspects the in-memory [ContentCache] tile data only.
+     * Determine all item/gold costs incurred transitioning from [char]'s current position
+     * to [targetMap], WITHOUT navigating. Inspects in-memory [ContentCache] tile data only.
      *
-     * Returns a map of itemCode → quantity consumed for each transition on the path:
-     *  - If [char] is on a sub-layer and needs to exit first, the exit transition
-     *    conditions are included.
-     *  - If [targetMap] is on a sub-layer, the entry transition conditions are included.
-     *  - Only `operator == "cost"` conditions are returned — `has_item` conditions are
-     *    NOT costs (item is not consumed) and are excluded.
+     * Covers three transition categories that match [navigateToTile]'s routing logic:
+     *  1. Exit from sub-layer (if character is not on overworld and not already on target layer)
+     *  2. Cross-layer entry (if target is on a different layer)
+     *  3. Same-layer gate (if target is on the same layer but behind a same-layer transition)
      *
-     * Returns an empty map when the path has no cost conditions or the target is on the
-     * same overworld layer.
+     * Only `operator == "cost"` conditions are included — `has_item` is not a consumed cost.
+     * Gold costs are returned under key "gold". Item costs use their item code as key.
+     * Returns an empty map when the path has no cost conditions.
      */
     fun getTransitionCosts(char: com.artifactsmmo.client.models.Character, targetMap: MapInfo): Map<String, Int> {
         val costs = mutableMapOf<String, Int>()
 
-        fun collectCosts(conditions: List<com.artifactsmmo.client.models.Condition>?) {
-            conditions?.filter { it.operator == "cost" }?.forEach { condition ->
-                costs[condition.code] = (costs[condition.code] ?: 0) + condition.value
-            }
+        fun collectCosts(tile: MapInfo?) {
+            tile?.interactions?.transition?.conditions
+                ?.filter { it.operator == "cost" }
+                ?.forEach { c -> costs[c.code] = (costs[c.code] ?: 0) + c.value }
         }
 
         val targetLayer = targetMap.layer
 
-        // If character is on a sub-layer and needs to exit to reach overworld first
+        // 1. Exit from sub-layer if character is not already on target layer
         if (char.layer != "overworld" && char.layer != targetLayer) {
-            val exitTile = contentCache.findExitTransitionTile(char)
-            collectCosts(exitTile?.interactions?.transition?.conditions)
+            collectCosts(contentCache.findExitTransitionTile(char))
         }
 
-        // If target is on a sub-layer, inspect the entry transition tile
-        if (targetLayer != "overworld") {
-            val entryTile = contentCache.findTransitionTile(char, targetLayer, targetMap.x, targetMap.y)
-            collectCosts(entryTile?.interactions?.transition?.conditions)
+        // 2. Cross-layer entry transition
+        if (char.layer != targetLayer) {
+            val entryLayer = if (char.layer == "overworld") targetLayer else "overworld"
+            collectCosts(contentCache.findTransitionTile(char, entryLayer, targetMap.x, targetMap.y))
         }
+
+        // 3. Same-layer gate (e.g. gold-gated overworld sub-region, key-gated underground area)
+        collectCosts(contentCache.findSameLayerTransitionTo(targetMap.x, targetMap.y, targetLayer))
 
         return costs
     }
