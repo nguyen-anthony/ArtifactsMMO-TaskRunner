@@ -171,9 +171,14 @@ class CoopOptimizer(
         // claimedGear tracks bank items already claimed by previous characters so that subsequent
         // characters don't try to withdraw items that are already spoken for. Inventory and
         // currently-equipped items are per-character and don't need cross-character tracking.
+        //
+        // IMPORTANT: tank picks gear FIRST so it can claim priority items (e.g. healing_rune)
+        // before supports run. If a support runs first and claims the only healing_rune, the
+        // tank gets nothing — exactly the wrong outcome.
         val claimedGear = mutableMapOf<String, Int>()
         val gearPicks = mutableMapOf<String, GearPickResult>()
-        for (name in participantNames) {
+        val orderedForGear = listOf(tankName) + participantNames.filter { it != tankName }
+        for (name in orderedForGear) {
             val role = if (name == tankName) Role.TANK else Role.SUPPORT
             println("[$name] CoopOptimizer: picking best gear (heuristic, role=$role) vs $monsterCode")
             gearPicks[name] = try {
@@ -184,7 +189,131 @@ class CoopOptimizer(
             }
         }
 
-        // 5. Baseline coop sim with heuristic gear locked in (no utilities yet)
+        // 4b. Post-gear threat validation pass.
+        //
+        // After heuristic gear picks, compute each character's post-gear threat:
+        //   post-gear threat = base char.threat + Σ(threat effect on each item in targetLoadout)
+        //
+        // Invariant: the tank's post-gear threat must strictly exceed every support's.
+        // If any support's post-gear threat >= tank's, swap the highest-threat item in
+        // that support's loadout for the next-best alternative that reduces their threat.
+        // Repeat until the invariant holds or no swap is possible.
+        //
+        // This is a safety net for edge cases where Fix 1 (threatWeight=0 for support) still
+        // allows a support to incidentally match the tank's threat via non-threat-primary items
+        // that happen to carry incidental threat effects.
+        // 4b. Post-gear threat validation pass.
+        //
+        // Pre-fetch threat values for every item in every loadout so the validation
+        // loop below can be synchronous (getItemOrNull is a suspend function and
+        // cannot be called from a plain local function).
+        val allLoadoutCodes = gearPicks.values.flatMap { it.targetLoadout.values }.distinct()
+        val threatByCode = mutableMapOf<String, Int>()
+        for (code in allLoadoutCodes) {
+            try {
+                threatByCode[code] = helper.contentCache.getItemOrNull(code)?.effects
+                    ?.find { it.code == "threat" }?.value ?: 0
+            } catch (_: Exception) { threatByCode[code] = 0 }
+        }
+
+        fun postGearThreat(name: String): Int {
+            val char = chars[name]!!
+            val loadout = gearPicks[name]?.targetLoadout ?: emptyMap()
+            val gearThreat = loadout.values.sumOf { code -> threatByCode[code] ?: 0 }
+            return char.threat + gearThreat
+        }
+
+        val supportNames = participantNames.filter { it != tankName }
+        val tankPostThreat = postGearThreat(tankName)
+        for (supportName in supportNames) {
+            val supportPostThreat = postGearThreat(supportName)
+            if (supportPostThreat < tankPostThreat) continue
+
+            // Support's post-gear threat >= tank's — find the highest-threat item in support's loadout
+            println("[$supportName] CoopOptimizer: post-gear threat $supportPostThreat >= tank $tankName threat $tankPostThreat — adjusting")
+            val support = chars[supportName]!!
+            val supportPick = gearPicks[supportName] ?: continue
+            val mutableEquipActions = supportPick.equipActions.toMutableList()
+            val mutableLoadout = supportPick.targetLoadout.toMutableMap()
+
+            // Find the slot contributing the most threat in the support's loadout
+            val worstSlot = mutableLoadout.entries.maxByOrNull { (_, code) ->
+                try {
+                    helper.contentCache.getItemOrNull(code)?.effects
+                        ?.find { it.code == "threat" }?.value ?: 0
+                } catch (_: Exception) { 0 }
+            }
+            if (worstSlot == null) continue
+            val worstThreatValue = try {
+                helper.contentCache.getItemOrNull(worstSlot.value)?.effects
+                    ?.find { it.code == "threat" }?.value ?: 0
+            } catch (_: Exception) { 0 }
+            if (worstThreatValue <= 0) {
+                // No item in the support's loadout has an explicit threat effect —
+                // their threat tie comes from base stats, which we can't change via gear.
+                println("[$supportName] CoopOptimizer: no threat-bearing item to swap — accepting tie (base stat threat)")
+                continue
+            }
+
+            // Find the next-best alternative for worstSlot that has zero threat
+            val slotInfo = GearOptimizer.GEAR_SLOTS.firstOrNull { it.slot == worstSlot.key }
+            if (slotInfo == null) continue
+            val boss = monster
+            val bossDmg = mapOf(
+                "fire" to boss.attackFire, "earth" to boss.attackEarth,
+                "water" to boss.attackWater, "air" to boss.attackAir
+            )
+            val bossRes = mapOf(
+                "fire" to boss.resFire, "earth" to boss.resEarth,
+                "water" to boss.resWater, "air" to boss.resAir
+            )
+            val alternative = try {
+                helper.getAvailableEquipmentForSlot(support, slotInfo)
+                    .filter { it.source == "inventory" || it.source == "bank" }
+                    .filter { option ->
+                        // Must have zero threat effect
+                        option.item.effects.none { it.code == "threat" }
+                    }
+                    .filter { option ->
+                        // Cross-character claimed gear check
+                        if (option.source != "bank") true
+                        else {
+                            val bankQty = helper.bankState.getQuantity(option.item.code)
+                            val claimed = claimedGear.getOrDefault(option.item.code, 0)
+                            (bankQty - claimed) > 0
+                        }
+                    }
+                    .maxByOrNull { scoreItem(it.item, worstSlot.key, bossDmg, bossRes, Role.SUPPORT) }
+            } catch (_: Exception) { null }
+
+            if (alternative == null) {
+                println("[$supportName] CoopOptimizer: no zero-threat alternative for ${worstSlot.key} — keeping ${worstSlot.value}")
+                continue
+            }
+
+            println("[$supportName] CoopOptimizer: replacing ${worstSlot.value} (threat=$worstThreatValue) in ${worstSlot.key} with ${alternative.item.code} (zero threat)")
+            mutableLoadout[worstSlot.key] = alternative.item.code
+            mutableEquipActions.removeAll { it.slot == worstSlot.key }
+            val currentInSlot = helper.getEquippedInSlot(support, worstSlot.key)
+            if (alternative.item.code != currentInSlot && alternative.source != "equipped") {
+                if (alternative.source == "bank") {
+                    claimedGear[alternative.item.code] = claimedGear.getOrDefault(alternative.item.code, 0) + 1
+                }
+                mutableEquipActions.add(ActionHelper.EquipAction(
+                    slot = worstSlot.key,
+                    itemCode = alternative.item.code,
+                    source = alternative.source
+                ))
+            }
+            // Also release the claim on the item we stopped recommending
+            if (supportPick.equipActions.any { it.slot == worstSlot.key && it.source == "bank" }) {
+                val oldCode = worstSlot.value
+                val cur = claimedGear.getOrDefault(oldCode, 0)
+                if (cur > 0) claimedGear[oldCode] = cur - 1
+            }
+
+            gearPicks[supportName] = GearPickResult(mutableEquipActions, mutableLoadout)
+        }
         val gearOnlyLoadouts = participantNames.map { name ->
             ActionHelper.CoopParticipantLoadout(
                 char = chars[name]!!,
@@ -603,7 +732,12 @@ class CoopOptimizer(
         // ── Role weighting ──
         val (offenseWeight, defenseWeight, threatWeight) = when (role) {
             Role.TANK    -> Triple(0.6, 1.4, 2.0)   // Prioritize survival + threat
-            Role.SUPPORT -> Triple(1.4, 0.6, 0.5)   // Prioritize damage
+            // threatWeight = 0.0 for SUPPORT — supports must NOT compete for threat.
+            // The user declared which character is the tank; incidental threat gain on a
+            // support character would flip monster targeting and leave the support holding
+            // the wrong utility loadout (splash-heal vs. self-heal). Any threat-bearing item
+            // a support equips should win only on its other stats, never on threat.
+            Role.SUPPORT -> Triple(1.4, 0.6, 0.0)   // Prioritize damage; ignore threat
         }
 
         // ── Slot-specific weighting ──
@@ -891,12 +1025,18 @@ class CoopOptimizer(
         if (candidates.isEmpty()) return null
 
         val tankOrder = listOf(
-            RuneCategory.SELF_HEAL, RuneCategory.DAMAGE,
-            RuneCategory.DEFENSIVE, RuneCategory.AURA_HEAL, RuneCategory.OTHER
+            RuneCategory.SELF_HEAL,   // healing_rune — self-sustain; tank must survive
+            RuneCategory.DEFENSIVE,   // defensive rune — survivability before damage
+            RuneCategory.DAMAGE,      // damage rune — lower priority for tank
+            RuneCategory.AURA_HEAL,   // heals others not self — wrong for tank
+            RuneCategory.OTHER
         )
         val supportOrder = listOf(
-            RuneCategory.AURA_HEAL, RuneCategory.DAMAGE,
-            RuneCategory.DEFENSIVE, RuneCategory.SELF_HEAL, RuneCategory.OTHER
+            RuneCategory.AURA_HEAL,   // healing_aura_rune — heals allies; correct for support
+            RuneCategory.DAMAGE,
+            RuneCategory.DEFENSIVE,
+            RuneCategory.SELF_HEAL,   // self-heal is a fallback; support should heal team
+            RuneCategory.OTHER
         )
         val order = if (role == Role.TANK) tankOrder else supportOrder
 

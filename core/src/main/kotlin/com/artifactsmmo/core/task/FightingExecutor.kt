@@ -259,18 +259,22 @@ class FightingExecutor(private val helper: ActionHelper) {
         }
 
         // 3. Try to withdraw cooked food from bank — first check this monster's COOK_AND_USE drops,
-        //    then fall back to ANY usable food in the bank
+        //    then fall back to ANY usable food in the bank.
+        //    Withdraw only enough to heal + a small carry buffer (10 extra), NOT the entire
+        //    free inventory. Over-withdrawing fills inventory → triggers handleFullInventory →
+        //    deposits the food → next heal trip re-withdraws → infinite cycle.
         for (info in cookAndUseDrops) {
             val bankQty = helper.getBankItemQuantity(info.cookedCode)
             if (bankQty > 0) {
                 val freeCapacity = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity })
                     .coerceAtLeast(0)
                 if (freeCapacity == 0) break  // no room — skip to rest
-                val withdrawQty = minOf(bankQty, freeCapacity)
+                val qtyToHeal = maxOf(1, hpMissing / info.healAmount)
+                val withdrawQty = minOf(bankQty, freeCapacity, qtyToHeal + 25)
                 onStatus("Withdrawing ${withdrawQty}x ${info.cookedCode} from bank...")
                 helper.bankWithdrawItems(characterName, listOf(SimpleItem(info.cookedCode, withdrawQty)))
 
-                val qty = minOf(withdrawQty, maxOf(1, hpMissing / info.healAmount))
+                val qty = minOf(withdrawQty, qtyToHeal)
                 onStatus("Eating ${qty}x ${info.cookedCode}...")
                 val useResult = helper.useItem(characterName, info.cookedCode, qty)
                 onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
@@ -285,11 +289,12 @@ class FightingExecutor(private val helper: ActionHelper) {
             val freeCapacity = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity })
                 .coerceAtLeast(0)
             if (freeCapacity > 0) {
-                val withdrawQty = minOf(bankQty, freeCapacity)
+                val qtyToHeal = maxOf(1, hpMissing / healAmount)
+                val withdrawQty = minOf(bankQty, freeCapacity, qtyToHeal + 25)
                 onStatus("Withdrawing ${withdrawQty}x $foodCode from bank...")
                 helper.bankWithdrawItems(characterName, listOf(SimpleItem(foodCode, withdrawQty)))
 
-                val qty = minOf(withdrawQty, maxOf(1, hpMissing / healAmount))
+                val qty = minOf(withdrawQty, qtyToHeal)
                 onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
                 val useResult = helper.useItem(characterName, foodCode, qty)
                 onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
@@ -389,6 +394,19 @@ class FightingExecutor(private val helper: ActionHelper) {
                 }
                 // Everything else: deposit per standard rules
                 else -> {
+                    // Protect any usable food the character is carrying for healing.
+                    // Without this guard, bank-withdrawn healing food (e.g. cooked_salmon
+                    // fetched during handleHealing) gets deposited right back on the next
+                    // handleFullInventory call, creating an endless bank-trip cycle.
+                    val isHealingFood = try {
+                        val item = helper.contentCache.getItemOrNull(slot.code)
+                        item != null &&
+                        item.type == "consumable" &&
+                        item.level <= char.level &&
+                        item.effects.any { it.code == "heal" && it.value > 0 }
+                    } catch (_: Exception) { false }
+                    if (isHealingFood) continue
+
                     val shouldDeposit = try { helper.shouldDepositItem(char, slot.code) } catch (_: Exception) { true }
                     if (!shouldDeposit) continue
                     itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))

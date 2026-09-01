@@ -1692,32 +1692,43 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
         // + new bank withdrawals. Without this, characters with nearly-full inventory hit
         // 497 during withdrawal (unequip fills inventory, then withdraw has no space).
         //
-        // Reserve headroom = number of slots we'll unequip + number of items we'll withdraw
-        // + 5-slot safety margin.
-        val slotsToUnequip = prevEquipped.count { it.value.isNotEmpty() }
-        val itemsToWithdrawCount = bankActions.size + craftActions.sumOf {
-            try { getItem(it.itemCode).craft?.items?.size ?: 0 } catch (_: Exception) { 0 }
+        // Uses SLOT arithmetic (not quantity arithmetic): each unique item code occupies
+        // exactly 1 inventory slot regardless of stack size.
+        //
+        // Needed slots = slots to unequip (each adds 1 slot) +
+        //                slots to withdraw from bank (each new code adds 1 slot) +
+        //                craft ingredients (each new code adds 1 slot) +
+        //                5 safety margin
+        val slotsOccupied = char.inventory.count { it.quantity > 0 }
+        val freeSlots = char.inventoryMaxItems - slotsOccupied
+        val inventoryCodes = char.inventory.filter { it.quantity > 0 }.map { it.code }.toSet()
+        // Only count bank/craft items that would occupy a NEW slot (not already in inventory)
+        val newBankSlots = bankActions.count { it.itemCode !in inventoryCodes }
+        val newCraftIngredientSlots = craftActions.sumOf { action ->
+            try {
+                getItem(action.itemCode).craft?.items
+                    ?.count { ingredient -> ingredient.code !in inventoryCodes } ?: 0
+            } catch (_: Exception) { 0 }
         }
-        val headroomNeeded = slotsToUnequip + itemsToWithdrawCount + 5
-        val currentInvTotal = char.inventory.sumOf { it.quantity }
-        val invCapacity = char.inventoryMaxItems
-        val roomNeeded = (currentInvTotal + headroomNeeded) - invCapacity
-        if (roomNeeded > 0) {
-            val itemsToPreDeposit = mutableListOf<SimpleItem>()
+        val headroomNeeded = prevEquipped.count { it.value.isNotEmpty() } + newBankSlots + newCraftIngredientSlots + 5
+        val slotsToFree = headroomNeeded - freeSlots
+
+        if (slotsToFree > 0) {
+            val depositList = mutableListOf<SimpleItem>()
             for (slot in char.inventory) {
+                if (depositList.size >= slotsToFree) break
                 if (slot.quantity <= 0 || slot.code.isEmpty()) continue
                 val item = try { contentCache.getItemOrNull(slot.code) } catch (_: Exception) { null }
                 if (item == null) continue
-                // Never pre-deposit tools (subtype=="tool") or items we're about to equip
+                // Never pre-deposit tools or items we're about to equip
                 if (item.subtype == "tool") continue
                 if (equipActions.any { it.itemCode == slot.code }) continue
-                itemsToPreDeposit.add(SimpleItem(slot.code, slot.quantity))
-                if (itemsToPreDeposit.sumOf { it.quantity } >= roomNeeded) break
+                depositList.add(SimpleItem(slot.code, slot.quantity))
             }
-            if (itemsToPreDeposit.isNotEmpty()) {
+            if (depositList.isNotEmpty()) {
                 try {
-                    println("[$characterName] retrieveAndEquipItems: pre-depositing ${itemsToPreDeposit.size} item(s) to make room ($roomNeeded slots needed)")
-                    val result = client.bank.depositItems(characterName, itemsToPreDeposit)
+                    println("[$characterName] retrieveAndEquipItems: pre-depositing ${depositList.size} slot(s) to make room (need $slotsToFree free)")
+                    val result = client.bank.depositItems(characterName, depositList)
                     waitForCooldown(result.cooldown.expiration)
                     char = result.character
                 } catch (e: Exception) {
@@ -1728,11 +1739,26 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         // Step 3: Unequip replaced slots (do NOT deposit yet — needed for rollback)
         val unequippedSlots = mutableSetOf<String>()
+        val skippedSlots = mutableSetOf<String>()  // slots skipped due to 483 (HP too high)
         for ((slot, equipped) in prevEquipped) {
             if (equipped.isNotEmpty()) {
                 try {
                     char = unequip(characterName, slot)
                     unequippedSlots.add(slot)
+                } catch (e: ArtifactsApiException) {
+                    if (e.errorCode == 483) {
+                        // 483: "not enough HP to unequip this item" — the item provides an HP
+                        // bonus and current HP exceeds the max HP that would remain without it.
+                        // This happens at full HP when swapping HP-boosting armor at the bank.
+                        // We cannot reduce HP at the bank (resting heals, not damages).
+                        // Skip this slot — keep the current item equipped. The optimizer will
+                        // pick it up again next run once HP has naturally dropped in combat.
+                        println("[$characterName] retrieveAndEquipItems: skipping $slot swap — 483 (HP too high to unequip $equipped). Will retry next optimization pass.")
+                        skippedSlots.add(slot)
+                    } else {
+                        println("[$characterName] retrieveAndEquipItems: unequip failed for $slot: ${e.message}")
+                        return rollback("unequip failed for $slot", unequippedSlots)
+                    }
                 } catch (e: Exception) {
                     println("[$characterName] retrieveAndEquipItems: unequip failed for $slot: ${e.message}")
                     return rollback("unequip failed for $slot", unequippedSlots)
@@ -1811,9 +1837,14 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
             }
         }
 
-        // Step 7: Equip all new items — per-slot success tracking + rollback on failure
+        // Step 7: Equip all new items — per-slot success tracking + rollback on failure.
+        // Skip slots that were not unequipped due to 483 (skippedSlots).
         val successfullyEquippedSlots = mutableSetOf<String>()
         for (action in equipActions) {
+            if (action.slot in skippedSlots) {
+                println("[$characterName] retrieveAndEquipItems: skipping equip for ${action.slot} (was skipped during unequip due to 483)")
+                continue
+            }
             try {
                 char = equip(characterName, action.itemCode, action.slot)
                 successfullyEquippedSlots.add(action.slot)
@@ -1877,8 +1908,12 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
      * Retrieve utility potions from bank (if needed) and equip them in utility slots.
      * Utility slots hold stacks (up to 100) — quantity is part of the equip action.
      *
-     * Assumes candidates come from [GearOptimizer.UtilityEquipAction] which already
-     * carries the desired stack quantity and the source (inventory or bank).
+     * Strategy:
+     *  1. If the character already has the potion in inventory (any quantity), equip
+     *     what they have immediately — no bank trip needed for that slot.
+     *  2. Only go to the bank for potions the character has ZERO of in inventory.
+     *  3. [action.quantity] is an ideal target (100), not a hard requirement — equip
+     *     whatever is available.
      */
     suspend fun retrieveAndEquipUtilities(
         characterName: String,
@@ -1888,53 +1923,83 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         var char = refreshCharacter(characterName)
 
-        // Determine bank withdrawals: bring inventory up to desired quantity for each utility.
-        // Exclude quantities already equipped in the slot — if the right item is already
-        // equipped with sufficient quantity, no withdrawal is needed.
-        val bankWithdrawals = mutableListOf<SimpleItem>()
+        // Split actions: those we can satisfy from inventory right now vs those needing bank
+        val inventoryActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
+        val bankNeededActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
+
         for (action in actions) {
             val currentEquipped = getEquippedInSlot(char, action.slot)
             val equippedQty = if (currentEquipped == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
             val inInv = getItemQuantity(char, action.itemCode)
-            val alreadyHave = inInv + equippedQty
-            val deficit = action.quantity - alreadyHave
-            if (deficit > 0) {
-                val bankQty = bankState.getQuantity(action.itemCode)
-                val toWithdraw = deficit.coerceAtMost(bankQty)
-                if (toWithdraw > 0) bankWithdrawals.add(SimpleItem(action.itemCode, toWithdraw))
+
+            when {
+                // Already equipped at or above target — nothing to do
+                currentEquipped == action.itemCode && equippedQty >= action.quantity -> {
+                    // no-op
+                }
+                // Have some in inventory — equip from inventory (bank trip not required)
+                inInv > 0 || equippedQty > 0 -> inventoryActions.add(action)
+                // Nothing in inventory or equipped — need bank
+                else -> {
+                    val bankQty = bankState.getQuantity(action.itemCode)
+                    if (bankQty > 0) bankNeededActions.add(action)
+                    else println("[$characterName] retrieveAndEquipUtilities: no ${action.itemCode} in inventory or bank — skipping")
+                }
             }
         }
 
-        // Travel to bank if we need to withdraw anything
-        if (bankWithdrawals.isNotEmpty()) {
+        // Equip inventory-only actions immediately (no bank trip)
+        for (action in inventoryActions) {
+            val current = getEquippedInSlot(char, action.slot)
+            val currentQty = if (current == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
+            val inInventory = getItemQuantity(char, action.itemCode)
+            try {
+                when {
+                    current == action.itemCode && currentQty >= action.quantity -> { /* already good */ }
+                    current == action.itemCode && inInventory > 0 -> {
+                        val addQty = inInventory.coerceAtMost(action.quantity - currentQty)
+                        if (addQty > 0) char = equip(characterName, action.itemCode, action.slot, addQty)
+                    }
+                    current.isNotEmpty() && current != action.itemCode -> {
+                        char = unequip(characterName, action.slot)
+                        val qty = inInventory.coerceAtMost(action.quantity).coerceAtLeast(1)
+                        char = equip(characterName, action.itemCode, action.slot, qty)
+                    }
+                    else -> {
+                        if (inInventory > 0) {
+                            val qty = inInventory.coerceAtMost(action.quantity)
+                            char = equip(characterName, action.itemCode, action.slot, qty)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipUtilities: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
+            }
+        }
+
+        // Bank path: only for potions not already in inventory
+        if (bankNeededActions.isNotEmpty()) {
             val bank = findNearestBank(char)
             if (bank == null) {
-                println("[$characterName] retrieveAndEquipUtilities: no bank found — skipping")
+                println("[$characterName] retrieveAndEquipUtilities: no bank found — skipping bank withdrawals")
                 return char
             }
             char = navigateToTile(characterName, bank)
 
-            // Pre-deposit non-essential inventory items if there isn't enough room to
-            // withdraw the utility potions. Items being equipped are excluded from deposit.
-            val withdrawTotal = bankWithdrawals.sumOf { it.quantity }
-            val freeSlots = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
-            if (freeSlots < withdrawTotal) {
-                val keepCodes = bankWithdrawals.map { it.code }.toSet() +
-                    actions.map { it.itemCode }.toSet()
-                val toPreDeposit = char.inventory
+            // Determine how many new slots we need
+            val inventoryCodesNow = char.inventory.filter { it.quantity > 0 }.map { it.code }.toSet()
+            val newSlotCodes = bankNeededActions.map { it.itemCode }.filter { it !in inventoryCodesNow }.toSet()
+            val freeSlots = char.inventoryMaxItems - char.inventory.count { it.quantity > 0 }
+            val slotsNeeded = (newSlotCodes.size - freeSlots).coerceAtLeast(0)
+
+            if (slotsNeeded > 0) {
+                val keepCodes = bankNeededActions.map { it.itemCode }.toSet()
+                val depositList = char.inventory
                     .filter { it.quantity > 0 && it.code !in keepCodes }
                     .map { SimpleItem(it.code, it.quantity) }
-                val depositNeeded = withdrawTotal - freeSlots
-                val depositList = mutableListOf<SimpleItem>()
-                var freed = 0
-                for (item in toPreDeposit) {
-                    if (freed >= depositNeeded) break
-                    depositList.add(item)
-                    freed += item.quantity
-                }
                 if (depositList.isNotEmpty()) {
                     try {
-                        println("[$characterName] retrieveAndEquipUtilities: pre-depositing ${depositList.size} item(s) to make room for utility potions")
+                        println("[$characterName] retrieveAndEquipUtilities: pre-depositing ${depositList.size} slot(s) to make room (need $slotsNeeded free)")
                         val result = client.bank.depositItems(characterName, depositList)
                         waitForCooldown(result.cooldown.expiration)
                         char = result.character
@@ -1944,36 +2009,31 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
                 }
             }
 
-            try {
-                val result = client.bank.withdrawItems(characterName, bankWithdrawals)
-                waitForCooldown(result.cooldown.expiration)
-                char = result.character
-            } catch (e: Exception) {
-                println("[$characterName] retrieveAndEquipUtilities: bank withdraw failed: ${e.message}")
-                return char
-            }
-        }
-
-        // Equip utility items. If the same item is already equipped:
-        //  - skip entirely if already at or above the desired quantity
-        //  - re-equip with the updated quantity if more potions are now in inventory
-        for (action in actions) {
-            val current = getEquippedInSlot(char, action.slot)
-            val currentQty = if (current == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
-            try {
-                if (current.isNotEmpty() && current != action.itemCode) {
-                    char = unequip(characterName, action.slot)
+            for (action in bankNeededActions) {
+                val bankQty = bankState.getQuantity(action.itemCode)
+                val inInv = getItemQuantity(char, action.itemCode)
+                val deficit = (action.quantity - inInv).coerceAtMost(bankQty)
+                if (deficit <= 0) continue
+                try {
+                    val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(action.itemCode, deficit)))
+                    waitForCooldown(result.cooldown.expiration)
+                    char = result.character
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipUtilities: bank withdraw failed for ${action.itemCode}: ${e.message}")
+                    continue
                 }
-                val available = getItemQuantity(char, action.itemCode)
-                val desiredQty = action.quantity.coerceAtMost(available + currentQty).coerceAtLeast(1)
-                if (current != action.itemCode || currentQty < desiredQty) {
-                    // Equip (or re-equip with higher quantity) from inventory
-                    val invQty = available.coerceAtLeast(if (current == action.itemCode) 0 else 1)
-                    val qty = (currentQty + invQty).coerceAtMost(action.quantity).coerceAtLeast(1)
-                    char = equip(characterName, action.itemCode, action.slot, qty)
+                // Equip what we now have
+                val current = getEquippedInSlot(char, action.slot)
+                val inInventory = getItemQuantity(char, action.itemCode)
+                try {
+                    if (current.isNotEmpty() && current != action.itemCode) char = unequip(characterName, action.slot)
+                    if (inInventory > 0) {
+                        val qty = inInventory.coerceAtMost(action.quantity)
+                        char = equip(characterName, action.itemCode, action.slot, qty)
+                    }
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipUtilities: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
                 }
-            } catch (e: Exception) {
-                println("[$characterName] retrieveAndEquipUtilities: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
             }
         }
 

@@ -52,6 +52,10 @@
                     "quantity": 0
                 },
                 {
+                    "code": "death_knight_sword",
+                    "quantity": 0
+                },
+                {
                     "code": "bandit_armor",
                     "quantity": 0
                 }
@@ -80,7 +84,6 @@
         },
         {
             "eventCode": "bandit_camp",
-            "enabled": true,
             "eligibleCharacters": [
                 "Ront",
                 "Shella",
@@ -101,7 +104,15 @@
             "minWinRate": 0.699999988079071
         },
         {
-            "eventCode": "corrupted_portal"
+            "eventCode": "corrupted_portal",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront",
+                "Shella",
+                "Reila",
+                "Olivia",
+                "Shuckle"
+            ]
         },
         {
             "eventCode": "portal_demon",
@@ -143,9 +154,14 @@
             "eventCode": "cult_of_darkness",
             "enabled": true,
             "eligibleCharacters": [
-                "Ront"
+                "Ront",
+                "Shella",
+                "Shuckle"
             ],
             "minWinRate": 0.75
+        },
+        {
+            "eventCode": "timber_merchant"
         }
     ]
 }
