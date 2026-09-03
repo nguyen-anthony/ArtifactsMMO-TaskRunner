@@ -8,4 +8,5 @@ dependencies {
     implementation(project(":client"))
     implementation(project(":utils"))
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.0")
+    testImplementation(kotlin("test"))
 }

@@ -23,8 +23,19 @@ class SimulationService(client: HttpClient) : BaseApiService(client) {
      */
     suspend fun simulateFight(request: CombatSimulationRequest): CombatSimulationData {
         val bodyJson = json.encodeToString(CombatSimulationRequest.serializer(), request)
-        return post<ApiResponse<CombatSimulationData>>("/simulation/fight") {
+        val result = post<ApiResponse<CombatSimulationData>>("/simulation/fight") {
             setBody(TextContent(bodyJson, ContentType.Application.Json))
         }.data
+        // The simulation endpoint returns percentage points (for example 100.0 for 100%),
+        // while the application uses a 0.0..1.0 fraction for thresholds and display math.
+        return result.copy(
+            winrate = normalizeSimulationWinRate(result.winrate, result.wins, result.losses)
+        )
     }
+}
+
+internal fun normalizeSimulationWinRate(value: Double, wins: Int, losses: Int): Double {
+    val total = wins + losses
+    if (total > 0) return wins.toDouble() / total
+    return (if (value > 1.0) value / 100.0 else value).coerceIn(0.0, 1.0)
 }

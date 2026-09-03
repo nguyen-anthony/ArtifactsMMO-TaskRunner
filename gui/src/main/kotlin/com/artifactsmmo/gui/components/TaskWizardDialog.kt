@@ -1326,7 +1326,7 @@ private fun StepFightSim(
         // Sim results
         if (sim != null) {
             val winColor = when {
-                sim.winrate >= 90.0 -> Color(0xFF388E3C)
+                sim.winrate >= 0.90 -> Color(0xFF388E3C)
                 else                -> MaterialTheme.colorScheme.error
             }
             Surface(
@@ -1343,7 +1343,7 @@ private fun StepFightSim(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "${"%.0f".format(sim.winrate)}%",
+                            text = "${"%.0f".format(sim.winrate * 100)}%",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = winColor
@@ -1919,8 +1919,8 @@ private fun StepEquipmentResim(
     val new  = step.newSim
 
     fun winColor(rate: Double): Color = when {
-        rate >= 70.0 -> Color(0xFF388E3C)
-        rate >= 40.0 -> Color(0xFFF57C00)
+        rate >= 0.70 -> Color(0xFF388E3C)
+        rate >= 0.40 -> Color(0xFFF57C00)
         else         -> Color(0xFFD32F2F)
     }
 
@@ -1957,7 +1957,7 @@ private fun StepEquipmentResim(
                     )
                     if (orig != null) {
                         Text(
-                            text = "${"%.0f".format(orig.winrate)}%",
+                            text = "${"%.0f".format(orig.winrate * 100)}%",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             color = winColor(orig.winrate)
@@ -1993,7 +1993,7 @@ private fun StepEquipmentResim(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "${"%.0f".format(new.winrate)}%",
+                        text = "${"%.0f".format(new.winrate * 100)}%",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = winColor(new.winrate)
