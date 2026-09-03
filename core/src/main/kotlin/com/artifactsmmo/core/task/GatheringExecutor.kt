@@ -79,7 +79,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
 
         if (!helper.isAt(char, resourceMap.x, resourceMap.y) || char.layer != resourceMap.layer) {
             onStatus("Moving to $resourceName...")
-            char = helper.navigateToTile(characterName, resourceMap)
+            char = helper.navigateWithTeleport(characterName, char, resourceMap)
         }
 
         // Gather
@@ -164,7 +164,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
         }
 
         onStatus("Crafting ${maxCraftable}x ${targetItem.name} from bank leftovers...")
-        helper.navigateToTile(characterName, workshop)
+        helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
         helper.craft(characterName, targetItem.code, maxCraftable)
 
         // Deposit crafted items
@@ -231,7 +231,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             }
 
             onStatus("Cooking ${maxQty}x ${item.name} from bank leftovers...")
-            helper.navigateToTile(characterName, workshop)
+            helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
             helper.craft(characterName, item.code, maxQty)
 
             val updatedChar = helper.refreshCharacter(characterName)
@@ -433,7 +433,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             val workshop = helper.findNearestWorkshop(char, workshopSkill)
             if (workshop != null) {
                 onStatus("Moving to $workshopSkill workshop to craft ${targetItem.name}...")
-                helper.navigateToTile(characterName, workshop)
+                helper.navigateWithTeleport(characterName, char, workshop)
 
                 // Re-check after moving
                 val updatedChar = helper.refreshCharacter(characterName)
@@ -491,7 +491,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
             val workshop = helper.findNearestWorkshop(char, "cooking")
             if (workshop != null) {
                 onStatus("Moving to cooking workshop...")
-                helper.navigateToTile(characterName, workshop)
+                helper.navigateWithTeleport(characterName, char, workshop)
 
                 // Re-check after moving
                 val updatedChar = helper.refreshCharacter(characterName)

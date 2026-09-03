@@ -130,7 +130,7 @@ class FightingExecutor(private val helper: ActionHelper) {
 
         if (!helper.isAt(char, monsterMap.x, monsterMap.y) || char.layer != monsterMap.layer) {
             onStatus("Moving to ${task.monsterName}...")
-            char = helper.navigateToTile(characterName, monsterMap)
+            char = helper.navigateWithTeleport(characterName, char, monsterMap)
         }
 
         onStatus("Fighting ${task.monsterName}... (HP: ${char.hp}/${char.maxHp})")
@@ -245,7 +245,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 onStatus("Cooking ${craftQty}x ${info.cookedCode} (from ${craftQty * info.rawPerCraft}x ${info.rawCode})...")
                 val workshop = helper.findNearestWorkshop(char, "cooking")
                 if (workshop != null) {
-                    helper.navigateToTile(characterName, workshop)
+                    helper.navigateWithTeleport(characterName, char, workshop)
                     helper.craft(characterName, info.cookedCode, craftQty)
 
                     // Now eat
@@ -340,7 +340,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 val workshop = helper.findNearestWorkshop(char, "cooking")
                 if (workshop != null) {
                     onStatus("Moving to cooking workshop...")
-                    helper.navigateToTile(characterName, workshop)
+                    helper.navigateWithTeleport(characterName, char, workshop)
                     char = helper.refreshCharacter(characterName)
 
                     for (info in dropsToCook) {
@@ -530,7 +530,7 @@ class FightingExecutor(private val helper: ActionHelper) {
 
         if (!helper.isAt(char, monsterMap.x, monsterMap.y) || char.layer != monsterMap.layer) {
             onStatus("Moving to ${task.monsterName}...")
-            char = helper.navigateToTile(characterName, monsterMap)
+            char = helper.navigateWithTeleport(characterName, char, monsterMap)
         }
 
         if (task.isInitiator) {
@@ -617,11 +617,15 @@ class FightingExecutor(private val helper: ActionHelper) {
     ) {
         var char = helper.refreshCharacter(characterName)
 
-        // Navigate to bank (exits dungeon if character is still inside)
+        // Navigate to bank (exits dungeon if character is still inside; uses a held
+        // return teleport potion when it saves significant time)
         onStatus("Restocking — heading to bank...")
-        val bank = helper.findNearestBank(char)
-            ?: run { onStatus("No bank found — cannot restock"); return }
-        char = helper.navigateToTile(characterName, bank)
+        char = try {
+            helper.navigateToBank(characterName, char)
+        } catch (e: IllegalStateException) {
+            onStatus("No bank found — cannot restock")
+            return
+        }
 
         // 1. Deposit all loot — keep reserve potions, food, and keys
         val keepCodes = task.reservePotions.keys +
@@ -705,7 +709,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         onStatus("Restock complete — returning to ${task.monsterName}...")
         val monsterMap = helper.findNearest(char, "monster", task.monsterCode)
         if (monsterMap != null) {
-            helper.navigateToTile(characterName, monsterMap)
+            helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), monsterMap)
         }
     }
 }

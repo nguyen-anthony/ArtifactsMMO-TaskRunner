@@ -281,6 +281,16 @@ class ContentCache(private val contentService: ContentService) {
 
     fun findNearestBank(char: Character): MapInfo? = findNearest(char, "bank")
 
+    /** Find nearest accessible bank from an arbitrary (x,y,layer), not the character's position. */
+    fun findNearestBankFrom(x: Int, y: Int, layer: String = "overworld"): MapInfo? {
+        return allMaps
+            .filter { it.interactions.content?.type == "bank" && it.layer == layer }
+            .minByOrNull { abs(it.x - x) + abs(it.y - y) }
+    }
+
+    /** Look up a tile by its map_id. Used by [TeleportAdvisor] to resolve potion destinations. */
+    fun getTileById(mapId: Int): MapInfo? = allMaps.find { it.mapId == mapId }
+
     fun findNearestWorkshop(char: Character, skill: String): MapInfo? =
         findNearest(char, "workshop", skill)
 

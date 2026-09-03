@@ -61,7 +61,7 @@ class EventExecutor(
 
         if (!helper.isAt(char, task.eventMapX, task.eventMapY) || char.layer != task.eventMapLayer) {
             onStatus("Moving to event: ${task.resourceName}...")
-            char = helper.navigateToTile(characterName, eventTarget)
+            char = helper.navigateWithTeleport(characterName, char, eventTarget)
         }
 
         onStatus("Gathering ${task.resourceName} (event)...")
@@ -124,7 +124,7 @@ class EventExecutor(
         )
         if (!helper.isAt(char, task.eventMapX, task.eventMapY) || char.layer != task.eventMapLayer) {
             onStatus("Moving to NPC event: ${task.npcName}...")
-            helper.navigateToTile(characterName, npcTarget)
+            helper.navigateWithTeleport(characterName, char, npcTarget)
             char = helper.refreshCharacter(characterName)
         }
 
@@ -205,7 +205,7 @@ class EventExecutor(
         )
         if (!helper.isAt(char, task.eventMapX, task.eventMapY) || char.layer != task.eventMapLayer) {
             onStatus("Moving to event: ${task.monsterName}...")
-            char = helper.navigateToTile(characterName, eventTarget)
+            char = helper.navigateWithTeleport(characterName, char, eventTarget)
         }
 
         onStatus("Fighting ${task.monsterName} (event)... (HP: ${char.hp}/${char.maxHp})")

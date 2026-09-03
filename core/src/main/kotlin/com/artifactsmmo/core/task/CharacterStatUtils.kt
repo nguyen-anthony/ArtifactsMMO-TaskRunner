@@ -13,6 +13,10 @@ import com.artifactsmmo.client.models.Item
 @OptIn(kotlin.time.ExperimentalTime::class)
 fun Character.applyItemDelta(removedItem: Item?, addedItem: Item?): Character {
     var maxHp            = this.maxHp
+    var attackFire       = this.attackFire
+    var attackEarth      = this.attackEarth
+    var attackWater      = this.attackWater
+    var attackAir        = this.attackAir
     var resFire          = this.resFire
     var resEarth         = this.resEarth
     var resWater         = this.resWater
@@ -34,6 +38,10 @@ fun Character.applyItemDelta(removedItem: Item?, addedItem: Item?): Character {
         for (effect in item.effects) {
             when (effect.code) {
                 "hp"              -> maxHp             += effect.value * sign
+                "attack_fire"     -> attackFire        += effect.value * sign
+                "attack_earth"    -> attackEarth       += effect.value * sign
+                "attack_water"    -> attackWater       += effect.value * sign
+                "attack_air"      -> attackAir         += effect.value * sign
                 "res_fire"        -> resFire            += effect.value * sign
                 "res_earth"       -> resEarth           += effect.value * sign
                 "res_water"       -> resWater           += effect.value * sign
@@ -59,6 +67,10 @@ fun Character.applyItemDelta(removedItem: Item?, addedItem: Item?): Character {
 
     return this.copy(
         maxHp             = maxHp,
+        attackFire        = attackFire,
+        attackEarth       = attackEarth,
+        attackWater       = attackWater,
+        attackAir         = attackAir,
         resFire           = resFire,
         resEarth          = resEarth,
         resWater          = resWater,

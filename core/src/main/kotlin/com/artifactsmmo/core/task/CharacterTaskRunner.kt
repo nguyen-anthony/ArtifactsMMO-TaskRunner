@@ -525,10 +525,10 @@ class CharacterTaskRunner(
                         }, previousChar = previousChar)
                     }
                     is TaskType.Idle -> break
-                    is TaskType.TaskMaster -> taskMasterExecutor.executeStep(characterName, task) { msg ->
+                    is TaskType.TaskMaster -> taskMasterExecutor.executeStep(characterName, task, { msg ->
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg) }
-                    }
+                    }, previousChar = previousChar)
                     is TaskType.BankWithdraw -> bankExecutor.executeBankWithdraw(characterName, task) { msg ->
                         logger.log(characterName, msg)
                         updateStatus { it.copy(statusMessage = msg) }

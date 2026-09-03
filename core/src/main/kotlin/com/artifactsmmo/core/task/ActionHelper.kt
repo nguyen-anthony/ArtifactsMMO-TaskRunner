@@ -29,7 +29,18 @@ class TransitionConditionUnsatisfiableException(message: String) : Exception(mes
  * Handles cooldowns, movement, banking, equipping, and inventory management.
  */
 @OptIn(ExperimentalTime::class)
-class ActionHelper(private val client: ArtifactsMMOClient, internal val contentCache: ContentCache, internal val bankState: BankState) {
+class ActionHelper(
+    private val client: ArtifactsMMOClient,
+    internal val contentCache: ContentCache,
+    internal val bankState: BankState
+) {
+    /**
+     * Account's completed achievement codes — needed to check teleport potion usability
+     * ([TeleportAdvisor]) and conditional map tile access. Populated by [TaskManager.initialize]
+     * after fetching from the API, since it's not known at construction time.
+     */
+    internal var completedAchievements: Set<String> = emptySet()
+    internal val teleportAdvisor = TeleportAdvisor(contentCache, bankState)
 
     // ── Cooldown ──
 
@@ -186,6 +197,99 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
         }
 
         return char
+    }
+
+    /**
+     * Navigate to [targetMap], using teleport potions when they save significant time.
+     *
+     * Evaluates BOTH legs of the round trip independently before departing:
+     *  - Outbound: is there an owned, usable teleport potion whose destination is
+     *    meaningfully closer to [targetMap] than the character's current position?
+     *    If so, use it now (after withdrawing from bank if needed), then walk the
+     *    remaining distance via [navigateToTile].
+     *  - Return: is there a teleport potion that would meaningfully shorten the eventual
+     *    trip back to a bank from [targetMap]? If so, pre-load it into inventory now
+     *    (withdraw from bank if needed) so it's available whenever [navigateToBank] is
+     *    later called — no matter which executor triggers that bank trip.
+     *
+     * Both withdrawals (outbound + return, if both needed) happen in a single bank visit.
+     * Falls through to plain [navigateToTile] if no potion saves enough time on either leg.
+     */
+    suspend fun navigateWithTeleport(name: String, char: Character, targetMap: MapInfo): Character {
+        val plan = teleportAdvisor.planTrip(char, targetMap, completedAchievements)
+
+        var c = char
+
+        // Withdraw any needed potions from bank before departing (outbound + return pre-load)
+        if (plan.potionsToWithdraw.isNotEmpty()) {
+            val bank = findNearestBank(c)
+            if (bank == null) {
+                return navigateToTile(name, targetMap)  // fallback: no bank found
+            }
+            c = navigateToTile(name, bank)
+            try {
+                val withdrawItems = plan.potionsToWithdraw.map { SimpleItem(it, 1) }
+                val result = client.bank.withdrawItems(name, withdrawItems)
+                waitForCooldown(result.cooldown.expiration)
+                c = result.character
+            } catch (e: Exception) {
+                println("[$name] navigateWithTeleport: potion withdrawal failed: ${e.message} — proceeding without teleport")
+                return navigateToTile(name, targetMap)
+            }
+        }
+
+        // Use outbound teleport potion if planned
+        if (plan.outboundPotion != null && getItemQuantity(c, plan.outboundPotion.code) > 0) {
+            try {
+                useItem(name, plan.outboundPotion.code, 1)
+                c = refreshCharacter(name)  // character coordinates have changed
+            } catch (e: Exception) {
+                println("[$name] navigateWithTeleport: outbound potion use failed: ${e.message} — walking instead")
+            }
+        }
+
+        // Navigate remaining distance to destination (may be 0-2 tiles after teleport)
+        if (!isAt(c, targetMap.x, targetMap.y) || c.layer != targetMap.layer) {
+            c = navigateToTile(name, targetMap)
+        }
+
+        return c
+    }
+
+    /**
+     * Navigate to the nearest accessible bank, using a return teleport potion if one is
+     * already in inventory and still saves enough time from the character's current position.
+     *
+     * Checks inventory only — return potions are pre-loaded by [navigateWithTeleport] during
+     * the outbound leg of a trip. This method never initiates a fresh bank withdrawal for a
+     * return potion (there's no sense fetching a potion from the bank in order to reach the
+     * bank). Falls back to plain [navigateToTile] to the nearest bank if no held potion helps.
+     */
+    suspend fun navigateToBank(name: String, char: Character): Character {
+        for (potionCode in TeleportAdvisor.RETURN_POTION_PREFERENCE) {
+            if (getItemQuantity(char, potionCode) <= 0) continue
+            val potion = teleportAdvisor.evaluateHeldReturnPotion(char, potionCode, completedAchievements)
+                ?: continue
+
+            return try {
+                useItem(name, potion.code, 1)
+                var c = refreshCharacter(name)
+                val bankFromLanding = contentCache.findNearestBankFrom(c.x, c.y, c.layer)
+                    ?: contentCache.findNearestBank(c)
+                if (bankFromLanding != null && !isAt(c, bankFromLanding.x, bankFromLanding.y)) {
+                    c = navigateToTile(name, bankFromLanding)
+                }
+                c
+            } catch (e: Exception) {
+                println("[$name] navigateToBank: return potion use failed: ${e.message} — walking instead")
+                val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
+                navigateToTile(name, bank)
+            }
+        }
+
+        // No useful held return potion — plain navigation to nearest bank
+        val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
+        return navigateToTile(name, bank)
     }
 
     /** Safety cap on the number of transitions allowed in a single [navigateToTile] call. */
@@ -399,8 +503,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
     suspend fun bankDepositAll(name: String): Character {
         var char = refreshCharacter(name)
 
-        val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-        char = navigateToTile(name, bank)
+        char = navigateToBank(name, char)
 
         // Only deposit resources and consumables; keep everything else (weapons, tools, gear, etc.)
         val safeTypes = setOf("resource", "consumable", "currency")
@@ -468,8 +571,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
         if (items.isEmpty()) return refreshCharacter(name)
 
         var char = refreshCharacter(name)
-        val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-        char = navigateToTile(name, bank)
+        char = navigateToBank(name, char)
 
         val result = client.bank.depositItems(name, items)
         waitForCooldown(result.cooldown.expiration)
@@ -731,8 +833,7 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
         if (items.isEmpty()) return refreshCharacter(name)
 
         var char = refreshCharacter(name)
-        val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-        char = navigateToTile(name, bank)
+        char = navigateToBank(name, char)
 
         val result = client.bank.withdrawItems(name, items)
         waitForCooldown(result.cooldown.expiration)
@@ -1782,14 +1883,15 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         // ── Bank/craftable path ──
 
-        // Step 2: Move to bank — use navigateToTile so cross-layer characters (e.g. a
-        // participant coming from an underground fight when boss dispatch fires) are
-        // properly routed back through the appropriate transition instead of failing 595.
-        val bank = findNearestBank(char) ?: run {
-            println("[$characterName] retrieveAndEquipItems: aborting — no bank found on map")
+        // Step 2: Move to bank — navigateToBank handles cross-layer routing (e.g. a
+        // participant coming from an underground fight when boss dispatch fires) and
+        // uses a held return teleport potion when it saves significant time.
+        char = try {
+            navigateToBank(characterName, char)
+        } catch (e: IllegalStateException) {
+            println("[$characterName] retrieveAndEquipItems: aborting — ${e.message}")
             return char
         }
-        char = navigateToTile(characterName, bank)
 
         // Step 2.5: Pre-deposit non-essential inventory to make room for unequipped items
         // + new bank withdrawals. Without this, characters with nearly-full inventory hit
@@ -2082,12 +2184,12 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         // Bank path: only for potions not already in inventory
         if (bankNeededActions.isNotEmpty()) {
-            val bank = findNearestBank(char)
-            if (bank == null) {
-                println("[$characterName] retrieveAndEquipUtilities: no bank found — skipping bank withdrawals")
+            char = try {
+                navigateToBank(characterName, char)
+            } catch (e: IllegalStateException) {
+                println("[$characterName] retrieveAndEquipUtilities: ${e.message} — skipping bank withdrawals")
                 return char
             }
-            char = navigateToTile(characterName, bank)
 
             // Determine how many new slots we need
             val inventoryCodesNow = char.inventory.filter { it.quantity > 0 }.map { it.code }.toSet()
@@ -2213,12 +2315,12 @@ class ActionHelper(private val client: ArtifactsMMOClient, internal val contentC
 
         if (toWithdraw.isEmpty()) return char
 
-        val bank = findNearestBank(char)
-        if (bank == null) {
-            println("[$characterName] withdrawReservePotions: no bank found — skipping")
+        char = try {
+            navigateToBank(characterName, char)
+        } catch (e: IllegalStateException) {
+            println("[$characterName] withdrawReservePotions: ${e.message} — skipping")
             return char
         }
-        char = navigateToTile(characterName, bank)
         return try {
             val result = client.bank.withdrawItems(characterName, toWithdraw)
             waitForCooldown(result.cooldown.expiration)

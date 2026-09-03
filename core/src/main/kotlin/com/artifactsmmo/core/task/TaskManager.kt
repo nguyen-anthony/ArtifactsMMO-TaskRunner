@@ -56,6 +56,8 @@ class TaskManager(
         // Pre-warm the map cache before restoring tasks so findNearest* calls are ready
         contentCache.preWarmMaps(completedAchievements)
         MonsterProfileStore.load()
+        TeleportPotionStore.load()
+        helper.completedAchievements = completedAchievements
 
         // Set up WebSocket and event dispatcher before creating runners
         webSocketManager = WebSocketManager(RealtimeClient(token), client.events, scope, bankState)

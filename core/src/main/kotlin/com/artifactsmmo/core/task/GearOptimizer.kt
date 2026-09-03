@@ -8,9 +8,14 @@ import com.artifactsmmo.client.models.Item
  * Unified weapon + gear + utility slot optimizer.
  *
  * Design principles:
- *  - Local sim by default for the greedy per-slot pass (fast, free, no rate limit)
- *  - API sim for greedy when monster has effects (accurate for complex combats)
- *  - Single API sim at the end validates the final loadout
+ *  - Gear/weapon greedy pass uses HEURISTIC scoring (offense + defense formula), not
+ *    per-candidate simulation — mirrors [CoopOptimizer]'s scoring philosophy so solo and
+ *    boss-fight gear selection behave consistently. A solo fighter is scored with balanced
+ *    offense/defense weights and no threat term (see [scoreItemSolo]).
+ *  - Real API sim is used only for: the baseline score, one post-gear-pass score (feeds
+ *    the utility pass), the utility slot greedy pass itself, and the final validation —
+ *    never for per-candidate gear/weapon comparisons. This avoids depending on the local
+ *    simulator's fidelity for the decision that matters most (which item to equip).
  *  - Weapon is optimized as part of the greedy pass (no separate weapon logic)
  *  - Artifact slots enforce uniqueness (game constraint: no duplicate artifacts)
  *  - Utility slot pass runs only for monsters with effects — tries owned potions
@@ -263,11 +268,31 @@ class GearOptimizer(private val helper: ActionHelper) {
         }
         val baselineScore = simToScore(baseSim, char)
 
+        // Monster's per-element attack/resistance maps — used by the heuristic gear scorer.
+        // Same expected-damage-after-resistance / HP-plus-weighted-resistance formula as
+        // CoopOptimizer.scoreItem, adapted for a SOLO fighter: balanced offense/defense
+        // weights and no threat term. A solo character always draws every hit — there's
+        // no ally to share the load — so it must deal damage AND survive simultaneously
+        // rather than specializing into a tank or support role the way a boss-fight
+        // participant can.
+        val monsterDmg = mapOf(
+            "fire" to monster.attackFire, "earth" to monster.attackEarth,
+            "water" to monster.attackWater, "air" to monster.attackAir
+        )
+        val monsterRes = mapOf(
+            "fire" to monster.resFire, "earth" to monster.resEarth,
+            "water" to monster.resWater, "air" to monster.resAir
+        )
+
         val accumulatedOverrides = mutableMapOf<String, String>()
         val slotChanges = mutableListOf<SlotChange>()
-        var bestScore = baselineScore
 
-        // ── Greedy per-slot pass ──
+        // ── Greedy per-slot pass — heuristic scoring, no simulation calls ──
+        // Mirrors CoopOptimizer's scoring philosophy so solo and boss-fight gear selection
+        // behave consistently. A slot only changes if a candidate scores strictly higher
+        // than whatever is currently equipped there — this also avoids ties degenerating
+        // into a pure prospecting/wisdom contest the way the old simulation-based greedy
+        // comparison could.
         for (slotInfo in GEAR_SLOTS) {
             val excludedCodes = getExcludedCodes(char, slotInfo.slot, accumulatedOverrides)
             val candidates = try {
@@ -279,33 +304,16 @@ class GearOptimizer(private val helper: ActionHelper) {
 
             if (candidates.isEmpty()) continue
 
+            val currentCode = accumulatedOverrides[slotInfo.slot] ?: helper.getEquippedInSlot(char, slotInfo.slot)
+            val currentItem = if (currentCode.isNotEmpty()) {
+                try { helper.contentCache.getItemOrNull(currentCode) } catch (_: Exception) { null }
+            } else null
+            var bestScore = if (currentItem != null) scoreItemSolo(currentItem, slotInfo.slot, monsterDmg, monsterRes) else 0.0
             var bestCandidate: ActionHelper.EquipmentOption? = null
 
             for (candidate in candidates) {
-                val testOverrides = accumulatedOverrides + (slotInfo.slot to candidate.item.code)
-
-                val candidateScore = try {
-                    if (hasEffects) {
-                        // API sim needed to account for monster effects (poison, burn, etc.)
-                        val r = helper.simulateFightWithSlotOverrides(char, monsterCode, testOverrides, GREEDY_API_ITERATIONS)
-                        GearScore(
-                            winRate = r.winrate,
-                            avgWinTurns = avgWinTurns(r),
-                            prospecting = char.prospecting + prospectingDelta(candidate.item),
-                            wisdom = char.wisdom + wisdomDelta(candidate.item)
-                        )
-                    } else {
-                        // Local sim is accurate for effect-free monsters — no API call, no rate limit
-                        val r = helper.simulateLocalWithOverrides(char, monster, testOverrides, GREEDY_LOCAL_ITERATIONS)
-                        GearScore(
-                            winRate = r.winRate,
-                            avgWinTurns = Double.MAX_VALUE,  // local sim doesn't track turns
-                            prospecting = char.prospecting + prospectingDelta(candidate.item),
-                            wisdom = char.wisdom + wisdomDelta(candidate.item)
-                        )
-                    }
-                } catch (_: Exception) { continue }
-
+                if (candidate.item.code == currentCode) continue  // already equipped — nothing to compare
+                val candidateScore = scoreItemSolo(candidate.item, slotInfo.slot, monsterDmg, monsterRes)
                 if (candidateScore > bestScore) {
                     bestCandidate = candidate
                     bestScore = candidateScore
@@ -328,9 +336,24 @@ class GearOptimizer(private val helper: ActionHelper) {
             ActionHelper.EquipAction(slot = it.slot, itemCode = it.toItemCode, source = it.source)
         }
 
+        // ── Post-gear real API sim — baseline for the utility pass ──
+        // The heuristic pass above makes no simulation calls, so if any gear changed we
+        // need exactly one real API call here to know the actual win rate/turns the
+        // utility pass should try to improve on.
+        val postGearScore = if (accumulatedOverrides.isEmpty()) {
+            baselineScore
+        } else {
+            try {
+                simToScore(
+                    helper.simulateFightWithSlotOverrides(char, monsterCode, accumulatedOverrides, API_SIM_ITERATIONS),
+                    char
+                )
+            } catch (_: Exception) { baselineScore }
+        }
+
         // ── Utility slot pass — only for monsters with effects ──
         val utilityActions = if (hasEffects) {
-            optimizeUtilitySlots(char, monsterCode, accumulatedOverrides, bestScore)
+            optimizeUtilitySlots(char, monsterCode, accumulatedOverrides, postGearScore)
         } else {
             emptyList()
         }
@@ -338,19 +361,17 @@ class GearOptimizer(private val helper: ActionHelper) {
         // ── Final API sim validation with the full loadout ──
         val optimizedScore = if (accumulatedOverrides.isEmpty() && utilityActions.isEmpty()) {
             baselineScore
+        } else if (utilityActions.isEmpty()) {
+            postGearScore
         } else {
             try {
-                val finalSim = if (utilityActions.isEmpty()) {
-                    helper.simulateFightWithSlotOverrides(char, monsterCode, accumulatedOverrides, API_SIM_ITERATIONS)
-                } else {
-                    val utilityOverrides = utilityActions.associate { it.slot to it.itemCode }
-                    val utilityQuantities = utilityActions.associate { it.slot to it.quantity }
-                    helper.simulateFightWithSlotAndUtilityOverrides(
-                        char, monsterCode, accumulatedOverrides, utilityOverrides, utilityQuantities, API_SIM_ITERATIONS
-                    )
-                }
+                val utilityOverrides = utilityActions.associate { it.slot to it.itemCode }
+                val utilityQuantities = utilityActions.associate { it.slot to it.quantity }
+                val finalSim = helper.simulateFightWithSlotAndUtilityOverrides(
+                    char, monsterCode, accumulatedOverrides, utilityOverrides, utilityQuantities, API_SIM_ITERATIONS
+                )
                 simToScore(finalSim, char)
-            } catch (_: Exception) { bestScore }
+            } catch (_: Exception) { postGearScore }
         }
 
         // Build the full target loadout: for every gear slot, record what SHOULD be equipped.
@@ -363,6 +384,66 @@ class GearOptimizer(private val helper: ActionHelper) {
         }.toMap()
 
         return OptimizationResult(equipActions, utilityActions, baselineScore, optimizedScore, slotChanges, targetLoadout)
+    }
+
+    /**
+     * Heuristic value of [item] in [slot] for a SOLO fighter against a monster whose attack
+     * outputs are [monsterDmg] and whose resistances are [monsterRes]. Higher = better.
+     *
+     * Same formula as [CoopOptimizer]'s scoring but with balanced offense/defense weights
+     * (1.0/1.0) and no threat term — see [optimize]'s kdoc comment for the rationale.
+     */
+    private fun scoreItemSolo(
+        item: Item,
+        slot: String,
+        monsterDmg: Map<String, Int>,
+        monsterRes: Map<String, Int>
+    ): Double {
+        val effects = item.effects.associate { it.code to it.value }
+        val globalDmgBonus = (effects["dmg"] ?: 0) / 100.0
+
+        // Offense: expected damage after monster resistance
+        val offense = monsterRes.entries.sumOf { (element, res) ->
+            val attackKey = "attack_$element"
+            val dmgKey = "dmg_$element"
+            val baseAttack = effects[attackKey] ?: 0
+            val elementDmgBonus = (effects[dmgKey] ?: 0) / 100.0
+            val resMult = (1.0 - res / 100.0).coerceAtLeast(0.0)
+            baseAttack * (1.0 + globalDmgBonus + elementDmgBonus) * resMult
+        }
+
+        // Defense: HP + weighted resistance against the monster's attack outputs
+        val hp = (effects["hp"] ?: 0).toDouble()
+        val defenseFromRes = monsterDmg.entries.sumOf { (element, atk) ->
+            val resKey = "res_$element"
+            val resValue = (effects[resKey] ?: 0)
+            atk * (resValue / 100.0)
+        }
+        val defense = hp + defenseFromRes
+
+        val prospecting = (effects["prospecting"] ?: 0).toDouble()
+        val wisdom = (effects["wisdom"] ?: 0).toDouble()
+        val criticalStrike = (effects["critical_strike"] ?: 0).toDouble()
+        val haste = (effects["haste"] ?: 0).toDouble()
+
+        // Slot-specific weighting — weapons are pure offense, armor/shield pure defense,
+        // jewelry/artifacts/rune are mixed. Matches CoopOptimizer's slot weighting scheme.
+        val slotOffenseWeight = when (slot) {
+            "weapon" -> 3.0
+            "shield", "helmet", "body_armor", "leg_armor", "boots" -> 0.5
+            else -> 1.0
+        }
+        val slotDefenseWeight = when (slot) {
+            "shield", "helmet", "body_armor", "leg_armor", "boots" -> 2.0
+            "weapon" -> 0.0
+            else -> 1.0
+        }
+
+        return offense * slotOffenseWeight +
+               defense * slotDefenseWeight +
+               (prospecting + wisdom) * 0.1 +
+               criticalStrike * 2.0 +
+               haste * 1.5
     }
 
     // ── Utility optimization ──────────────────────────────────────
@@ -574,12 +655,6 @@ class GearOptimizer(private val helper: ActionHelper) {
         sim.results.filter { it.result == "win" }
             .map { it.turns }
             .let { if (it.isEmpty()) Double.MAX_VALUE else it.average() }
-
-    private fun prospectingDelta(item: Item): Int =
-        item.effects.find { it.code == "prospecting" }?.value ?: 0
-
-    private fun wisdomDelta(item: Item): Int =
-        item.effects.find { it.code == "wisdom" }?.value ?: 0
 
     private fun emptyResult(char: Character): OptimizationResult {
         val score = GearScore(0.0, Double.MAX_VALUE, char.prospecting, char.wisdom)

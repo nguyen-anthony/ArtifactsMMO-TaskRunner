@@ -89,6 +89,7 @@ abstract class BaseApiService(protected val client: HttpClient) {
         path: String,
         block: HttpRequestBuilder.() -> Unit = {}
     ): T {
+        ApiCallMonitor.record("GET", path)
         return request {
             method = HttpMethod.Get
             url(path)
@@ -101,6 +102,7 @@ abstract class BaseApiService(protected val client: HttpClient) {
         body: Any? = null,
         block: HttpRequestBuilder.() -> Unit = {}
     ): T {
+        ApiCallMonitor.record("POST", path)
         return request {
             method = HttpMethod.Post
             url(path)

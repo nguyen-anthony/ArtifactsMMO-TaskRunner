@@ -35,6 +35,8 @@ object LocalFightSimulator {
         val wins: Int,
         val losses: Int,
         val winRate: Double,
+        /** Average turn count across winning fights only. MAX_VALUE if no wins. */
+        val avgWinTurns: Double,
         /**
          * True when the monster has effects that were not modelled in the simulation.
          * The simulated win-rate will be optimistic in that case — use a stricter threshold.
@@ -44,7 +46,7 @@ object LocalFightSimulator {
 
     /**
      * Simulate [iterations] fights between [character] (at full HP) and [monster].
-     * Returns aggregate win/loss counts and the win rate.
+     * Returns aggregate win/loss counts, win rate, and average turns on wins.
      */
     fun simulate(
         character: Character,
@@ -55,23 +57,31 @@ object LocalFightSimulator {
         val effectsIgnored = monster.effects.isNotEmpty()
         var wins = 0
         var losses = 0
+        var winTurnsTotal = 0L
 
         repeat(iterations) {
-            if (simulateSingleFight(character, monster, rng)) wins++ else losses++
+            val (won, turns) = simulateSingleFight(character, monster, rng)
+            if (won) {
+                wins++
+                winTurnsTotal += turns
+            } else {
+                losses++
+            }
         }
 
         val winRate = if (iterations > 0) wins.toDouble() / iterations else 0.0
-        return Result(wins, losses, winRate, effectsIgnored)
+        val avgWinTurns = if (wins > 0) winTurnsTotal.toDouble() / wins else Double.MAX_VALUE
+        return Result(wins, losses, winRate, avgWinTurns, effectsIgnored)
     }
 
     /**
-     * Simulate a single fight. Returns true if the character wins.
+     * Simulate a single fight. Returns (won, turnsElapsed).
      */
     private fun simulateSingleFight(
         character: Character,
         monster: Monster,
         rng: Random
-    ): Boolean {
+    ): Pair<Boolean, Int> {
         var charHp = character.maxHp
         var monsterHp = monster.hp
 
@@ -107,7 +117,7 @@ object LocalFightSimulator {
                     critChance  = character.criticalStrike,
                     rng         = rng
                 )
-                if (monsterHp <= 0) return true  // Character wins
+                if (monsterHp <= 0) return true to turn  // Character wins
             } else {
                 // Monster attacks character
                 charHp -= calculateDamage(
@@ -127,7 +137,7 @@ object LocalFightSimulator {
                     critChance  = monster.criticalStrike,
                     rng         = rng
                 )
-                if (charHp <= 0) return false  // Character loses
+                if (charHp <= 0) return false to turn  // Character loses
             }
 
             charactersTurn = !charactersTurn
@@ -135,7 +145,7 @@ object LocalFightSimulator {
 
         // 100 turns exhausted — the first-mover (attacker) loses.
         // If character went first, character is the attacker and loses.
-        return !charGoesFirst
+        return (!charGoesFirst) to MAX_TURNS
     }
 
     /**

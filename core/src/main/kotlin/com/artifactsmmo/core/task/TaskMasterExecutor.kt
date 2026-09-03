@@ -86,7 +86,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(char, taskMaster.x, taskMaster.y)) {
             onStatus("Moving to task master to cancel after deaths...")
-            helper.navigateToTile(characterName, taskMaster)
+            helper.navigateWithTeleport(characterName, char, taskMaster)
         }
 
         onStatus("Cancelling task (too many deaths)...")
@@ -102,13 +102,22 @@ class TaskMasterExecutor(
      * Execute a single step of the task master loop.
      * This is a high-level step — it may internally do many actions
      * (e.g., an entire gather-trade cycle) before returning.
+     *
+     * [previousChar] may be supplied by the caller when it already holds a fresh
+     * [Character] from the previous iteration (e.g. the response from the last fight
+     * action), skipping the leading refreshCharacter call. This is the dominant cost
+     * saver for monster tasks: [fulfillMonsterTask] runs every tick while a task is in
+     * progress, and without threading, every single tick paid for a redundant
+     * GET /characters/{name} even though the previous fight's response already carried
+     * an up-to-date Character.
      */
     suspend fun executeStep(
         characterName: String,
         task: TaskType.TaskMaster,
-        onStatus: (String) -> Unit
+        onStatus: (String) -> Unit,
+        previousChar: Character? = null
     ): StepResult {
-        var char = helper.refreshCharacter(characterName)
+        var char = previousChar ?: helper.refreshCharacter(characterName)
 
         // Check if we have an active task already
         if (char.task.isEmpty()) {
@@ -143,7 +152,7 @@ class TaskMasterExecutor(
             ?: return StepResult.Error("No $type task master found on map")
 
         onStatus("Moving to $type task master...")
-        helper.navigateToTile(characterName, taskMaster)
+        helper.navigateWithTeleport(characterName, char, taskMaster)
 
         onStatus("Accepting new task...")
         val taskData = helper.acceptTask(characterName)
@@ -312,7 +321,7 @@ class TaskMasterExecutor(
 
             if (!helper.isAt(updatedChar, taskMaster.x, taskMaster.y)) {
                 onStatus("Moving to task master to cancel...")
-            helper.navigateToTile(characterName, taskMaster)
+            helper.navigateWithTeleport(characterName, updatedChar, taskMaster)
             }
 
             onStatus("Cancelling task (low win rate)...")
@@ -580,7 +589,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(currentChar, resourceMap.x, resourceMap.y) || currentChar.layer != resourceMap.layer) {
             onStatus("Moving to ${ing.resourceName}...")
-            currentChar = helper.navigateToTile(characterName, resourceMap)
+            currentChar = helper.navigateWithTeleport(characterName, currentChar, resourceMap)
         }
 
         // Build a progress string that covers all ingredients for multi-ingredient recipes
@@ -748,7 +757,7 @@ class TaskMasterExecutor(
             ?: return StepResult.Error("No ${currentChar.taskType} task master found")
 
         onStatus("Moving to task master to trade ${actualTradeQty}x $taskItemCode...")
-        helper.navigateToTile(characterName, taskMaster)
+        helper.navigateWithTeleport(characterName, currentChar, taskMaster)
 
         // Trade
         onStatus("Trading ${actualTradeQty}x $taskItemCode...")
@@ -810,7 +819,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(char, taskMaster.x, taskMaster.y)) {
             onStatus("Moving to task master to complete task...")
-            helper.navigateToTile(characterName, taskMaster)
+            helper.navigateWithTeleport(characterName, char, taskMaster)
         }
 
         onStatus("Completing task...")
@@ -842,7 +851,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(char, taskMaster.x, taskMaster.y)) {
             onStatus("Moving to task master to cancel task...")
-            helper.navigateToTile(characterName, taskMaster)
+            helper.navigateWithTeleport(characterName, char, taskMaster)
         }
 
         onStatus("Cancelling current task...")
