@@ -1,0 +1,88 @@
+{
+    "loadouts": [
+        {
+            "characterName": "Reila",
+            "exactLevel": 38,
+            "monsterCode": "green_slime",
+            "optimizerVersion": "loadout-beam-v1",
+            "gear": {
+                "weapon": "obsidian_battleaxe",
+                "shield": "dreadful_shield",
+                "helmet": "obsidian_helmet",
+                "body_armor": "obsidian_armor",
+                "leg_armor": "conjurer_skirt",
+                "boots": "flying_boots",
+                "ring1": "ring_of_the_adept",
+                "ring2": "ring_of_the_adept",
+                "amulet": "prospecting_amulet",
+                "artifact1": "lich_race_trophy",
+                "artifact2": "lost_world_map",
+                "artifact3": "novice_guide",
+                "rune": "burn_rune"
+            },
+            "requiredItems": {
+                "obsidian_battleaxe": 1,
+                "dreadful_shield": 1,
+                "obsidian_helmet": 1,
+                "obsidian_armor": 1,
+                "conjurer_skirt": 1,
+                "flying_boots": 1,
+                "ring_of_the_adept": 2,
+                "prospecting_amulet": 1,
+                "lich_race_trophy": 1,
+                "lost_world_map": 1,
+                "novice_guide": 1,
+                "burn_rune": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 1.0,
+            "validatedAtEpochMs": 1788479574174
+        },
+        {
+            "characterName": "Reila",
+            "exactLevel": 38,
+            "monsterCode": "vampire",
+            "optimizerVersion": "loadout-beam-v1",
+            "gear": {
+                "weapon": "obsidian_battleaxe",
+                "shield": "gold_shield",
+                "helmet": "lich_crown",
+                "body_armor": "obsidian_armor",
+                "leg_armor": "gold_platelegs",
+                "boots": "flying_boots",
+                "ring1": "malefic_ring",
+                "ring2": "topaz_ring",
+                "amulet": "greater_dreadful_amulet",
+                "artifact1": "lich_race_trophy",
+                "artifact2": "lich_race_medal",
+                "artifact3": "novice_guide",
+                "rune": "burn_rune"
+            },
+            "utilities": {
+                "utility1": {
+                    "code": "health_splash_potion",
+                    "quantity": 100
+                }
+            },
+            "requiredItems": {
+                "obsidian_battleaxe": 1,
+                "gold_shield": 1,
+                "lich_crown": 1,
+                "obsidian_armor": 1,
+                "gold_platelegs": 1,
+                "flying_boots": 1,
+                "malefic_ring": 1,
+                "topaz_ring": 1,
+                "greater_dreadful_amulet": 1,
+                "lich_race_trophy": 1,
+                "lich_race_medal": 1,
+                "novice_guide": 1,
+                "burn_rune": 1,
+                "health_splash_potion": 100
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 4.82,
+            "validatedAtEpochMs": 1788480346097
+        }
+    ]
+}

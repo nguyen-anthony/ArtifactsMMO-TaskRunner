@@ -56,7 +56,9 @@ private sealed class WizardStep {
         val monsters: List<Monster>,
         val monster: Monster,
         val cookableDrops: List<ActionHelper.CookableDropInfo>,
-        val equipActions: List<ActionHelper.EquipAction> = emptyList()
+        val equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        val utilityActions: List<GearOptimizer.UtilityEquipAction> = emptyList(),
+        val loadoutOptimized: Boolean = false
     ) : WizardStep()
     data class GearOptimization(
         val monsters: List<Monster>,
@@ -453,12 +455,16 @@ fun TaskWizardDialog(
                                     assign(TaskType.Fight(
                                         monsterCode  = s.monster.code,
                                         monsterName  = s.monster.name,
-                                        equipActions = confirmedEquipActions
+                                        equipActions = confirmedEquipActions,
+                                        utilityActions = s.result.utilityActions,
+                                        loadoutOptimized = true
                                     ))
                                 } else {
                                     step = WizardStep.FightDropConfig(
                                         s.monsters, s.monster, s.cookableDrops,
-                                        equipActions = confirmedEquipActions
+                                        equipActions = confirmedEquipActions,
+                                        utilityActions = s.result.utilityActions,
+                                        loadoutOptimized = true
                                     )
                                 }
                             }
@@ -531,12 +537,14 @@ fun TaskWizardDialog(
                                             TaskType.Fight(
                                                 monsterCode  = s.monster.code,
                                                 monsterName  = s.monster.name,
-                                                equipActions = s.equipActions
+                                                equipActions = s.equipActions,
+                                                loadoutOptimized = s.equipActions.isNotEmpty()
                                             )
                                         )
                                     } else {
                                         step = WizardStep.FightDropConfig(
-                                            s.monsters, s.monster, cookable, s.equipActions
+                                            s.monsters, s.monster, cookable, s.equipActions,
+                                            loadoutOptimized = s.equipActions.isNotEmpty()
                                         )
                                     }
                                 }
@@ -563,6 +571,8 @@ fun TaskWizardDialog(
                                         monsterCode = s.monster.code,
                                         monsterName = s.monster.name,
                                         equipActions = s.equipActions,
+                                        utilityActions = s.utilityActions,
+                                        loadoutOptimized = s.loadoutOptimized,
                                         dropStrategies = strategies
                                     )
                                 )
@@ -2373,7 +2383,8 @@ private fun StepGearOptimization(
 ) {
     val baseline   = step.result.baselineScore
     val optimized  = step.result.optimizedScore
-    val hasChanges = step.result.equipActions.isNotEmpty() || step.weaponEquipActions.isNotEmpty()
+    val hasChanges = step.result.equipActions.isNotEmpty() ||
+        step.result.utilityActions.isNotEmpty() || step.weaponEquipActions.isNotEmpty()
     val allActions = step.weaponEquipActions + step.result.equipActions
 
     fun winColor(rate: Double): Color = when {

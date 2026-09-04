@@ -142,12 +142,19 @@ class CharacterTaskRunner(
                 updateStatus { it.copy(characterLevel = char.level) }
             } catch (_: Exception) {}
 
-            // For fight tasks, execute any pending equipment actions first
-            if (task is TaskType.Fight && task.equipActions.isNotEmpty()) {
+            // For fight tasks, execute the complete validated equipment + utility plan first.
+            if (task is TaskType.Fight && (task.equipActions.isNotEmpty() || task.utilityActions.isNotEmpty())) {
                 try {
-                    logger.log(characterName, "Retrieving and equipping gear before fight...")
-                    updateStatus { it.copy(statusMessage = "Equipping gear...") }
-                    helper.retrieveAndEquipItems(characterName, task.equipActions)
+                    if (task.equipActions.isNotEmpty()) {
+                        logger.log(characterName, "Retrieving and equipping gear before fight...")
+                        updateStatus { it.copy(statusMessage = "Equipping gear...") }
+                        helper.retrieveAndEquipItems(characterName, task.equipActions)
+                    }
+                    if (task.utilityActions.isNotEmpty()) {
+                        logger.log(characterName, "Retrieving and equipping utilities before fight...")
+                        updateStatus { it.copy(statusMessage = "Equipping utilities...") }
+                        helper.retrieveAndEquipUtilities(characterName, task.utilityActions)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {

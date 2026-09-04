@@ -72,7 +72,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         // This is a fast heuristic fallback — Fight tasks assigned via the wizard already have
         // gear+weapon optimized. The check here catches Fight tasks assigned externally or after
         // gear changes since assignment.
-        if (weaponOptimisedForMonster[characterName] != task.monsterCode) {
+        if (!task.loadoutOptimized && weaponOptimisedForMonster[characterName] != task.monsterCode) {
             weaponOptimisedForMonster[characterName] = task.monsterCode
             onStatus("Checking best weapon for ${task.monsterName}...")
             val weaponSwap = try {

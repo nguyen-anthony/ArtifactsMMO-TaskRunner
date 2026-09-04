@@ -52,6 +52,10 @@ sealed class TaskType {
          * NOT persisted — these are set by the wizard and cleared after execution.
          */
         val equipActions: List<ActionHelper.EquipAction> = emptyList(),
+        /** Utility actions selected and validated with the gear loadout. */
+        val utilityActions: List<GearOptimizer.UtilityEquipAction> = emptyList(),
+        /** Prevents the runtime weapon fallback from overriding an intentional loadout. */
+        val loadoutOptimized: Boolean = false,
         /**
          * Per-drop strategy for cookable drops. Key = raw item code, value = strategy.
          * Drops not in this map fall back to [defaultDropStrategy].
