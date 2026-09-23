@@ -308,6 +308,10 @@ class TaskManager(
                 isInitiator = true,
                 equipActions = initiatorPlan?.equipActions ?: emptyList(),
                 utilityActions = initiatorPlan?.utilityActions ?: emptyList(),
+                targetLoadout = initiatorPlan?.targetLoadout ?: emptyMap(),
+                declaredTankName = optimizationTankName(participantPlans, initiatorName),
+                expectedThreat = initiatorPlan?.projectedThreat ?: 0,
+                expectedMaxHp = initiatorPlan?.projectedMaxHp ?: 0,
                 reservePotions = initiatorPlan?.reservePotions ?: emptyMap(),
                 foodCode = initiatorPlan?.foodCode,
                 foodQuantity = initiatorPlan?.foodQuantity ?: 0,
@@ -322,7 +326,10 @@ class TaskManager(
         // Wait for the initiator's runner to finish its equip/utility/reserve phase before
         // dispatching participants. This avoids bank contention when multiple characters
         // withdraw from the same bank simultaneously. Timeout is proportional to equip count.
-        waitForEquipCompletion(initiatorName, equipActionCount = initiatorPlan?.equipActions?.size ?: 0)
+        if (!waitForEquipCompletion(initiatorName, equipActionCount = initiatorPlan?.equipActions?.size ?: 0)) {
+            bossEncounterCoordinator.clearEncounter(initiatorName)
+            return
+        }
 
         // Now dispatch participants (each waits for their own equip step to complete before
         // the next is dispatched — same bank-contention safety)
@@ -337,6 +344,10 @@ class TaskManager(
                     isInitiator = false,
                     equipActions = plan?.equipActions ?: emptyList(),
                     utilityActions = plan?.utilityActions ?: emptyList(),
+                    targetLoadout = plan?.targetLoadout ?: emptyMap(),
+                    declaredTankName = optimizationTankName(participantPlans, initiatorName),
+                    expectedThreat = plan?.projectedThreat ?: 0,
+                    expectedMaxHp = plan?.projectedMaxHp ?: 0,
                     reservePotions = plan?.reservePotions ?: emptyMap(),
                     foodCode = plan?.foodCode,
                     foodQuantity = plan?.foodQuantity ?: 0,
@@ -347,7 +358,12 @@ class TaskManager(
                 ),
                 scope
             )
-            waitForEquipCompletion(name, equipActionCount = plan?.equipActions?.size ?: 0)
+            if (!waitForEquipCompletion(name, equipActionCount = plan?.equipActions?.size ?: 0)) {
+                bossEncounterCoordinator.clearEncounter(initiatorName)
+                runners[initiatorName]?.stopImmediate()
+                participantNames.forEach { runners[it]?.stopImmediate() }
+                return
+            }
         }
 
         persistTasks()
@@ -361,8 +377,8 @@ class TaskManager(
      * so a 13-item gear swap gets ~225s instead of the previous fixed 120s, which was
      * too tight for a full gear overhaul + utility equip + reserve potion withdrawal.
      */
-    private suspend fun waitForEquipCompletion(characterName: String, equipActionCount: Int = 0) {
-        val runner = runners[characterName] ?: return
+    private suspend fun waitForEquipCompletion(characterName: String, equipActionCount: Int = 0): Boolean {
+        val runner = runners[characterName] ?: return false
         val timeoutMs = 30_000L + (equipActionCount.coerceAtLeast(1) * 15_000L)
         val start = System.currentTimeMillis()
         while (System.currentTimeMillis() - start < timeoutMs) {
@@ -372,14 +388,23 @@ class TaskManager(
                                  msg.contains("Withdrawing reserve potions", ignoreCase = true) ||
                                  msg.contains("Withdrawing food", ignoreCase = true) ||
                                  msg.contains("Withdrawing dungeon keys", ignoreCase = true) ||
+                                 msg.contains("Verifying boss loadout", ignoreCase = true) ||
                                  msg == "Starting..." ||
                                  msg == "Idle"  // hasn't started yet
-            if (!stillEquipping) return
+            if (msg.startsWith("Boss provisioning failed")) return false
+            if (!stillEquipping) return runner.status.value.isRunning
             kotlinx.coroutines.delay(500)
         }
         // Timeout — log and proceed anyway (safety net)
-        logger.log(characterName, "assignBossFight: timeout waiting for equip completion — proceeding anyway")
+        logger.log(characterName, "assignBossFight: timeout waiting for equip completion — aborting encounter")
+        return false
     }
+
+    private fun optimizationTankName(
+        participantPlans: Map<String, CoopOptimizer.ParticipantPlan>,
+        fallback: String
+    ): String = participantPlans.values.firstOrNull { it.role == CoopOptimizer.Role.TANK }
+        ?.characterName ?: fallback
 
     /**
      * Assign an event task to a character. Does not run cleanup — event tasks

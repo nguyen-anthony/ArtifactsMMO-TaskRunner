@@ -6,14 +6,22 @@ internal data class TeamLoadoutCandidate<T>(
     val bankDemand: Map<String, Int>,
     val heuristicScore: Double,
     val threat: Int,
+    val maxHp: Int,
     val stableKey: String
 )
+
+internal enum class TankTargetingClass {
+    STRICT_THREAT,
+    HP_TIEBREAK,
+    INVALID
+}
 
 internal data class TeamLoadoutSelection<T>(
     val byCharacter: Map<String, TeamLoadoutCandidate<T>>,
     val bankDemand: Map<String, Int>,
     val heuristicScore: Double,
-    val threatViolation: Int,
+    val targetingClass: TankTargetingClass,
+    val threatMargin: Int,
     val stableKey: String
 )
 
@@ -32,21 +40,22 @@ internal object TeamLoadoutAllocator {
             demand: MutableMap<String, Int>
         ) {
             if (index == participantOrder.size) {
-                val tankThreat = selected[tankName]?.threat ?: Int.MIN_VALUE
-                val highestSupport = selected.filterKeys { it != tankName }.values.maxOfOrNull { it.threat }
-                val violation = if (highestSupport == null) {
-                    0
-                } else {
-                    (highestSupport.toLong() - tankThreat.toLong() + 1L)
-                        .coerceAtLeast(0L)
-                        .coerceAtMost(Int.MAX_VALUE.toLong())
-                        .toInt()
+                val tank = selected[tankName] ?: return
+                val supports = selected.filterKeys { it != tankName }.values
+                val highestSupportThreat = supports.maxOfOrNull { it.threat } ?: Int.MIN_VALUE
+                val tiedSupports = supports.filter { it.threat == tank.threat }
+                val targetingClass = when {
+                    supports.isEmpty() || tank.threat > highestSupportThreat -> TankTargetingClass.STRICT_THREAT
+                    tank.threat == highestSupportThreat && tiedSupports.all { tank.maxHp < it.maxHp } ->
+                        TankTargetingClass.HP_TIEBREAK
+                    else -> TankTargetingClass.INVALID
                 }
                 results += TeamLoadoutSelection(
                     byCharacter = selected.toMap(),
                     bankDemand = demand.toMap(),
                     heuristicScore = selected.values.sumOf { it.heuristicScore },
-                    threatViolation = violation,
+                    targetingClass = targetingClass,
+                    threatMargin = tank.threat - highestSupportThreat,
                     stableKey = participantOrder.joinToString("|") { selected.getValue(it).stableKey }
                 )
                 return
@@ -72,13 +81,13 @@ internal object TeamLoadoutAllocator {
         }
 
         visit(0, linkedMapOf(), mutableMapOf())
-        val hasThreatValid = results.any { it.threatViolation == 0 }
         return results
             .asSequence()
-            .filter { !hasThreatValid || it.threatViolation == 0 }
+            .filter { it.targetingClass != TankTargetingClass.INVALID }
             .sortedWith(
-                compareBy<TeamLoadoutSelection<T>> { it.threatViolation }
+                compareBy<TeamLoadoutSelection<T>> { it.targetingClass.ordinal }
                     .thenByDescending { it.heuristicScore }
+                    .thenByDescending { it.threatMargin }
                     .thenBy { it.bankDemand.values.sum() }
                     .thenBy { it.stableKey }
             )

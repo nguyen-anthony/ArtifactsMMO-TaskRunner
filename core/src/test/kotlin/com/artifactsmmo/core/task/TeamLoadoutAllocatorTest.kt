@@ -8,10 +8,10 @@ class TeamLoadoutAllocatorTest {
     @Test
     fun rejectsTeamThatOverAllocatesSharedBankItem() {
         val candidates = mapOf(
-            "tank" to listOf(candidate("tank", "shared", demand = mapOf("rare_ring" to 1), score = 10.0, threat = 10)),
+            "tank" to listOf(candidate("tank", "shared", demand = mapOf("rare_ring" to 1), score = 10.0, threat = 10, maxHp = 100)),
             "support" to listOf(
-                candidate("support", "shared", demand = mapOf("rare_ring" to 1), score = 10.0, threat = 1),
-                candidate("support", "personal", demand = emptyMap(), score = 5.0, threat = 1)
+                candidate("support", "shared", demand = mapOf("rare_ring" to 1), score = 10.0, threat = 1, maxHp = 100),
+                candidate("support", "personal", demand = emptyMap(), score = 5.0, threat = 1, maxHp = 100)
             )
         )
 
@@ -29,8 +29,8 @@ class TeamLoadoutAllocatorTest {
     @Test
     fun permitsBothCandidatesWhenBankHasTwoCopies() {
         val candidates = mapOf(
-            "tank" to listOf(candidate("tank", "tank-best", mapOf("rare_ring" to 1), 10.0, 10)),
-            "support" to listOf(candidate("support", "support-best", mapOf("rare_ring" to 1), 9.0, 1))
+            "tank" to listOf(candidate("tank", "tank-best", mapOf("rare_ring" to 1), 10.0, 10, 100)),
+            "support" to listOf(candidate("support", "support-best", mapOf("rare_ring" to 1), 9.0, 1, 100))
         )
 
         val result = TeamLoadoutAllocator.enumerate(
@@ -46,10 +46,10 @@ class TeamLoadoutAllocatorTest {
     @Test
     fun prefersThreatValidCombinationOverHigherHeuristicViolation() {
         val candidates = mapOf(
-            "tank" to listOf(candidate("tank", "tank", emptyMap(), 5.0, 10)),
+            "tank" to listOf(candidate("tank", "tank", emptyMap(), 5.0, 10, 100)),
             "support" to listOf(
-                candidate("support", "high-score-threat", emptyMap(), 100.0, 10),
-                candidate("support", "valid", emptyMap(), 1.0, 9)
+                candidate("support", "high-score-threat", emptyMap(), 100.0, 10, 90),
+                candidate("support", "valid", emptyMap(), 1.0, 9, 100)
             )
         )
 
@@ -61,15 +61,15 @@ class TeamLoadoutAllocatorTest {
         )
 
         assertEquals("valid", result.first().byCharacter.getValue("support").value)
-        assertEquals(0, result.first().threatViolation)
+        assertEquals(TankTargetingClass.STRICT_THREAT, result.first().targetingClass)
     }
 
     @Test
     fun orderingIsStableWhenCandidateInputIsShuffled() {
         val firstOrder = mapOf(
             "tank" to listOf(
-                candidate("tank", "b", emptyMap(), 5.0, 10),
-                candidate("tank", "a", emptyMap(), 5.0, 10)
+                candidate("tank", "b", emptyMap(), 5.0, 10, 100),
+                candidate("tank", "a", emptyMap(), 5.0, 10, 100)
             )
         )
         val secondOrder = mapOf("tank" to firstOrder.getValue("tank").reversed())
@@ -84,7 +84,7 @@ class TeamLoadoutAllocatorTest {
     @Test
     fun singleParticipantHasNoThreatViolation() {
         val candidates = mapOf(
-            "tank" to listOf(candidate("tank", "only", emptyMap(), 1.0, threat = 0))
+            "tank" to listOf(candidate("tank", "only", emptyMap(), 1.0, threat = 0, maxHp = 100))
         )
 
         val result = TeamLoadoutAllocator.enumerate(
@@ -94,7 +94,37 @@ class TeamLoadoutAllocatorTest {
             tankName = "tank"
         )
 
-        assertEquals(0, result.single().threatViolation)
+        assertEquals(TankTargetingClass.STRICT_THREAT, result.single().targetingClass)
+    }
+
+    @Test
+    fun allowsThreatTieOnlyWhenTankHasStrictlyLowerMaxHp() {
+        val result = TeamLoadoutAllocator.enumerate(
+            participantOrder = listOf("tank", "support"),
+            candidates = mapOf(
+                "tank" to listOf(candidate("tank", "tank", emptyMap(), 1.0, 10, 90)),
+                "support" to listOf(candidate("support", "support", emptyMap(), 1.0, 10, 100))
+            ),
+            bankQuantities = emptyMap(),
+            tankName = "tank"
+        )
+
+        assertEquals(TankTargetingClass.HP_TIEBREAK, result.single().targetingClass)
+    }
+
+    @Test
+    fun rejectsEqualThreatAndEqualHp() {
+        val result = TeamLoadoutAllocator.enumerate(
+            participantOrder = listOf("tank", "support"),
+            candidates = mapOf(
+                "tank" to listOf(candidate("tank", "tank", emptyMap(), 1.0, 10, 100)),
+                "support" to listOf(candidate("support", "support", emptyMap(), 1.0, 10, 100))
+            ),
+            bankQuantities = emptyMap(),
+            tankName = "tank"
+        )
+
+        assertTrue(result.isEmpty())
     }
 
     private fun candidate(
@@ -102,13 +132,15 @@ class TeamLoadoutAllocatorTest {
         value: String,
         demand: Map<String, Int>,
         score: Double,
-        threat: Int
+        threat: Int,
+        maxHp: Int
     ) = TeamLoadoutCandidate(
         characterName = character,
         value = value,
         bankDemand = demand,
         heuristicScore = score,
         threat = threat,
+        maxHp = maxHp,
         stableKey = "$character:$value"
     )
 }

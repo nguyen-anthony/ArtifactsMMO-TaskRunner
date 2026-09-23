@@ -44,6 +44,8 @@ class CoopOptimizer(
 
     enum class Role { TANK, SUPPORT }
 
+    private enum class ThreatStrategy { BALANCED, MAXIMIZE, MINIMIZE }
+
     /** Utility candidate category — used for role-based priority ordering. */
     private enum class UtilityCategory {
         BOOST_RES_FIRE, BOOST_RES_EARTH, BOOST_RES_WATER, BOOST_RES_AIR,
@@ -58,7 +60,8 @@ class CoopOptimizer(
         val pick: GearPickResult,
         val bankDemand: Map<String, Int>,
         val heuristicScore: Double,
-        val projectedThreat: Int,
+        val projectedThreat: Int = 0,
+        val projectedMaxHp: Int = 0,
         val stableKey: String
     )
 
@@ -69,6 +72,8 @@ class CoopOptimizer(
         val utilityActions: List<GearOptimizer.UtilityEquipAction>,
         val targetLoadout: Map<String, String>,
         val targetUtilities: Map<String, Pair<String, Int>>,
+        val projectedThreat: Int,
+        val projectedMaxHp: Int,
         /**
          * Potion stacks to withdraw into inventory as reserves for loop sustainability.
          * Map of itemCode -> quantity. These are carried in inventory and re-equipped into
@@ -193,6 +198,7 @@ class CoopOptimizer(
                     bankDemand = candidate.bankDemand,
                     heuristicScore = candidate.heuristicScore,
                     threat = candidate.projectedThreat,
+                    maxHp = candidate.projectedMaxHp,
                     stableKey = candidate.stableKey
                 )
             }
@@ -205,7 +211,12 @@ class CoopOptimizer(
             bankQuantities = bankSnapshot,
             tankName = tankName
         )
-        var selectedTeam = teamCandidates.firstOrNull()
+        if (teamCandidates.isEmpty()) {
+            throw IllegalStateException(
+                "No deterministic tank loadout found for $tankName against $monsterCode"
+            )
+        }
+        var selectedTeam = teamCandidates.first()
         var baselineSim: CombatSimulationData? = null
         var bestScore: CoopScore? = null
         for (team in teamCandidates.take(TEAM_GEAR_API_FINALISTS)) {
@@ -222,7 +233,9 @@ class CoopOptimizer(
                 continue
             }
             val score = simToCoopScore(loadouts, monsterCode, precomputed = sim)
-            if (bestScore == null || score > bestScore!!) {
+            val selectedClass = selectedTeam.targetingClass
+            if (team.targetingClass.ordinal < selectedClass.ordinal ||
+                (team.targetingClass == selectedClass && (bestScore == null || score > bestScore!!))) {
                 selectedTeam = team
                 baselineSim = sim
                 bestScore = score
@@ -230,14 +243,8 @@ class CoopOptimizer(
         }
 
         val gearPicks = mutableMapOf<String, GearPickResult>()
-        if (selectedTeam != null) {
-            for (name in stableParticipantNames) {
-                gearPicks[name] = selectedTeam.byCharacter.getValue(name).value
-            }
-        } else {
-            for (name in stableParticipantNames) {
-                gearPicks[name] = currentGearPick(chars.getValue(name))
-            }
+        for (name in stableParticipantNames) {
+            gearPicks[name] = selectedTeam.byCharacter.getValue(name).value
         }
         if (baselineSim == null) {
             val fallbackLoadouts = stableParticipantNames.map { name ->
@@ -403,6 +410,7 @@ class CoopOptimizer(
             val char = chars[name]!!
             val gear = gearPicks[name]!!
             val utilities = committedUtilities[name]!!.toMap()
+            val selectedCandidate = selectedTeam.byCharacter.getValue(name)
 
             // ── Transition cost inventory accounting ──────────────────────────────
             // Entry cost + 1 spare set of keys. Spare keys let the character re-enter
@@ -465,6 +473,8 @@ class CoopOptimizer(
                 },
                 targetLoadout = gear.targetLoadout,
                 targetUtilities = utilities,
+                projectedThreat = selectedCandidate.threat,
+                projectedMaxHp = selectedCandidate.maxHp,
                 reservePotions = reservePotions,
                 foodCode = foodCode,
                 foodQuantity = foodQuantity,
@@ -498,7 +508,20 @@ class CoopOptimizer(
         val current = currentGearPick(char)
         val unrestricted = pickBestGearHeuristic(char, monster, role)
         val personalOnly = pickBestGearHeuristic(char, monster, role, allowBank = false)
-        val candidates = mutableListOf(current, unrestricted, personalOnly)
+        val threatDirected = pickBestGearHeuristic(
+            char = char,
+            monster = monster,
+            role = role,
+            threatStrategy = if (role == Role.TANK) ThreatStrategy.MAXIMIZE else ThreatStrategy.MINIMIZE
+        )
+        val personalThreatDirected = pickBestGearHeuristic(
+            char = char,
+            monster = monster,
+            role = role,
+            allowBank = false,
+            threatStrategy = if (role == Role.TANK) ThreatStrategy.MAXIMIZE else ThreatStrategy.MINIMIZE
+        )
+        val candidates = mutableListOf(current, unrestricted, personalOnly, threatDirected, personalThreatDirected)
 
         val scarceBankCodes = bankDemandForLoadout(char, unrestricted.targetLoadout).keys.sorted()
         for (code in scarceBankCodes) {
@@ -541,6 +564,7 @@ class CoopOptimizer(
         )
         var heuristic = 0.0
         var threat = char.threat
+        var maxHp = char.maxHp
         for ((slot, code) in pick.targetLoadout) {
             val item = try { helper.contentCache.getItemOrNull(code) } catch (_: Exception) { null } ?: continue
             heuristic += scoreItem(item, slot, bossDmg, bossRes, role)
@@ -550,12 +574,15 @@ class CoopOptimizer(
             } else null
             threat -= currentItem?.effects?.filter { it.code == "threat" }?.sumOf { it.value } ?: 0
             threat += item.effects.filter { it.code == "threat" }.sumOf { it.value }
+            maxHp -= currentItem?.effects?.filter { it.code == "hp" }?.sumOf { it.value } ?: 0
+            maxHp += item.effects.filter { it.code == "hp" }.sumOf { it.value }
         }
         return CoopGearCandidate(
             pick = executablePick,
             bankDemand = bankDemandForLoadout(char, pick.targetLoadout),
             heuristicScore = heuristic,
             projectedThreat = threat,
+            projectedMaxHp = maxHp,
             stableKey = stableGearKey(pick.targetLoadout)
         )
     }
@@ -615,6 +642,8 @@ class CoopOptimizer(
     private fun stableGearKey(target: Map<String, String>): String =
         GearOptimizer.GEAR_SLOTS.joinToString("|") { "${it.slot}=${target[it.slot].orEmpty()}" }
 
+    private fun itemThreat(item: Item): Int = item.effects.filter { it.code == "threat" }.sumOf { it.value }
+
     /**
      * Pick the best available gear for [char] against [monster] using deterministic
      * heuristic scoring. No simulation calls — this is fast and cheap.
@@ -636,7 +665,8 @@ class CoopOptimizer(
         role: Role,
         claimedGear: MutableMap<String, Int> = mutableMapOf(),
         excludedBankCodes: Set<String> = emptySet(),
-        allowBank: Boolean = true
+        allowBank: Boolean = true,
+        threatStrategy: ThreatStrategy = ThreatStrategy.BALANCED
     ): GearPickResult {
         val bossDmg = mapOf(
             "fire"  to monster.attackFire,
@@ -691,8 +721,14 @@ class CoopOptimizer(
             if (allOptions.isEmpty()) continue
 
             val bestOption = allOptions.sortedWith(
-                compareByDescending<ActionHelper.EquipmentOption> {
-                    scoreItem(it.item, slotInfo.slot, bossDmg, bossRes, role)
+                compareByDescending<ActionHelper.EquipmentOption> { option ->
+                    when (threatStrategy) {
+                        ThreatStrategy.BALANCED -> scoreItem(option.item, slotInfo.slot, bossDmg, bossRes, role)
+                        ThreatStrategy.MAXIMIZE -> itemThreat(option.item) * 1_000_000.0 +
+                            scoreItem(option.item, slotInfo.slot, bossDmg, bossRes, role)
+                        ThreatStrategy.MINIMIZE -> -itemThreat(option.item) * 1_000_000.0 +
+                            scoreItem(option.item, slotInfo.slot, bossDmg, bossRes, role)
+                    }
                 }.thenByDescending { it.item.level }.thenBy { it.item.code }
             ).firstOrNull() ?: continue
 
@@ -1039,7 +1075,9 @@ class CoopOptimizer(
                 equipActions = emptyList(),
                 utilityActions = emptyList(),
                 targetLoadout = emptyMap(),
-                targetUtilities = emptyMap()
+                targetUtilities = emptyMap(),
+                projectedThreat = chars[name]?.threat ?: 0,
+                projectedMaxHp = chars[name]?.maxHp ?: 0
             )
         }
         return CoopOptimizationResult(

@@ -86,6 +86,8 @@ class CharacterTaskRunner(
         currentTask = task
         craftedSoFar = if (task is TaskType.Craft) task.craftedSoFar else 0
 
+        updateStatus { it.copy(task = task, statusMessage = "Starting...", isRunning = task !is TaskType.Idle) }
+
         if (task is TaskType.Idle) {
             // Stop with cleanup
             job = scope.launch {
@@ -202,6 +204,32 @@ class CharacterTaskRunner(
                         updateStatus { it.copy(statusMessage = "Applying utility potions for boss fight...") }
                         helper.retrieveAndEquipUtilities(characterName, task.utilityActions)
                     }
+                    if (task.targetLoadout.isNotEmpty()) {
+                            updateStatus { it.copy(statusMessage = "Verifying boss loadout...") }
+                            var current = helper.refreshCharacter(characterName)
+                            var mismatches = task.targetLoadout.filter { (slot, code) ->
+                                helper.getEquippedInSlot(current, slot) != code
+                            }
+                            if (mismatches.isNotEmpty()) {
+                                logger.log(characterName, "Retrying ${mismatches.size} boss gear mismatch(es)...")
+                                val retryActions = mismatches.map { (slot, code) ->
+                                    val source = if (helper.getItemQuantity(current, code) > 0) "inventory" else "bank"
+                                    ActionHelper.EquipAction(slot, code, source)
+                                }
+                                helper.retrieveAndEquipItems(characterName, retryActions)
+                                current = helper.refreshCharacter(characterName)
+                                mismatches = task.targetLoadout.filter { (slot, code) ->
+                                    helper.getEquippedInSlot(current, slot) != code
+                                }
+                            }
+                            if (mismatches.isNotEmpty()) {
+                                throw IllegalStateException(
+                                    "Boss loadout mismatch: " + mismatches.entries.joinToString { (slot, code) ->
+                                        "$slot expected=$code actual=${helper.getEquippedInSlot(current, slot)}"
+                                    }
+                                )
+                            }
+                    }
                     if (task.reservePotions.isNotEmpty()) {
                         logger.log(characterName, "Withdrawing reserve potions for boss fight loop (${task.reservePotions.entries.joinToString { "${it.value}x ${it.key}" }})...")
                         updateStatus { it.copy(statusMessage = "Withdrawing reserve potions...") }
@@ -223,7 +251,10 @@ class CharacterTaskRunner(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    logger.log(characterName, "[boss-equip] Error during gear/utility retrieval: ${e.message}")
+                    val message = "Boss provisioning failed: ${e.message}"
+                    logger.log(characterName, "[boss-equip] $message")
+                    updateStatus { it.copy(statusMessage = message, lastError = message, isRunning = false) }
+                    return@launch
                 }
             }
 

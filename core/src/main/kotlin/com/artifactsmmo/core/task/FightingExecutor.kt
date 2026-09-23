@@ -545,6 +545,36 @@ class FightingExecutor(private val helper: ActionHelper) {
                 }
             }
 
+            // Final authority: verify server-calculated threat/max HP after every participant
+            // has applied its loadout and reached readiness. Never start a boss fight when the
+            // declared tank would not be the deterministic 90% threat target.
+            val teamNames = listOf(characterName) + task.participantNames
+            val actualTeam = try {
+                teamNames.associateWith { helper.refreshCharacter(it) }
+            } catch (e: Exception) {
+                coordinator.clearEncounter(characterName)
+                return StepResult.Error("Unable to validate boss team targeting: ${e.message}")
+            }
+            val declaredTank = actualTeam[task.declaredTankName]
+            if (declaredTank == null) {
+                coordinator.clearEncounter(characterName)
+                return StepResult.Error("Declared tank ${task.declaredTankName} is not in the boss team")
+            }
+            val supports = actualTeam.filterKeys { it != task.declaredTankName }.values
+            val highestSupportThreat = supports.maxOfOrNull { it.threat } ?: Int.MIN_VALUE
+            val tiedSupports = supports.filter { it.threat == declaredTank.threat }
+            val tankIsDeterministic = declaredTank.threat > highestSupportThreat ||
+                (declaredTank.threat == highestSupportThreat && tiedSupports.all { declaredTank.maxHp < it.maxHp })
+            if (!tankIsDeterministic) {
+                val details = actualTeam.values.joinToString("; ") {
+                    "${it.name}: threat=${it.threat}, maxHp=${it.maxHp}"
+                }
+                coordinator.clearEncounter(characterName)
+                return StepResult.Error(
+                    "Declared tank ${task.declaredTankName} is not the deterministic target. $details"
+                )
+            }
+
             onStatus("Fighting ${task.monsterName} (boss)... (HP: ${char.hp}/${char.maxHp})")
             return try {
                 val result = helper.fight(characterName, participants = task.participantNames)

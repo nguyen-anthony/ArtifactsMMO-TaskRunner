@@ -78,6 +78,11 @@ sealed class TaskType {
         val isInitiator: Boolean,
         val equipActions: List<ActionHelper.EquipAction> = emptyList(),
         val utilityActions: List<GearOptimizer.UtilityEquipAction> = emptyList(),
+        /** Absolute optimizer-selected gear target used for provisioning verification. */
+        val targetLoadout: Map<String, String> = emptyMap(),
+        val declaredTankName: String = "",
+        val expectedThreat: Int = 0,
+        val expectedMaxHp: Int = 0,
         /**
          * Potion reserves to withdraw into inventory before the fight loop begins.
          * Map of itemCode -> quantity. Re-equipped mid-loop when utility slot quantity
