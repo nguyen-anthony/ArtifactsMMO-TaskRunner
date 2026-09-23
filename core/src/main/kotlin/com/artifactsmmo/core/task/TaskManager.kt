@@ -16,7 +16,7 @@ import kotlinx.coroutines.CoroutineScope
  * Provides methods for the UI to query status and assign tasks.
  */
 class TaskManager(
-    private val client: ArtifactsMMOClient,
+    internal val client: ArtifactsMMOClient,
     private val scope: CoroutineScope,
     private val taskStore: TaskStore = TaskStore(),
     val logger: TaskLogger = TaskLogger(),
@@ -34,8 +34,11 @@ class TaskManager(
     private val eventExecutor = EventExecutor(helper, fightingExecutor)
     internal val coopOptimizer = CoopOptimizer(helper, fightingExecutor.gearOptimizer, client)
     private val eventConfigStore = EventConfigStore()
+    private val raidConfigStore = RaidConfigStore()
     private lateinit var webSocketManager: WebSocketManager
     lateinit var eventDispatcher: EventDispatcher
+        private set
+    lateinit var raidScheduler: RaidScheduler
         private set
 
     private val runners = mutableMapOf<String, CharacterTaskRunner>()
@@ -62,6 +65,7 @@ class TaskManager(
         // Set up WebSocket and event dispatcher before creating runners
         webSocketManager = WebSocketManager(RealtimeClient(token), client.events, scope, bankState)
         eventDispatcher = EventDispatcher(webSocketManager, eventConfigStore, this, contentCache, scope)
+        raidScheduler = RaidScheduler(this, raidConfigStore, webSocketManager, scope)
         bankState.start()
 
         val characters = client.characters.getMyCharacters()
@@ -111,6 +115,7 @@ class TaskManager(
 
         webSocketManager.start()
         eventDispatcher.start()
+        raidScheduler.start()
 
         return characters.map { it.name }
     }
@@ -278,6 +283,9 @@ class TaskManager(
         monsterCode: String,
         monsterName: String,
         participantPlans: Map<String, CoopOptimizer.ParticipantPlan> = emptyMap(),
+        raidCode: String? = null,
+        scheduledStartAtMillis: Long? = null,
+        scheduledEndAtMillis: Long? = null,
         dropStrategies: Map<String, DropStrategy> = emptyMap(),
         defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
     ) {
@@ -313,16 +321,22 @@ class TaskManager(
                 foodQuantity = initiatorPlan?.foodQuantity ?: 0,
                 transitionCosts = initiatorPlan?.transitionCosts ?: emptyMap(),
                 spareKeys = initiatorPlan?.spareKeys ?: emptyMap(),
+                raidCode = raidCode,
+                scheduledStartAtMillis = scheduledStartAtMillis,
+                scheduledEndAtMillis = scheduledEndAtMillis,
                 dropStrategies = dropStrategies,
                 defaultDropStrategy = defaultDropStrategy
             ),
             scope
         )
 
-        // Wait for the initiator's runner to finish its equip/utility/reserve phase before
-        // dispatching participants. This avoids bank contention when multiple characters
-        // withdraw from the same bank simultaneously. Timeout is proportional to equip count.
-        waitForEquipCompletion(initiatorName, equipActionCount = initiatorPlan?.equipActions?.size ?: 0)
+        // Wait for explicit provisioning success before dispatching anyone else. This is
+        // a real barrier, unlike the previous status-text poll which could advance once
+        // the initiator changed from "Equipping" to a later bank/provisioning step.
+        if (initiatorRunner.awaitBossProvisioning() != true) {
+            bossEncounterCoordinator.clearEncounter(initiatorName)
+            throw IllegalStateException("Boss/raid initiator $initiatorName failed provisioning")
+        }
 
         // Now dispatch participants (each waits for their own equip step to complete before
         // the next is dispatched — same bank-contention safety)
@@ -342,44 +356,23 @@ class TaskManager(
                     foodQuantity = plan?.foodQuantity ?: 0,
                     transitionCosts = plan?.transitionCosts ?: emptyMap(),
                     spareKeys = plan?.spareKeys ?: emptyMap(),
+                    raidCode = raidCode,
+                    scheduledStartAtMillis = scheduledStartAtMillis,
+                    scheduledEndAtMillis = scheduledEndAtMillis,
                     dropStrategies = dropStrategies,
                     defaultDropStrategy = defaultDropStrategy
                 ),
                 scope
             )
-            waitForEquipCompletion(name, equipActionCount = plan?.equipActions?.size ?: 0)
+            if (runners[name]!!.awaitBossProvisioning() != true) {
+                bossEncounterCoordinator.clearEncounter(initiatorName)
+                throw IllegalStateException("Boss/raid participant $name failed provisioning")
+            }
         }
 
         persistTasks()
     }
 
-    /**
-     * Poll the runner's status until its statusMessage indicates the equip phase has
-     * completed (i.e. it's moved past all gear/utility/reserve phases).
-     *
-     * Timeout is proportional to the number of equip actions (30s base + 15s per item)
-     * so a 13-item gear swap gets ~225s instead of the previous fixed 120s, which was
-     * too tight for a full gear overhaul + utility equip + reserve potion withdrawal.
-     */
-    private suspend fun waitForEquipCompletion(characterName: String, equipActionCount: Int = 0) {
-        val runner = runners[characterName] ?: return
-        val timeoutMs = 30_000L + (equipActionCount.coerceAtLeast(1) * 15_000L)
-        val start = System.currentTimeMillis()
-        while (System.currentTimeMillis() - start < timeoutMs) {
-            val msg = runner.status.value.statusMessage
-            val stillEquipping = msg.contains("Equipping gear", ignoreCase = true) ||
-                                 msg.contains("Applying utility potions", ignoreCase = true) ||
-                                 msg.contains("Withdrawing reserve potions", ignoreCase = true) ||
-                                 msg.contains("Withdrawing food", ignoreCase = true) ||
-                                 msg.contains("Withdrawing dungeon keys", ignoreCase = true) ||
-                                 msg == "Starting..." ||
-                                 msg == "Idle"  // hasn't started yet
-            if (!stillEquipping) return
-            kotlinx.coroutines.delay(500)
-        }
-        // Timeout — log and proceed anyway (safety net)
-        logger.log(characterName, "assignBossFight: timeout waiting for equip completion — proceeding anyway")
-    }
 
     /**
      * Assign an event task to a character. Does not run cleanup — event tasks
@@ -483,6 +476,50 @@ class TaskManager(
         }
     }
 
+    internal fun findRaidMap(raidCode: String) = contentCache.findMapByContent("raid", raidCode)
+
+    internal fun currentTask(characterName: String): TaskType? = runners[characterName]?.currentTask
+
+    fun getRaidConfigs(): List<RaidConfig> = raidConfigStore.load()
+
+    fun saveRaidConfigs(configs: List<RaidConfig>) = raidConfigStore.save(configs)
+
+    suspend fun getRaids(active: Boolean? = null) = client.raids.getRaids(active = active).data
+
+    /** Assign the scheduled-raid variant of a cooperative boss fight. */
+    internal suspend fun assignRaidFight(
+        raid: com.artifactsmmo.client.models.Raid,
+        initiatorName: String,
+        participantNames: List<String>,
+        participantPlans: Map<String, CoopOptimizer.ParticipantPlan>,
+        scheduledStartAtMillis: Long?,
+        scheduledEndAtMillis: Long?
+    ) {
+        assignBossFight(
+            initiatorName = initiatorName,
+            participantNames = participantNames,
+            monsterCode = raid.monster,
+            monsterName = raid.name,
+            participantPlans = participantPlans,
+            raidCode = raid.code,
+            scheduledStartAtMillis = scheduledStartAtMillis,
+            scheduledEndAtMillis = scheduledEndAtMillis
+        )
+    }
+
+    /** Restore tasks interrupted by [RaidScheduler] without affecting ordinary BossFight behavior. */
+    internal fun stopRaidAndRestore(raidCode: String, interrupted: Map<String, TaskType>) {
+        for ((name, previousTask) in interrupted) {
+            val runner = runners[name] ?: continue
+            val current = runner.currentTask
+            if (current is TaskType.BossFight && current.raidCode == raidCode) {
+                runner.assignTask(previousTask, scope)
+            }
+        }
+        persistTasks()
+    }
+
+
     /**
      * Stop a character's current task.
      */
@@ -497,6 +534,7 @@ class TaskManager(
     fun stopAll() {
         runners.values.forEach { it.stopImmediate() }
         if (::webSocketManager.isInitialized) webSocketManager.stop()
+        if (::raidScheduler.isInitialized) raidScheduler.stop()
         bankState.stop()
         // Don't clear persisted tasks on stopAll — they should resume on restart
     }

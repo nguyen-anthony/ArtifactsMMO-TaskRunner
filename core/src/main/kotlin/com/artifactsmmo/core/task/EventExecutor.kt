@@ -40,6 +40,8 @@ class EventExecutor(
 
         var char = previousChar ?: helper.refreshCharacter(characterName)
 
+        char = helper.ensureToolEquipped(characterName, task.skill, existingChar = char)
+
         // Bank full inventory before gathering
         if (helper.isInventoryFull(char)) {
             onStatus("Inventory full, banking before event gather...")

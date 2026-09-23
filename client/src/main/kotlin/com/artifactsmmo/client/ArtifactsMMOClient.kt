@@ -89,6 +89,9 @@ class ArtifactsMMOClient(
      */
     val events = EventService(httpClient)
 
+    /** Scheduled raid definitions and active raid state. */
+    val raids = RaidService(httpClient)
+
     /**
      * Close the HTTP client and release resources
      */

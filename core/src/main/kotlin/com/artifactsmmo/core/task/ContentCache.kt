@@ -291,6 +291,12 @@ class ContentCache(private val contentService: ContentService) {
     /** Look up a tile by its map_id. Used by [TeleportAdvisor] to resolve potion destinations. */
     fun getTileById(mapId: Int): MapInfo? = allMaps.find { it.mapId == mapId }
 
+    /** First accessible tile with this exact content. Useful when no character position exists yet. */
+    fun findMapByContent(contentType: String, contentCode: String): MapInfo? =
+        allMaps.firstOrNull {
+            it.interactions.content?.type == contentType && it.interactions.content?.code == contentCode
+        }
+
     fun findNearestWorkshop(char: Character, skill: String): MapInfo? =
         findNearest(char, "workshop", skill)
 

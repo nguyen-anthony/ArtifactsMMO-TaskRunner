@@ -15,6 +15,10 @@ sealed class RealtimeMessage {
     data class EventRemoved(val event: ActiveEvent) : RealtimeMessage()
     @OptIn(kotlin.time.ExperimentalTime::class)
     data class AccountLog(val entry: AccountLogEntry) : RealtimeMessage()
+    /** Minimal raid lifecycle notification. Only the raid code is required for scheduling. */
+    data class RaidStarted(val raidCode: String) : RealtimeMessage()
+    /** Minimal raid lifecycle notification. Only the raid code is required for cleanup. */
+    data class RaidEnded(val raidCode: String) : RealtimeMessage()
     data object Unknown : RealtimeMessage()
 }
 

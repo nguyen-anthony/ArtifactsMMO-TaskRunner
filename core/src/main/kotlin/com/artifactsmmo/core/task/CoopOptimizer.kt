@@ -156,6 +156,15 @@ class CoopOptimizer(
         require(participantNames.isNotEmpty()) { "Must have at least one participant" }
         require(participantNames.size <= 3) { "Coop fight supports at most 3 characters" }
 
+        // Utility planning reserves shared bank stock across the entire team. Reconcile the
+        // bank mirror once before calculating those reservations so a stale snapshot cannot
+        // select a potion that has already been withdrawn by another active runner.
+        try {
+            helper.bankState.refresh()
+        } catch (e: Exception) {
+            println("CoopOptimizer: bank refresh before utility planning failed: ${e.message}")
+        }
+
         // 1. Fetch fresh Character objects
         val stableParticipantNames = participantNames.distinct().sorted()
         val chars = stableParticipantNames.associateWith { name ->

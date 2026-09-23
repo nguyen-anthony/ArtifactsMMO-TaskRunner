@@ -45,6 +45,8 @@ class CharacterTaskRunner(
 
     private var job: Job? = null
     private var scope: CoroutineScope? = null
+    /** Explicit result for initial BossFight provisioning; avoids status-text polling races. */
+    private var bossProvisioning: CompletableDeferred<Boolean>? = null
     var currentTask: TaskType = TaskType.Idle
         private set
 
@@ -84,6 +86,8 @@ class CharacterTaskRunner(
         }
 
         currentTask = task
+        val provisioning = if (task is TaskType.BossFight) CompletableDeferred<Boolean>() else null
+        bossProvisioning = provisioning
         craftedSoFar = if (task is TaskType.Craft) task.craftedSoFar else 0
 
         if (task is TaskType.Idle) {
@@ -213,6 +217,7 @@ class CharacterTaskRunner(
                         helper.bankWithdrawItems(characterName, listOf(com.artifactsmmo.client.models.SimpleItem(task.foodCode, task.foodQuantity)))
                     }
                     val allKeys = (task.transitionCosts.entries + task.spareKeys.entries)
+                        .filter { it.key != "gold" } // gold stays on character; transition consumes it directly
                         .groupBy({ it.key }, { it.value })
                         .mapValues { (_, values) -> values.sum() }
                     if (allKeys.isNotEmpty()) {
@@ -220,12 +225,38 @@ class CharacterTaskRunner(
                         updateStatus { it.copy(statusMessage = "Withdrawing dungeon keys...") }
                         helper.bankWithdrawItems(characterName, allKeys.map { (code, qty) -> com.artifactsmmo.client.models.SimpleItem(code, qty) })
                     }
+
+                    // Verify the utility plan once after provisioning. Potions are
+                    // best-effort: an item can disappear after optimization because another
+                    // character claimed the last bank stack. Log the degraded loadout but
+                    // continue; FightingExecutor will not create a restock loop for a plan
+                    // that never successfully equipped a utility.
+                    val provisioned = helper.refreshCharacter(characterName)
+                    val missingUtilities = task.utilityActions.filter { planned ->
+                        helper.getEquippedInSlot(provisioned, planned.slot) != planned.itemCode ||
+                            helper.getEquippedUtilityQuantity(provisioned, planned.slot) <= 0
+                    }
+                    if (missingUtilities.isNotEmpty()) {
+                        val expected = missingUtilities.joinToString { "${it.slot}=${it.itemCode}" }
+                        logger.log(characterName, "Boss/raid utility unavailable: $expected — continuing with available loadout")
+                        updateStatus { it.copy(statusMessage = "Utility unavailable: $expected — continuing") }
+                    }
+                    provisioning?.complete(true)
                 } catch (e: CancellationException) {
+                    provisioning?.cancel(e)
                     throw e
                 } catch (e: Exception) {
-                    logger.log(characterName, "[boss-equip] Error during gear/utility retrieval: ${e.message}")
+                    val msg = "Boss/raid provisioning failed: ${e.message}"
+                    logger.log(characterName, "[boss-equip] $msg")
+                    updateStatus { it.copy(statusMessage = msg, lastError = msg, isRunning = false) }
+                    if (task.isInitiator) bossEncounterCoordinator.clearEncounter(characterName)
+                    provisioning?.complete(false)
+                    return@launch
                 }
             }
+
+            // A BossFight with no setup work is provisioned immediately.
+            if (task is TaskType.BossFight) provisioning?.complete(true)
 
             // For gather tasks, check bank for leftover raw materials to craft
             if (task is TaskType.Gather) {
@@ -244,6 +275,9 @@ class CharacterTaskRunner(
             runTaskLoop(task)
         }
     }
+
+    /** Await the explicit outcome of the current boss/raid setup. */
+    suspend fun awaitBossProvisioning(): Boolean? = bossProvisioning?.await()
 
     /**
      * Stop the current task with cleanup.
@@ -675,9 +709,16 @@ class CharacterTaskRunner(
                         if (task is TaskType.BossFight) {
                             logger.log(characterName, "Boss fight restock — full resupply trip")
                             updateStatus { it.copy(bankTrips = it.bankTrips + 1, lastError = null) }
-                            fightingExecutor.restockForBossFight(characterName, task) { msg ->
+                            val restocked = fightingExecutor.restockForBossFight(characterName, task) { msg ->
                                 logger.log(characterName, msg)
                                 updateStatus { it.copy(statusMessage = msg) }
+                            }
+                            if (!restocked) {
+                                val msg = "Boss/raid restock failed — utility loadout could not be restored"
+                                logger.log(characterName, msg)
+                                updateStatus { it.copy(statusMessage = msg, lastError = msg, isRunning = false) }
+                                if (task.isInitiator) bossEncounterCoordinator.clearEncounter(characterName)
+                                break
                             }
                         }
                     }

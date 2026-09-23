@@ -2,7 +2,6 @@
     "events": [
         {
             "eventCode": "fish_merchant",
-            "enabled": true,
             "itemsToSell": [
                 {
                     "code": "holey_boot",
@@ -58,6 +57,10 @@
                 {
                     "code": "bandit_armor",
                     "quantity": 0
+                },
+                {
+                    "code": "goblin_guard_shield",
+                    "quantity": 0
                 }
             ],
             "designatedTrader": "Ront"
@@ -79,7 +82,8 @@
             "eventCode": "strange_apparition",
             "enabled": true,
             "eligibleCharacters": [
-                "Shuckle"
+                "Shuckle",
+                "Shella"
             ]
         },
         {
@@ -116,13 +120,9 @@
         },
         {
             "eventCode": "portal_demon",
-            "enabled": true,
             "eligibleCharacters": [
-                "Ront",
-                "Shella",
                 "Reila",
-                "Olivia",
-                "Shuckle"
+                "Olivia"
             ],
             "minWinRate": 0.75
         },
@@ -162,6 +162,13 @@
         },
         {
             "eventCode": "timber_merchant"
+        },
+        {
+            "eventCode": "silent_night",
+            "enabled": true,
+            "eligibleCharacters": [
+                "Ront"
+            ]
         }
     ]
 }

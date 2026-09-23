@@ -381,7 +381,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
     ): StepResult {
         onStatus("Banking items...")
         val char = helper.refreshCharacter(characterName)
-        val safeTypes = setOf("resource", "consumable", "currency")
+        val safeTypes = setOf("resource", "currency")
         val itemsToDeposit = mutableListOf<SimpleItem>()
         for (slot in char.inventory) {
             if (slot.quantity <= 0) continue

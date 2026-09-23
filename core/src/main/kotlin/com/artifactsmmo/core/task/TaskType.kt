@@ -96,6 +96,12 @@ sealed class TaskType {
          * One spare set of transition keys for re-entry after a restock bank trip.
          */
         val spareKeys: Map<String, Int> = emptyMap(),
+        /** Non-null when this is a scheduled raid rather than a permanent boss encounter. */
+        val raidCode: String? = null,
+        /** UTC epoch milliseconds at which the raid may be fought. */
+        val scheduledStartAtMillis: Long? = null,
+        /** UTC epoch milliseconds at which the raid window closes. */
+        val scheduledEndAtMillis: Long? = null,
         val dropStrategies: Map<String, DropStrategy> = emptyMap(),
         val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
     ) : TaskType()

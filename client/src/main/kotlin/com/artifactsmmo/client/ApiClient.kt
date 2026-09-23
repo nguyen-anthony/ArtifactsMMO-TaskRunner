@@ -100,15 +100,20 @@ abstract class BaseApiService(protected val client: HttpClient) {
     protected suspend inline fun <reified T> post(
         path: String,
         body: Any? = null,
-        block: HttpRequestBuilder.() -> Unit = {}
+        crossinline block: HttpRequestBuilder.() -> Unit = {}
     ): T {
         ApiCallMonitor.record("POST", path)
-        return request {
-            method = HttpMethod.Post
-            url(path)
-            body?.let { setBody(it) }
-            block()
+        val call: suspend () -> T = {
+            request {
+                method = HttpMethod.Post
+                url(path)
+                body?.let { setBody(it) }
+                block()
+            }
         }
+        // All character action endpoints begin with /my/. They share the action bucket
+        // across all five characters and must be globally coordinated.
+        return if (path.startsWith("/my/")) ActionRateLimiter.execute(call) else call()
     }
 
     protected suspend inline fun <reified T> request(

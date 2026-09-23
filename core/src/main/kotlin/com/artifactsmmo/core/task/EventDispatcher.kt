@@ -39,6 +39,8 @@ class EventDispatcher(
                     is RealtimeMessage.EventSpawn   -> handleSpawn(message.event)
                     is RealtimeMessage.EventRemoved -> handleRemoved(message.event)
                     is RealtimeMessage.AccountLog   -> {} // handled in WebSocketManager → BankState
+                    is RealtimeMessage.RaidStarted  -> {} // handled by RaidScheduler
+                    is RealtimeMessage.RaidEnded    -> {} // handled by RaidScheduler
                     is RealtimeMessage.Unknown      -> {}
                 }
             }

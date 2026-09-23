@@ -178,6 +178,8 @@ class WebSocketManager(
                     bankState?.applyLogEntry(entry)
                     RealtimeMessage.AccountLog(entry)
                 }
+                "raid_started" -> RealtimeMessage.RaidStarted(extractRaidCode(dataObj))
+                "raid_ended" -> RealtimeMessage.RaidEnded(extractRaidCode(dataObj))
                 else -> RealtimeMessage.Unknown
             }
         } catch (e: Exception) {
@@ -192,6 +194,12 @@ class WebSocketManager(
             RealtimeMessage.Unknown
         }
     }
+
+    /** Raid notifications may provide the code directly or wrap it under a `raid` object. */
+    private fun extractRaidCode(data: JsonObject?): String =
+        data?.get("code")?.jsonPrimitive?.content
+            ?: data?.get("raid")?.jsonObject?.get("code")?.jsonPrimitive?.content
+            ?: ""
 
     private fun extractTypeField(rawText: String): String? {
         return try {

@@ -1,0 +1,14 @@
+{
+    "raids": [
+        {
+            "raidCode": "enchanted_fairy",
+            "enabled": true,
+            "initiatorName": "Ront",
+            "participantNames": [
+                "Shella",
+                "Shuckle"
+            ],
+            "tankOverride": "Ront"
+        }
+    ]
+}

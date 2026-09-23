@@ -62,6 +62,7 @@ fun DashboardScreen(
 
     // Event config dialog
     var showEventConfig by remember { mutableStateOf(false) }
+    var showRaidConfig by remember { mutableStateOf(false) }
 
     // Bank dialog: character name (null = closed)
     var bankDialogCharacter by remember { mutableStateOf<String?>(null) }
@@ -109,6 +110,7 @@ fun DashboardScreen(
                     }) { Text("Refresh") }
 
                     OutlinedButton(onClick = { showEventConfig = true }) { Text("Events") }
+                    OutlinedButton(onClick = { showRaidConfig = true }) { Text("Raids") }
 
                     // Multi-select toggle
                     val selectLabel = if (multiSelectMode) "Cancel Select" else "Select"
@@ -177,6 +179,10 @@ fun DashboardScreen(
                 OutlinedButton(onClick = { showDisconnectConfirm = false }) { Text("Cancel") }
             }
         )
+    }
+
+    if (showRaidConfig) {
+        RaidConfigScreen(appState = appState, onDismiss = { showRaidConfig = false })
     }
 }
         }

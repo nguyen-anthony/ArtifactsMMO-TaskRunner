@@ -23,7 +23,7 @@ class TeleportAdvisor(
     private val bankState: BankState
 ) {
     companion object {
-        const val TILE_SAVINGS_THRESHOLD = 4          // minimum tiles saved to justify using a potion
+        const val TILE_SAVINGS_THRESHOLD = 6          // minimum tiles saved to justify using a potion
         const val SECONDS_PER_TILE = 5
         const val TELEPORT_COOLDOWN_SECONDS = 3
 
