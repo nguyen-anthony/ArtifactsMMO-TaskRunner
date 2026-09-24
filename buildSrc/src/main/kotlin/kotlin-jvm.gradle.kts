@@ -14,6 +14,12 @@ kotlin {
     jvmToolchain(21)
 }
 
+// Also pin the Java plugin's toolchain so dependency resolution (e.g. the `application`
+// plugin's runtimeClasspath) requests JVM 21 libraries instead of defaulting to 8.
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
+}
+
 tasks.withType<Test>().configureEach {
     // Configure all test Gradle tasks to use JUnitPlatform.
     useJUnitPlatform()
