@@ -18,6 +18,11 @@ class TaskSpecTest {
             TaskSpec.InventoryRecycle("copper_dagger", 1, "weaponcrafting"),
             TaskSpec.BulkBankWithdraw(listOf(ItemQty("a", 1))),
             TaskSpec.BulkInventoryDeposit(listOf(ItemQty("a", 1))),
+            TaskSpec.BossFight("lich", plans = mapOf("alice" to MemberPlan(foodCode = "cooked_bass", foodQuantity = 20,
+                transitionCosts = mapOf("lich_tomb_key" to 1))), raidCode = "lich_raid", scheduledStartAtMillis = 1L),
+            TaskSpec.EventGather("magic_tree", "magic_tree", "woodcutting", EventMap(1, 2)),
+            TaskSpec.EventNpc("merchant", "gem_trader", EventMap(3, 4), sell = listOf(ItemQty("ruby", 2))),
+            TaskSpec.EventFight("portal", "demon", EventMap(5, 6, "underground")),
         )
         for (s in specs) {
             val json = s.toJson()

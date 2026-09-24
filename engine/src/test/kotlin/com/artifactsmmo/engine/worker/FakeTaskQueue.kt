@@ -44,7 +44,23 @@ class FakeTaskQueue(private val clock: () -> Long) : TaskQueue {
         put(t); ev(t.id, null, "created", null); t
     }
 
-    override suspend fun enqueueGroup(task: NewTask, slots: List<GroupSlot>): GroupState? = error("not used in worker tests")
+    override suspend fun enqueueGroup(task: NewTask, slots: List<GroupSlot>): GroupState? {
+        val parentId = mutex.withLock {
+            val base = QueuedTask(
+                id = 0, type = task.type, spec = task.spec, priority = task.priority, source = task.source,
+                status = TaskStatus.PENDING, stopCondition = task.stopCondition, createdAtMillis = clock(), updatedAtMillis = clock(),
+            )
+            val pid = nextId++
+            put(base.copy(id = pid, groupId = pid, groupRole = GroupRole.GROUP))
+            slots.forEachIndexed { i, slot ->
+                put(base.copy(id = nextId++, groupId = pid, assignedCharacter = slot.assignedCharacter,
+                    requirements = slot.requirements, stopCondition = if (i == 0) task.stopCondition else null,
+                    groupRole = if (i == 0) GroupRole.INITIATOR else GroupRole.PARTICIPANT))
+            }
+            pid
+        }
+        return group(parentId)
+    }
 
     private fun claimable(t: QueuedTask, c: String, whileBusy: Boolean): Boolean {
         val now = clock()
@@ -53,6 +69,9 @@ class FakeTaskQueue(private val clock: () -> Long) : TaskQueue {
             (t.assignedCharacter == null || t.assignedCharacter == c) &&
             (t.notBeforeMillis?.let { it <= now } ?: true) &&
             (t.expiresAtMillis?.let { it > now } ?: true) &&
+            !(t.groupId != null && t.assignedCharacter == null && rows.values.any {
+                it.groupId == t.groupId && it.id != t.id && it.assignedCharacter == c &&
+                    (it.status == TaskStatus.PENDING || it.status == TaskStatus.SUSPENDED) }) &&
             (whileBusy || rows.values.none { it.id != t.id && it.claimedBy == c &&
                 (it.status == TaskStatus.CLAIMED || it.status == TaskStatus.RUNNING) })
     }
@@ -103,12 +122,20 @@ class FakeTaskQueue(private val clock: () -> Long) : TaskQueue {
     }
 
     override suspend fun cancel(taskId: Long, reason: String) {
-        mutate(taskId, "cancelled", reason) { it.copy(status = TaskStatus.CANCELLED, lastError = reason) }
+        val ids = mutex.withLock { rows.values.filter { (it.id == taskId || it.groupId == taskId) && live(it) }.map { it.id } }
+        ids.forEach { mutate(it, "cancelled", reason) { t -> t.copy(status = TaskStatus.CANCELLED, lastError = reason) } }
     }
 
-    override suspend fun group(groupId: Long): GroupState? = null
+    override suspend fun group(groupId: Long): GroupState? = mutex.withLock {
+        val all = rows.values.filter { it.groupId == groupId }
+        val parent = all.firstOrNull { it.groupRole == GroupRole.GROUP } ?: return@withLock null
+        GroupState(parent, all.filter { it.groupRole != GroupRole.GROUP })
+    }
     override suspend fun releaseGroup(groupId: Long, reason: String) {}
-    override suspend fun completeGroup(groupId: Long, message: String?) {}
+    override suspend fun completeGroup(groupId: Long, message: String?) {
+        val ids = mutex.withLock { rows.values.filter { it.groupId == groupId && live(it) }.map { it.id } }
+        ids.forEach { mutate(it, "completed", message) { t -> t.copy(status = TaskStatus.COMPLETED) } }
+    }
     override suspend fun cancelExpired(): Int = 0
     override suspend fun recoverStale(staleAfterMillis: Long): Int = 0
     override suspend fun get(taskId: Long): QueuedTask? = mutex.withLock { rows[taskId] }

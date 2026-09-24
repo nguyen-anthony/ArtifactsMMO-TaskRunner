@@ -3,6 +3,7 @@ package com.artifactsmmo.engine.worker
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.BankExecutor
 import com.artifactsmmo.core.task.CraftingExecutor
+import com.artifactsmmo.core.task.EventExecutor
 import com.artifactsmmo.core.task.FightingExecutor
 import com.artifactsmmo.core.task.GatheringExecutor
 import com.artifactsmmo.core.task.StepResult
@@ -26,11 +27,17 @@ class LegacyExecutors(
     private val crafting: CraftingExecutor = CraftingExecutor(helper),
     private val taskMaster: TaskMasterExecutor = TaskMasterExecutor(helper, gathering, fighting),
     private val bank: BankExecutor = BankExecutor(helper),
+    private val event: EventExecutor = EventExecutor(helper, fighting),
+    /** Is this event still live? (fed by the realtime listener; defaults to "yes"). */
+    private val eventActive: (String) -> Boolean = { true },
+    /** Needed for boss/raid groups; null = boss fights unsupported. */
+    private val bossFights: BossFightExecutor? = null,
 ) : ExecutorRegistry {
 
     private val executor = Adapter()
 
-    override fun forSpec(spec: TaskSpec): TaskExecutor = executor
+    override fun forSpec(spec: TaskSpec): TaskExecutor? =
+        if (spec is TaskSpec.BossFight) bossFights else executor
 
     private inner class Adapter : TaskExecutor {
 
@@ -50,6 +57,16 @@ class LegacyExecutors(
                         }
                     }.onFailure { rethrowCancellation(it); ctx.status("Gear retrieval error: ${it.message}") }
                 }
+                is TaskType.EventFight -> runCatching {
+                    if (task.equipActions.isNotEmpty()) {
+                        ctx.status("Equipping gear for event...")
+                        helper.retrieveAndEquipItems(ctx.character, task.equipActions)
+                    }
+                    if (task.utilityActions.isNotEmpty()) {
+                        ctx.status("Applying utility potions for event...")
+                        helper.retrieveAndEquipUtilities(ctx.character, task.utilityActions)
+                    }
+                }.onFailure { rethrowCancellation(it); ctx.status("Event gear error: ${it.message}") }
                 is TaskType.Gather -> runCatching { gathering.prepareGatherTask(ctx.character, task, ctx.status) }
                     .onFailure { rethrowCancellation(it); ctx.status("Bank prep error: ${it.message}") }
                 else -> Unit
@@ -71,6 +88,9 @@ class LegacyExecutors(
                 is TaskType.InventoryRecycle -> bank.executeInventoryRecycle(ctx.character, task, ctx.status)
                 is TaskType.BulkBankWithdraw -> bank.executeBulkBankWithdraw(ctx.character, task, ctx.status)
                 is TaskType.BulkInventoryDeposit -> bank.executeBulkInventoryDeposit(ctx.character, task, ctx.status)
+                is TaskType.EventGather -> event.executeGatherStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status, prev)
+                is TaskType.EventNpc -> event.executeNpcStep(ctx.character, task, ctx.status)
+                is TaskType.EventFight -> event.executeEventFightStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status, prev)
                 else -> return StepOutcome.Fail("Unsupported task type ${ctx.spec.typeName}")
             }
             return map(ctx, task, result)

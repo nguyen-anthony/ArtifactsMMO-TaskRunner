@@ -179,7 +179,7 @@ class CharacterWorker(
         queue.markRunning(task.id, character)
         val state = task.checkpoint?.let { runCatching { json.decodeFromJsonElement(RunState.serializer(), it) }.getOrNull() }
             ?: RunState()
-        val ctx = ExecContext(character, task.id, spec, state) { msg ->
+        val ctx = ExecContext(character, task, spec, state) { msg ->
             log(character, msg)
             setStatus(WorkerState.RUNNING, message = msg)
         }
@@ -191,7 +191,11 @@ class CharacterWorker(
         }
         try {
             val end = execute(task, executor, ctx)
+            executor.onStop(ctx)
             finish(task, executor, ctx, end)
+        } catch (e: Throwable) {
+            executor.onStop(ctx) // e.g. shutdown: still unblock group members
+            throw e
         } finally {
             heartbeat.cancel()
         }
@@ -296,16 +300,17 @@ class CharacterWorker(
                 queue.suspend(task.id, checkpoint, end.reason)
                 setStatus(WorkerState.IDLE, message = "Suspended: ${end.reason}", taskId = null, taskType = null)
             }
+            // Record the terminal status first so cleanup (e.g. group teardown) can see it.
             is End.Complete -> {
-                executor.cleanup(ctx)
                 queue.saveCheckpoint(task.id, checkpoint)
                 queue.complete(task.id, end.message)
+                executor.cleanup(ctx)
                 setStatus(WorkerState.IDLE, message = "Completed: ${end.message}", taskId = null, taskType = null)
             }
             is End.Fail -> {
-                executor.cleanup(ctx)
                 queue.saveCheckpoint(task.id, checkpoint)
                 queue.fail(task.id, end.message)
+                executor.cleanup(ctx)
                 setStatus(WorkerState.IDLE, message = "Failed: ${end.message}", taskId = null, taskType = null, lastError = end.message)
             }
             End.Cancelled -> {

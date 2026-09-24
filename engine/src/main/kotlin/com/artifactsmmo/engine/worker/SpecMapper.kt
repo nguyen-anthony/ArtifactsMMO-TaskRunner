@@ -40,5 +40,49 @@ object SpecMapper {
         is TaskSpec.InventoryRecycle -> TaskType.InventoryRecycle(spec.itemCode, spec.itemName, spec.quantity, spec.craftSkill)
         is TaskSpec.BulkBankWithdraw -> TaskType.BulkBankWithdraw(spec.items.map { SimpleItem(it.code, it.quantity) })
         is TaskSpec.BulkInventoryDeposit -> TaskType.BulkInventoryDeposit(spec.items.map { SimpleItem(it.code, it.quantity) })
+        is TaskSpec.EventGather -> TaskType.EventGather(
+            eventCode = spec.eventCode, resourceCode = spec.resourceCode, resourceName = spec.resourceName,
+            skill = spec.skill, eventMapX = spec.map.x, eventMapY = spec.map.y, eventMapLayer = spec.map.layer,
+        )
+        is TaskSpec.EventNpc -> TaskType.EventNpc(
+            eventCode = spec.eventCode, npcCode = spec.npcCode, npcName = spec.npcName,
+            eventMapX = spec.map.x, eventMapY = spec.map.y, eventMapLayer = spec.map.layer,
+            itemsToSell = spec.sell.map { SimpleItem(it.code, it.quantity) },
+            itemsToBuy = spec.buy.map { SimpleItem(it.code, it.quantity) },
+        )
+        is TaskSpec.EventFight -> TaskType.EventFight(
+            eventCode = spec.eventCode, monsterCode = spec.monsterCode, monsterName = spec.monsterName,
+            eventMapX = spec.map.x, eventMapY = spec.map.y, eventMapLayer = spec.map.layer,
+            equipActions = spec.equip.map { ActionHelper.EquipAction(it.slot, it.itemCode, it.source) },
+            utilityActions = spec.utilities.map { GearOptimizer.UtilityEquipAction(it.slot, it.itemCode, it.quantity, it.source) },
+            dropStrategies = spec.dropStrategies.mapValues { LegacyDropStrategy.valueOf(it.value.name) },
+            defaultDropStrategy = LegacyDropStrategy.valueOf(spec.defaultDropStrategy.name),
+        )
+        is TaskSpec.BossFight -> error("Boss fights need group context; use SpecMapper.bossFight")
+    }
+
+    /**
+     * Legacy boss task for one group member. [participants] is only non-empty for the
+     * initiator (it names them in the fight request).
+     */
+    fun bossFight(
+        spec: TaskSpec.BossFight, character: String, initiator: String,
+        isInitiator: Boolean, participants: List<String>,
+    ): TaskType.BossFight {
+        val plan = spec.plans[character]
+        return TaskType.BossFight(
+            monsterCode = spec.monsterCode, monsterName = spec.monsterName,
+            initiatorName = initiator, participantNames = if (isInitiator) participants else emptyList(),
+            isInitiator = isInitiator,
+            equipActions = plan?.equip.orEmpty().map { ActionHelper.EquipAction(it.slot, it.itemCode, it.source) },
+            utilityActions = plan?.utilities.orEmpty().map { GearOptimizer.UtilityEquipAction(it.slot, it.itemCode, it.quantity, it.source) },
+            reservePotions = plan?.reservePotions.orEmpty(),
+            foodCode = plan?.foodCode, foodQuantity = plan?.foodQuantity ?: 0,
+            transitionCosts = plan?.transitionCosts.orEmpty(), spareKeys = plan?.spareKeys.orEmpty(),
+            raidCode = spec.raidCode, scheduledStartAtMillis = spec.scheduledStartAtMillis,
+            scheduledEndAtMillis = spec.scheduledEndAtMillis,
+            dropStrategies = spec.dropStrategies.mapValues { LegacyDropStrategy.valueOf(it.value.name) },
+            defaultDropStrategy = LegacyDropStrategy.valueOf(spec.defaultDropStrategy.name),
+        )
     }
 }

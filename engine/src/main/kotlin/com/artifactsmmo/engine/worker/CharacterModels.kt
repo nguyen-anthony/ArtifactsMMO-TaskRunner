@@ -63,8 +63,8 @@ object TaskRules {
         }
 
     fun primaryCount(type: String, s: RunState): Int = when (type) {
-        "gather" -> s.gathers
-        "fight" -> s.fightsWon
+        "gather", "event_gather" -> s.gathers
+        "fight", "event_fight", "boss_fight" -> s.fightsWon
         "craft" -> s.crafted
         "task_master" -> s.tasksCompleted
         else -> 0

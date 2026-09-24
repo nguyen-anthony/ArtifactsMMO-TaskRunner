@@ -1,6 +1,7 @@
 package com.artifactsmmo.engine.worker
 
 import com.artifactsmmo.client.models.Character
+import com.artifactsmmo.domain.queue.QueuedTask
 import com.artifactsmmo.domain.task.TaskSpec
 import kotlinx.serialization.Serializable
 
@@ -25,7 +26,8 @@ data class RunState(
 /** Everything an executor needs for one step. */
 class ExecContext(
     val character: String,
-    val taskId: Long,
+    /** The queue row being run (group slots carry groupId / groupRole). */
+    val task: QueuedTask,
     val spec: TaskSpec,
     val state: RunState,
     /** Report a human-readable status line (shown in the UI and logged). */
@@ -36,6 +38,8 @@ class ExecContext(
      * Executors set it; the worker clears it after errors.
      */
     var previousChar: Character? = null
+
+    val taskId: Long get() = task.id
 }
 
 /** What the worker should do after a step. */
@@ -58,6 +62,8 @@ interface TaskExecutor {
     suspend fun step(ctx: ExecContext): StepOutcome
     /** Called when the task ends for good (complete/cancel/fail), not on suspend. */
     suspend fun cleanup(ctx: ExecContext) {}
+    /** Called whenever the run stops for any reason, including suspend. Must not call the API. */
+    fun onStop(ctx: ExecContext) {}
 }
 
 /** Picks the executor for a spec; null = unsupported (the task fails). */
