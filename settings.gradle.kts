@@ -7,8 +7,6 @@ pluginManagement {
     repositories {
         gradlePluginPortal()
         mavenCentral()
-        google()
-        maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
     }
 }
 
@@ -17,8 +15,6 @@ dependencyResolutionManagement {
     @Suppress("UnstableApiUsage")
     repositories {
         mavenCentral()
-        google()
-        maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
     }
 }
 
@@ -28,10 +24,13 @@ plugins {
 }
 
 // Include all subprojects in the build.
-// include(":app")  // TUI — not in use
-include(":utils")
+//   client — typed HTTP/WebSocket wrapper for the ArtifactsMMO API
+//   domain — pure, serializable models shared by engine and server (no I/O)
+//   engine — game logic: gateway, executors, optimizer, queue/orchestrator, workers
+//   server — Ktor HTTP app: REST + SSE, auth, database, wiring, main()
 include(":client")
-include(":core")
-include(":gui")
+include(":domain")
+include(":engine")
+include(":server")
 
 rootProject.name = "ArtifactsMMO"

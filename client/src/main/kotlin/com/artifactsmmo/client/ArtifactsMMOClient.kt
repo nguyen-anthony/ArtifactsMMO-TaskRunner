@@ -2,7 +2,6 @@ package com.artifactsmmo.client
 
 import com.artifactsmmo.client.services.*
 import io.ktor.client.*
-import kotlinx.coroutines.runBlocking
 
 /**
  * Main client for interacting with the ArtifactsMMO API
@@ -126,55 +125,3 @@ inline fun <T> useArtifactsClient(
 ): T {
     return ArtifactsMMOClient.withToken(token, enableLogging).use(block)
 }
-
-/**
- * Blocking version of the client for non-coroutine contexts
- */
-class BlockingArtifactsMMOClient(
-    token: String? = null,
-    baseUrl: String = "https://api.artifactsmmo.com",
-    enableLogging: Boolean = false
-) : AutoCloseable {
-
-    private val client = ArtifactsMMOClient(
-        token = token,
-        baseUrl = baseUrl,
-        enableLogging = enableLogging
-    )
-
-    /**
-     * Character management service
-     */
-    val characters = BlockingCharacterService(client.characters)
-
-    /**
-     * Character actions service
-     */
-    val actions = BlockingActionService(client.actions)
-
-    override fun close() {
-        client.close()
-    }
-}
-
-/**
- * Blocking wrapper for CharacterService
- */
-class BlockingCharacterService(private val service: CharacterService) {
-    fun getCharacter(name: String) = runBlocking { service.getCharacter(name) }
-    fun getMyCharacters() = runBlocking { service.getMyCharacters() }
-    fun createCharacter(name: String, skin: String) = runBlocking { service.createCharacter(name, skin) }
-    fun deleteCharacter(name: String) = runBlocking { service.deleteCharacter(name) }
-}
-
-/**
- * Blocking wrapper for ActionService
- */
-class BlockingActionService(private val service: ActionService) {
-    fun move(characterName: String, x: Int, y: Int) = runBlocking { service.move(characterName, x, y) }
-    fun fight(characterName: String, participants: List<String> = emptyList()) = runBlocking { service.fight(characterName, participants) }
-    fun gather(characterName: String) = runBlocking { service.gather(characterName) }
-    fun craft(characterName: String, itemCode: String, quantity: Int = 1) = runBlocking { service.craft(characterName, itemCode, quantity) }
-    fun rest(characterName: String) = runBlocking { service.rest(characterName) }
-}
-
