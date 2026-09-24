@@ -185,9 +185,12 @@ class JdbcTaskQueueTest {
             val notifier = PgNotifier { Database.sessionConnection(config) }
             notifier.start(scope)
             delay(1_000) // let LISTEN register
+            // SharedFlow has no replay: subscribe BEFORE inserting, or the notification is dropped.
+            val received = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                withTimeout(10_000) { notifier.changes.first() }
+            }
             val t = queue.enqueue(task())!!
-            val id = withTimeout(10_000) { notifier.changes.first { it == t.id } }
-            assertEquals(t.id, id)
+            assertEquals(t.id, received.await())
 
             val lock = assertNotNull(InstanceLock.tryAcquire { Database.sessionConnection(config) })
             assertNull(InstanceLock.tryAcquire { Database.sessionConnection(config) })

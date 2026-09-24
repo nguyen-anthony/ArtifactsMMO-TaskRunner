@@ -72,7 +72,7 @@ class JdbcTaskQueue(
         requirements: TaskRequirements, dedupeKey: String?,
     ): QueuedTask? = c.prepareStatement(
         """
-        insert into tasks (type, spec, priority, source, assigned_character, requirements,
+        insert into tasks as t (type, spec, priority, source, assigned_character, requirements,
                            stop_condition, group_id, group_role, dedupe_key, not_before, expires_at)
         values (?, ?::jsonb, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)
         on conflict do nothing
