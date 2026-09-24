@@ -96,12 +96,14 @@ class JdbcTaskQueue(
 
     // ── Consuming ───────────────────────────────────────────────────────────
 
-    override suspend fun candidates(character: String, limit: Int): List<QueuedTask> = tx { c ->
+    override suspend fun candidates(character: String, limit: Int, whileBusy: Boolean): List<QueuedTask> = tx { c ->
+        val where = if (whileBusy) CLAIMABLE_BASE else CLAIMABLE
+        val params = if (whileBusy) BASE_PARAMS else CLAIMABLE_PARAMS
         c.prepareStatement(
-            "select $COLUMNS from tasks t where $CLAIMABLE order by t.priority desc, t.created_at, t.id limit ?"
+            "select $COLUMNS from tasks t where $where order by t.priority desc, t.created_at, t.id limit ?"
         ).use { ps ->
-            bindClaimable(ps, 1, character)
-            ps.setInt(CLAIMABLE_PARAMS + 1, limit)
+            repeat(params) { ps.setString(1 + it, character) }
+            ps.setInt(params + 1, limit)
             ps.executeQuery().use { rs -> rs.list() }
         }
     }
@@ -371,20 +373,25 @@ class JdbcTaskQueue(
             t.dedupe_key, t.not_before, t.expires_at, t.attempts, t.last_error, t.created_at, t.updated_at"""
 
         /**
-         * Rows [character] may claim right now. Parameters (all = the character name):
-         *  1. assignment check, 2. one-task-at-a-time check, 3. group deadlock check.
+         * Rows [character] could take, ignoring what it currently holds. Parameters (all =
+         * the character name): 1. assignment check, 2. group deadlock check.
          */
-        const val CLAIMABLE = """
+        const val CLAIMABLE_BASE = """
             t.status in ('pending','suspended')
             and t.group_role <> 'group'
             and (t.assigned_character is null or t.assigned_character = ?)
             and (t.not_before is null or t.not_before <= now())
             and (t.expires_at is null or t.expires_at > now())
-            and not exists (select 1 from tasks o
-                            where o.claimed_by = ? and o.status in ('claimed','running') and o.id <> t.id)
             and not (t.group_id is not null and t.assigned_character is null and exists (
                      select 1 from tasks s where s.group_id = t.group_id and s.id <> t.id
                        and s.assigned_character = ? and s.status in ('pending','suspended')))
+        """
+        const val BASE_PARAMS = 2
+
+        /** [CLAIMABLE_BASE] plus the one-task-at-a-time rule (3rd parameter). */
+        const val CLAIMABLE = CLAIMABLE_BASE + """
+            and not exists (select 1 from tasks o
+                            where o.claimed_by = ? and o.status in ('claimed','running') and o.id <> t.id)
         """
         const val CLAIMABLE_PARAMS = 3
 

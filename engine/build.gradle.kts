@@ -5,8 +5,9 @@ plugins {
 
 dependencies {
     // Core depends on the API client (which pulls in coroutines, datetime, serialization)
-    implementation(project(":client"))
+    api(project(":client"))
     api(project(":domain"))
     implementation("com.github.ben-manes.caffeine:caffeine:3.2.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation(kotlin("test"))
 }

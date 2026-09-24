@@ -112,6 +112,31 @@ class JdbcTaskQueueTest {
     }
 
     @Test
+    fun `whileBusy candidates are visible to a character that holds a task`() = runBlocking {
+        val a = queue.enqueue(task(priority = 10))!!
+        queue.enqueue(task(priority = 80))
+        queue.claim(a.id, "alice")
+        assertTrue(queue.candidates("alice").isEmpty())
+        assertEquals(listOf(80), queue.candidates("alice", whileBusy = true).map { it.priority })
+    }
+
+    @Test
+    fun `character settings round trip with filler`() = runBlocking {
+        val store = JdbcCharacterSettingsStore(ds)
+        assertTrue(store.get("alice").enabled)
+        store.setFiller("alice", com.artifactsmmo.domain.task.TaskSpec.Gather("mining", "copper_rocks"))
+        store.put(store.get("alice").copy(enabled = false, allowedTypes = setOf("gather")))
+        val s = store.get("alice")
+        assertEquals(false, s.enabled)
+        assertEquals(setOf("gather"), s.allowedTypes)
+        assertEquals("gather", s.filler!!.type)
+        assertEquals(
+            com.artifactsmmo.domain.task.TaskSpec.Gather("mining", "copper_rocks"),
+            com.artifactsmmo.domain.task.TaskSpec.fromJson(s.filler!!.spec),
+        )
+    }
+
+    @Test
     fun `suspend keeps checkpoint and makes the task claimable again`() = runBlocking {
         val t = queue.enqueue(task())!!
         queue.claim(t.id, "alice"); queue.markRunning(t.id, "alice")

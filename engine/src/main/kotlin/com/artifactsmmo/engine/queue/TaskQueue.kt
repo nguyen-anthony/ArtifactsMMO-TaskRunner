@@ -30,8 +30,12 @@ interface TaskQueue {
     suspend fun enqueueGroup(task: NewTask, slots: List<GroupSlot>): GroupState?
 
     // ── Consuming ───────────────────────────────────────────────────────────
-    /** Claimable rows this character could take, best first (priority desc, oldest first). */
-    suspend fun candidates(character: String, limit: Int = 20): List<QueuedTask>
+    /**
+     * Claimable rows this character could take, best first (priority desc, oldest first).
+     * Normally empty while the character already holds a task; [whileBusy] = true ignores
+     * that rule so a running worker can look for higher-priority work (preemption).
+     */
+    suspend fun candidates(character: String, limit: Int = 20, whileBusy: Boolean = false): List<QueuedTask>
 
     /** Atomically claims [taskId] for [character]; null if someone else got it first. */
     suspend fun claim(taskId: Long, character: String): QueuedTask?
