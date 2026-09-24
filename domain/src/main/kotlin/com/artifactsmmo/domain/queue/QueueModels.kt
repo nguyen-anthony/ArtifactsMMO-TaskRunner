@@ -125,3 +125,66 @@ data class QueuedTask(
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
 )
+
+/** Input for inserting a solo task. */
+@Serializable
+data class NewTask(
+    val type: String,
+    val spec: JsonObject,
+    val source: TaskSource = TaskSource.MANUAL,
+    val priority: Int = source.defaultPriority,
+    val assignedCharacter: String? = null,
+    val requirements: TaskRequirements = TaskRequirements(),
+    val stopCondition: StopCondition? = null,
+    /** While a task with this key is live, inserting another with the same key is a no-op. */
+    val dedupeKey: String? = null,
+    val notBeforeMillis: Long? = null,
+    val expiresAtMillis: Long? = null,
+)
+
+/**
+ * One member slot of a multi-character group. The first slot passed to `enqueueGroup`
+ * becomes the INITIATOR (the character that calls the fight endpoint); the rest are
+ * PARTICIPANTS. A null [assignedCharacter] means any eligible character may take it.
+ */
+@Serializable
+data class GroupSlot(
+    val assignedCharacter: String? = null,
+    val requirements: TaskRequirements = TaskRequirements(),
+)
+
+/** Snapshot of a group: the parent row plus every slot row. */
+@Serializable
+data class GroupState(val parent: QueuedTask, val slots: List<QueuedTask>) {
+    val initiator: QueuedTask? get() = slots.firstOrNull { it.groupRole == GroupRole.INITIATOR }
+    val participants: List<QueuedTask> get() = slots.filter { it.groupRole == GroupRole.PARTICIPANT }
+
+    /** Every slot has a character: the initiator may start the fight. */
+    val isFormed: Boolean
+        get() = slots.isNotEmpty() && slots.all {
+            it.claimedBy != null && (it.status == TaskStatus.CLAIMED || it.status == TaskStatus.RUNNING)
+        }
+
+    /** Names to pass as `participants` in the initiator's fight request. */
+    val participantNames: List<String> get() = participants.mapNotNull { it.claimedBy }
+}
+
+/** A row of `task_events`. */
+@Serializable
+data class TaskEvent(
+    val id: Long,
+    val taskId: Long,
+    val character: String?,
+    val kind: String,
+    val message: String?,
+    val data: JsonObject?,
+    val createdAtMillis: Long,
+)
+
+/** Filter for listing tasks in the UI/API. */
+data class TaskFilter(
+    val statuses: Set<TaskStatus> = emptySet(),
+    val character: String? = null,
+    val source: TaskSource? = null,
+    val limit: Int = 100,
+)

@@ -19,6 +19,19 @@ object Database {
         return HikariDataSource(hikari)
     }
 
+    /**
+     * A standalone (non-pooled) connection for LISTEN and the advisory lock, which must
+     * stay on one session for their whole lifetime.
+     */
+    fun sessionConnection(config: ServerConfig): java.sql.Connection {
+        val props = java.util.Properties().apply {
+            config.databaseUser?.let { setProperty("user", it) }
+            config.databasePassword?.let { setProperty("password", it) }
+            setProperty("currentSchema", config.databaseSchema)
+        }
+        return java.sql.DriverManager.getConnection(requireNotNull(config.databaseUrl), props)
+    }
+
     /** Applies migrations from `server/src/main/resources/db/migration`. */
     fun migrate(dataSource: DataSource, schema: String) {
         Flyway.configure()

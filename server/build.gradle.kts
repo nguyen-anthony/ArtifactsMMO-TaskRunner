@@ -27,8 +27,11 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql:11.3.1")
 
     implementation("ch.qos.logback:logback-classic:1.5.16")
+    implementation("io.github.microutils:kotlin-logging-jvm:3.0.5")
 
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
+    testImplementation("org.testcontainers:postgresql:1.20.4")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation(kotlin("test"))
     implementation(kotlin("stdlib-jdk8"))
 }
