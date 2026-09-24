@@ -19,6 +19,8 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
+    implementation("io.ktor:ktor-server-sessions:$ktorVersion")
+    implementation("io.ktor:ktor-server-sse:$ktorVersion")
 
     // Database: Postgres (Supabase) via Hikari, schema managed by Flyway
     implementation("org.postgresql:postgresql:42.7.5")

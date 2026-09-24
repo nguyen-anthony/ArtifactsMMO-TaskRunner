@@ -33,6 +33,11 @@ class TaskLogger(
     }
 
     private val entries = ConcurrentLinkedDeque<LogEntry>()
+
+    private val _live = kotlinx.coroutines.flow.MutableSharedFlow<LogEntry>(
+        extraBufferCapacity = 256, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
+    /** Every new entry, for streaming to the web UI. */
+    val live: kotlinx.coroutines.flow.SharedFlow<LogEntry> = _live
     private val logFile: File
 
     init {
@@ -43,6 +48,7 @@ class TaskLogger(
 
     fun log(characterName: String?, message: String) {
         val entry = LogEntry(LocalDateTime.now(), characterName, message)
+        _live.tryEmit(entry)
 
         // Add to ring buffer
         entries.addLast(entry)

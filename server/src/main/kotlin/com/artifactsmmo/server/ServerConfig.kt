@@ -17,6 +17,8 @@ data class ServerConfig(
     val artifactsToken: String?,
     /** Static key the web UI exchanges for a session cookie. */
     val adminApiKey: String?,
+    /** Mark the session cookie Secure (HTTPS only). Disable only for local http testing. */
+    val cookieSecure: Boolean = true,
 ) {
     companion object {
         fun fromEnv(env: Map<String, String> = System.getenv()): ServerConfig = ServerConfig(
@@ -27,6 +29,7 @@ data class ServerConfig(
             databaseSchema = env["DATABASE_SCHEMA"]?.takeIf { it.isNotBlank() } ?: "taskrunner",
             artifactsToken = env["ARTIFACTS_TOKEN"]?.takeIf { it.isNotBlank() },
             adminApiKey = env["ADMIN_API_KEY"]?.takeIf { it.isNotBlank() },
+            cookieSecure = env["COOKIE_SECURE"]?.lowercase() != "false",
         )
     }
 }

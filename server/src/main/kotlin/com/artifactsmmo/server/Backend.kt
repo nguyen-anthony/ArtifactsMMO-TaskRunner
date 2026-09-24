@@ -25,13 +25,13 @@ private val log = KotlinLogging.logger {}
  * instance holds it (e.g. during a rolling redeploy) we keep retrying, so the HTTP API stays
  * up and takes over as soon as the old process exits.
  */
-class Backend(private val config: ServerConfig, private val dataSource: DataSource) : AutoCloseable {
+class Backend(private val config: ServerConfig, private val dataSource: DataSource) : AutoCloseable, com.artifactsmmo.server.api.ApiBackend {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val notifier = PgNotifier { Database.sessionConnection(config) }
-    val queue = JdbcTaskQueue(dataSource, notifier.changes)
-    val settings = JdbcCharacterSettingsStore(dataSource)
-    val configStore = JdbcConfigStore(dataSource)
-    @Volatile var engine: Engine? = null
+    override val queue = JdbcTaskQueue(dataSource, notifier.changes)
+    override val settings = JdbcCharacterSettingsStore(dataSource)
+    override val configStore = JdbcConfigStore(dataSource)
+    @Volatile override var engine: Engine? = null
         private set
     private var lock: InstanceLock? = null
 
