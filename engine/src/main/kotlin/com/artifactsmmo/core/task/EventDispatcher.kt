@@ -165,7 +165,7 @@ class EventDispatcher(
         // Sequential dispatch: pairs with GearOptimizer's cache-and-verify so subsequent
         // characters benefit from the first character's full optimization pass.
         // Also naturally serializes API sim calls (which are rate-limited to 1/sec globally
-        // via SimulationRateLimiter) so we don't waste time queueing behind ourselves.
+        // via the gateway simulation bucket) so we don't waste time queueing behind ourselves.
         scope.launch {
             for (name in candidateNames) {
                 dispatchMonsterEventToCharacter(name, event, config)

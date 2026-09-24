@@ -27,7 +27,7 @@ import com.artifactsmmo.client.models.Monster
  *  - [optimizeWithCacheHint] — preferred; uses the session cache
  *  - [optimize] — full optimization pass, always executes
  *
- * @see SimulationRateLimiter for the global 1/sec API sim rate limit
+ * Simulation calls are rate-limited (1/sec) by the client gateway.
  */
 class GearOptimizer(
     private val helper: ActionHelper,

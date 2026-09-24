@@ -813,9 +813,13 @@ class CharacterTaskRunner(
                 val msg = "API Error ${e.errorCode}: ${e.message}"
                 logger.log(characterName, msg)
                 updateStatus { it.copy(statusMessage = msg, lastError = msg) }
-                when (e.errorCode) {
-                    486 -> delay(5.seconds)  // Cooldown
-                    429 -> delay(15.seconds) // Rate limit
+                // The gateway has already retried 429/486/499/5xx; this is only a
+                // pause before re-running the step. (Temporary: replaced by the worker in M4.)
+                when (e.action) {
+                    com.artifactsmmo.client.gateway.ErrorAction.WaitCooldown ->
+                        client.cooldowns.awaitReady(characterName)
+                    com.artifactsmmo.client.gateway.ErrorAction.Retry -> delay(2.seconds)
+                    com.artifactsmmo.client.gateway.ErrorAction.Benign -> Unit
                     else -> delay(10.seconds)
                 }
             } catch (e: Exception) {

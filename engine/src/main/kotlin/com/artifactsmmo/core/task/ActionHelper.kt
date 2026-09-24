@@ -1351,7 +1351,7 @@ class ActionHelper(
                 monster = monsterCode,
                 iterations = iterations
             )
-            SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
+            client.simulation.simulateFight(request)
         } catch (e: Exception) {
             // API simulator failed (rate-limit, member-only, network error, etc.)
             // Fall back to the local simulator so the caller always gets a result.
@@ -1631,7 +1631,7 @@ class ActionHelper(
             monster    = monsterCode,
             iterations = iterations
         )
-        return SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
+        return client.simulation.simulateFight(request)
     }
 
     /**
@@ -1676,7 +1676,7 @@ class ActionHelper(
             monster    = monsterCode,
             iterations = iterations
         )
-        return SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
+        return client.simulation.simulateFight(request)
     }
 
     /**
@@ -1696,7 +1696,7 @@ class ActionHelper(
      * loadouts. The /simulation/fight API endpoint accepts an array of characters and
      * returns the aggregated coop team win rate.
      *
-     * Rate-limited via [SimulationRateLimiter] like the single-character sim methods.
+     * Rate-limited by the client gateway's simulation bucket, like the single-character sim methods.
      */
     suspend fun simulateCoopFight(
         monsterCode: String,
@@ -1734,7 +1734,7 @@ class ActionHelper(
             monster    = monsterCode,
             iterations = iterations
         )
-        return SimulationRateLimiter.execute { client.simulation.simulateFight(request) }
+        return client.simulation.simulateFight(request)
     }
 
     /**

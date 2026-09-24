@@ -1,5 +1,6 @@
 package com.artifactsmmo.client.services
 
+import com.artifactsmmo.client.ApiTransport
 import com.artifactsmmo.client.BaseApiService
 import com.artifactsmmo.client.models.Achievement
 import com.artifactsmmo.client.models.ApiResponse
@@ -11,7 +12,7 @@ import io.ktor.client.request.parameter
 /**
  * Service for account-level operations (requires authentication).
  */
-class AccountService(client: HttpClient) : BaseApiService(client) {
+class AccountService(transport: ApiTransport) : BaseApiService(transport) {
 
     /**
      * Get the authenticated account's details (username, status, gems, etc.).

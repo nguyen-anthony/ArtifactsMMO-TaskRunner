@@ -1,5 +1,6 @@
 package com.artifactsmmo.client.services
 
+import com.artifactsmmo.client.ApiTransport
 import com.artifactsmmo.client.BaseApiService
 import com.artifactsmmo.client.models.*
 import io.ktor.client.*
@@ -8,7 +9,7 @@ import io.ktor.client.request.*
 /**
  * Service for character-related operations
  */
-class CharacterService(client: HttpClient) : BaseApiService(client) {
+class CharacterService(transport: ApiTransport) : BaseApiService(transport) {
 
     /**
      * Get details of a specific character

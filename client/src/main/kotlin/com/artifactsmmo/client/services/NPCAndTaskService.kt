@@ -1,5 +1,6 @@
 package com.artifactsmmo.client.services
 
+import com.artifactsmmo.client.ApiTransport
 import com.artifactsmmo.client.BaseApiService
 import com.artifactsmmo.client.models.*
 import io.ktor.client.*
@@ -7,7 +8,7 @@ import io.ktor.client.*
 /**
  * Service for NPC trading operations
  */
-class NPCService(client: HttpClient) : BaseApiService(client) {
+class NPCService(transport: ApiTransport) : BaseApiService(transport) {
 
     /**
      * Buy an item from an NPC
@@ -29,7 +30,7 @@ class NPCService(client: HttpClient) : BaseApiService(client) {
 /**
  * Service for task-related operations
  */
-class TaskService(client: HttpClient) : BaseApiService(client) {
+class TaskService(transport: ApiTransport) : BaseApiService(transport) {
 
     /**
      * Accept a new task

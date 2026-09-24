@@ -1,5 +1,6 @@
 package com.artifactsmmo.client.services
 
+import com.artifactsmmo.client.ApiTransport
 import com.artifactsmmo.client.BaseApiService
 import com.artifactsmmo.client.models.*
 import io.ktor.client.*
@@ -11,7 +12,7 @@ import kotlinx.serialization.json.Json
 /**
  * Service for combat simulation operations
  */
-class SimulationService(client: HttpClient) : BaseApiService(client) {
+class SimulationService(transport: ApiTransport) : BaseApiService(transport) {
 
     private val json = Json {
         explicitNulls = false
