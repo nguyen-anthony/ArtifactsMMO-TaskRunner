@@ -49,9 +49,11 @@ class FakeTaskQueue(private val clock: () -> Long) : TaskQueue {
             val base = QueuedTask(
                 id = 0, type = task.type, spec = task.spec, priority = task.priority, source = task.source,
                 status = TaskStatus.PENDING, stopCondition = task.stopCondition, createdAtMillis = clock(), updatedAtMillis = clock(),
+                expiresAtMillis = task.expiresAtMillis,
             )
+            if (task.dedupeKey != null && rows.values.any { live(it) && it.dedupeKey == task.dedupeKey }) return null
             val pid = nextId++
-            put(base.copy(id = pid, groupId = pid, groupRole = GroupRole.GROUP))
+            put(base.copy(id = pid, groupId = pid, groupRole = GroupRole.GROUP, dedupeKey = task.dedupeKey))
             slots.forEachIndexed { i, slot ->
                 put(base.copy(id = nextId++, groupId = pid, assignedCharacter = slot.assignedCharacter,
                     requirements = slot.requirements, stopCondition = if (i == 0) task.stopCondition else null,
@@ -139,7 +141,10 @@ class FakeTaskQueue(private val clock: () -> Long) : TaskQueue {
     override suspend fun cancelExpired(): Int = 0
     override suspend fun recoverStale(staleAfterMillis: Long): Int = 0
     override suspend fun get(taskId: Long): QueuedTask? = mutex.withLock { rows[taskId] }
-    override suspend fun list(filter: TaskFilter): List<QueuedTask> = mutex.withLock { rows.values.toList() }
+    override suspend fun list(filter: TaskFilter): List<QueuedTask> = mutex.withLock {
+        rows.values.filter { (filter.statuses.isEmpty() || it.status in filter.statuses) &&
+            (filter.source == null || it.source == filter.source) }.toList()
+    }
     override suspend fun events(taskId: Long, limit: Int) = eventLog.filter { it.taskId == taskId }
     override suspend fun appendEvent(taskId: Long, character: String?, kind: String, message: String?, data: JsonObject?) {
         ev(taskId, character, kind, message)

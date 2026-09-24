@@ -137,6 +137,26 @@ class JdbcTaskQueueTest {
     }
 
     @Test
+    fun `config and schedule stores round trip`() = runBlocking {
+        val configs = com.artifactsmmo.engine.config.TypedConfigs(JdbcConfigStore(ds))
+        configs.putRaid(com.artifactsmmo.core.task.RaidConfig("lich_raid", enabled = true, initiatorName = "alice"))
+        configs.putRaid(com.artifactsmmo.core.task.RaidConfig("lich_raid", enabled = false, initiatorName = "bob"))
+        assertEquals(listOf("bob"), configs.raids().map { it.initiatorName })
+
+        ds.connection.use {
+            it.createStatement().execute(
+                "insert into schedules (name, interval_seconds, task_type, task_spec) values ('copper', 60, 'gather', '{\"kind\":\"gather\",\"skill\":\"mining\",\"resourceCode\":\"copper_rocks\"}')"
+            )
+        }
+        val store = JdbcScheduleStore(ds)
+        val now = System.currentTimeMillis()
+        val due = store.due(now).single()
+        assertEquals("gather", due.task.type)
+        store.markRun(due.id, now, now + 60_000)
+        assertTrue(store.due(now).isEmpty())
+    }
+
+    @Test
     fun `suspend keeps checkpoint and makes the task claimable again`() = runBlocking {
         val t = queue.enqueue(task())!!
         queue.claim(t.id, "alice"); queue.markRunning(t.id, "alice")

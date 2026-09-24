@@ -19,6 +19,8 @@ fun main() {
     val dataSource = config.databaseUrl?.let {
         Database.connect(config).also { ds -> Database.migrate(ds, config.databaseSchema) }
     }
+    val backend = dataSource?.let { Backend(config, it).also(Backend::start) }
+    Runtime.getRuntime().addShutdownHook(Thread { backend?.close() })
     embeddedServer(Netty, port = config.port) { module(dataSource) }.start(wait = true)
 }
 
