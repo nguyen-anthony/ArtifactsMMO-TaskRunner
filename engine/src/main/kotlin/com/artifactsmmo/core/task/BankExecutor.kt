@@ -53,7 +53,7 @@ class BankExecutor(private val helper: ActionHelper) {
 
         if (!helper.isAt(char, workshop.x, workshop.y)) {
             onStatus("Moving to ${task.craftSkill} workshop to recycle...")
-            helper.moveTo(characterName, workshop.x, workshop.y)
+            helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
         }
 
         // Recycle
@@ -104,7 +104,7 @@ class BankExecutor(private val helper: ActionHelper) {
 
         if (!helper.isAt(char, workshop.x, workshop.y)) {
             onStatus("Moving to ${task.craftSkill} workshop to recycle...")
-            helper.moveTo(characterName, workshop.x, workshop.y)
+            helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
         }
 
         // Recycle

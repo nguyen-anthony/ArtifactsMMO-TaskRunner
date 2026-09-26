@@ -7,6 +7,8 @@ import com.artifactsmmo.server.api.BadRequest
 import com.artifactsmmo.server.api.LoginThrottle
 import com.artifactsmmo.server.api.RequireSession
 import com.artifactsmmo.server.api.apiRoutes
+import com.artifactsmmo.server.api.contentAndSimRoutes
+import com.artifactsmmo.server.api.craftableRoutes
 import com.artifactsmmo.server.api.authRoutes
 import com.artifactsmmo.server.api.installSessions
 import io.ktor.http.HttpStatusCode
@@ -33,7 +35,7 @@ import javax.sql.DataSource
 private val log = KotlinLogging.logger {}
 
 fun main() {
-    val config = ServerConfig.fromEnv()
+    val config = ServerConfig.fromEnvironment()
     val dataSource = config.databaseUrl?.let {
         Database.connect(config).also { ds -> Database.migrate(ds, config.databaseSchema) }
     }
@@ -86,6 +88,8 @@ fun Application.module(
             route("/api") {
                 install(RequireSession)
                 apiRoutes(backend)
+                contentAndSimRoutes(backend)
+                craftableRoutes(backend)
             }
         }
     }

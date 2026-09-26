@@ -1,0 +1,29 @@
+# Production stack on the VPS:  docker compose up -d --build
+# Reads secrets from ./.env (never committed). See deploy/VPS.md.
+services:
+  backend:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - backend-data:/data        # known_loadouts.json, logs/, seed files
+    # Not published: only Caddy talks to it.
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    depends_on: [backend]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data          # TLS certificates
+      - caddy-config:/config
+
+volumes:
+  backend-data:
+  caddy-data:
+  caddy-config:

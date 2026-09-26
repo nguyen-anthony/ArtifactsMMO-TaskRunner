@@ -320,6 +320,18 @@ class GatheringExecutor(private val helper: ActionHelper) {
      * Craftable tool upgrades are intentionally not checked here — tool crafting
      * is handled by the dedicated crafter character, not by gathering characters.
      */
+    /**
+     * Task-start tool check: equip the best tool for [skill] from inventory, or withdraw a
+     * better one from the bank. Runs on every claim (incl. resumes) so a character never
+     * starts gathering with a combat weapon while a usable tool sits in the bank; the
+     * periodic check in [executeStep] then catches tools that appear later.
+     */
+    suspend fun ensureBestTool(characterName: String, skill: String, onStatus: (String) -> Unit): Character {
+        lastUpgradeCheck[characterName] = System.currentTimeMillis()
+        val char = helper.ensureToolEquipped(characterName, skill)
+        return tryUpgradeTool(characterName, char, skill, onStatus)
+    }
+
     private suspend fun tryUpgradeTool(
         characterName: String,
         currentChar: Character,
@@ -334,19 +346,14 @@ class GatheringExecutor(private val helper: ActionHelper) {
             onStatus("Found ${readyMade.tool.name} in bank! Withdrawing...")
             helper.bankWithdrawItems(characterName, listOf(SimpleItem(readyMade.tool.code, 1)))
 
-            // Unequip current weapon if any
-            var char = helper.refreshCharacter(characterName)
-            if (char.weaponSlot.isNotEmpty()) {
-                val oldTool = char.weaponSlot
-                char = helper.unequip(characterName, "weapon")
-                // Only deposit back to the bank if it's a gathering tool — never deposit combat weapons
-                val oldItem = runCatching { helper.getItem(oldTool) }.getOrNull()
-                if (oldItem?.subtype == "tool") {
-                    helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
-                }
+            // Equipping over the current weapon unequips it automatically (one action).
+            val oldTool = helper.refreshCharacter(characterName).weaponSlot
+            var char = helper.equip(characterName, readyMade.tool.code, "weapon")
+            // Bank the replaced item only if it's a gathering tool — never combat weapons.
+            if (oldTool.isNotEmpty() && runCatching { helper.getItem(oldTool) }.getOrNull()?.subtype == "tool") {
+                helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
+                char = helper.refreshCharacter(characterName)
             }
-
-            char = helper.equip(characterName, readyMade.tool.code, "weapon")
             onStatus("Equipped ${readyMade.tool.name}!")
             return char
         }

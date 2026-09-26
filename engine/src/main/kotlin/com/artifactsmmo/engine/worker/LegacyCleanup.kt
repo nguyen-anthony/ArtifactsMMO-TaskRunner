@@ -43,7 +43,7 @@ internal class LegacyCleanup(private val helper: ActionHelper, private val chara
                     val workshop = helper.findNearestWorkshop(char, workshopSkill)
                     if (workshop != null) {
                         onStatus("Crafting leftover materials into ${targetItem.name}...")
-                        helper.moveTo(characterName, workshop.x, workshop.y)
+                        helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
 
                         val updatedChar = helper.refreshCharacter(characterName)
                         val actualCraftable = craft.items.minOfOrNull { ingredient ->
@@ -67,7 +67,7 @@ internal class LegacyCleanup(private val helper: ActionHelper, private val chara
                 val workshop = helper.findNearestWorkshop(char, "cooking")
                 if (workshop != null) {
                     onStatus("Cooking leftover raw fish...")
-                    helper.moveTo(characterName, workshop.x, workshop.y)
+                    helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
 
                     val updatedChar = helper.refreshCharacter(characterName)
                     val updatedCookable = helper.findCraftableRefinements(updatedChar, "fishing")
@@ -124,7 +124,7 @@ internal class LegacyCleanup(private val helper: ActionHelper, private val chara
                 val workshop = helper.findNearestWorkshop(char, "cooking")
                 if (workshop != null) {
                     onStatus("Cooking leftover raw food...")
-                    helper.moveTo(characterName, workshop.x, workshop.y)
+                    helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
                     char = helper.refreshCharacter(characterName)
 
                     for (info in dropsToCook) {

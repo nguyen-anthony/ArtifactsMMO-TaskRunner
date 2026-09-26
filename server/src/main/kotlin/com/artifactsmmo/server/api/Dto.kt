@@ -69,7 +69,15 @@ data class CharacterSettingsDto(
 )
 
 @Serializable
-data class CharacterDto(val name: String, val status: WorkerStatus?, val settings: CharacterSettingsDto)
+data class CharacterDto(
+    val name: String,
+    val status: WorkerStatus?,
+    val settings: CharacterSettingsDto,
+    /** Character (combat) level; null if the game API couldn't be reached. */
+    val level: Int? = null,
+    /** Skill name -> level, e.g. "mining" -> 20. */
+    val skills: Map<String, Int> = emptyMap(),
+)
 
 @Serializable data class RateWindowDto(val limit: Int, val windowMillis: Long, val used: Int)
 @Serializable data class RatesDto(val buckets: Map<String, List<RateWindowDto>>)
@@ -82,3 +90,6 @@ data class LogDto(val timestampMillis: Long, val character: String?, val message
 /** Payloads pushed over /api/stream (the SSE `event:` name is the class's role). */
 @Serializable data class TaskChangedDto(val id: Long)
 @Serializable data class ControlDto(val paused: String?)
+
+/** `bank` stream event: the bank changed (contents via GET /api/bank or /api/craftable). */
+@Serializable data class BankChangedDto(val seq: Long)

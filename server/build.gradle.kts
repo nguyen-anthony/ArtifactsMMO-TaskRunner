@@ -50,3 +50,8 @@ kotlin {
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(21))
 }
+
+// Run from the repo root so the engine finds event_config.json, known_loadouts.json, etc.
+tasks.named<JavaExec>("run") {
+    workingDir = rootDir
+}

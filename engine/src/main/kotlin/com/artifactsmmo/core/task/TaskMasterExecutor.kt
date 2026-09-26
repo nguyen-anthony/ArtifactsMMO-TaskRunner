@@ -132,7 +132,14 @@ class TaskMasterExecutor(
 
         // We have an active task of the right type — fulfill it
         return when (char.taskType) {
-            "items" -> fulfillItemTask(characterName, char, onStatus)
+            // Fallback for anything the up-front reachability check missed: a route that
+            // turns out impossible means this task can't be done now — re-roll it.
+            "items" -> try {
+                fulfillItemTask(characterName, char, onStatus)
+            } catch (e: TransitionConditionUnsatisfiableException) {
+                onStatus("Item task unreachable (${e.message}), cancelling task...")
+                cancelAndRetry(characterName, "items", onStatus)
+            }
             "monsters" -> fulfillMonsterTask(characterName, char, onStatus)
             else -> {                onStatus("Unknown task type: ${char.taskType}, cancelling...")
                 cancelAndRetry(characterName, task.type, onStatus)
@@ -198,7 +205,7 @@ class TaskMasterExecutor(
 
         if (!helper.isAt(char, currentTaskMaster.x, currentTaskMaster.y)) {
             onStatus("Moving to $currentType task master to cancel...")
-            helper.moveTo(characterName, currentTaskMaster.x, currentTaskMaster.y)
+            helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), currentTaskMaster)
         }
 
         onStatus("Cancelling $currentType task...")
@@ -272,7 +279,7 @@ class TaskMasterExecutor(
                     ?: return StepResult.Error("No $type task master found on map")
                 if (!helper.isAt(blChar, blTaskMaster.x, blTaskMaster.y)) {
                     onStatus("Moving to task master to cancel blacklisted task...")
-                    helper.moveTo(characterName, blTaskMaster.x, blTaskMaster.y)
+                    helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), blTaskMaster)
                 }
                 onStatus("Cancelling blacklisted task ($monsterCode)...")
                 helper.cancelTask(characterName)
@@ -357,6 +364,17 @@ class TaskMasterExecutor(
             return
         }
 
+        // New in-game task = fresh start: bank the previous monster's drops, food and any
+        // loose gear before swapping. Keep what the new plan equips from inventory.
+        val keep = result.equipActions.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
+            result.utilityActions.map { it.itemCode }
+        try {
+            onStatus("Depositing inventory before $monsterCode task...")
+            helper.depositInventoryExcept(characterName, keep, char)
+        } catch (e: Exception) {
+            onStatus("Pre-task deposit failed: ${e.message}")
+        }
+
         if (result.equipActions.isNotEmpty()) {
             onStatus("Swapping ${result.equipActions.size} equipment piece(s) for $monsterCode...")
             try {
@@ -375,6 +393,14 @@ class TaskMasterExecutor(
             } catch (e: Exception) {
                 onStatus("Utility equip failed: ${e.message}")
             }
+        }
+
+        // Gear swapped out from inventory lands back in inventory; bank it. The character is
+        // normally still at the bank from the deposit above, so this costs no walk.
+        try {
+            helper.depositInventoryExcept(characterName, result.utilityActions.map { it.itemCode }.toSet())
+        } catch (e: Exception) {
+            onStatus("Post-swap deposit failed: ${e.message}")
         }
 
         fightingExecutor.gearOptimizer.markOptimized(characterName, monsterCode)
@@ -435,6 +461,13 @@ class TaskMasterExecutor(
                 onStatus("${source.craftSkill} level too low (have $craftLevel, need ${source.craftLevel}), cancelling task...")
                 return cancelAndRetry(characterName, "items", onStatus)
             }
+        }
+
+        // Can we actually get to every resource? (e.g. Lava Underground behind a key gate)
+        val ingredientResources = source.allIngredients.map { it.resourceCode }.ifEmpty { listOf(source.resourceCode) }
+        ingredientResources.firstOrNull { !helper.canReach(char, "resource", it) }?.let { code ->
+            onStatus("Can't reach $code (missing key/achievement for a gate), cancelling task...")
+            return cancelAndRetry(characterName, "items", onStatus)
         }
 
         // First: if we have items in the bank, withdraw and trade them in batches
@@ -574,10 +607,11 @@ class TaskMasterExecutor(
         onStatus("Checking tool for ${ing.gatherSkill}...")
         currentChar = helper.ensureToolEquipped(characterName, ing.gatherSkill)
 
-        // Periodic tool upgrade check — use getOrPut(now) so the check does not
-        // fire on the very first tick (lastUpgradeCheck initialises to current time).
+        // Tool upgrade check from the bank: immediately the first time, then every
+        // [upgradeCheckIntervalMs] — otherwise a tool that only exists in the bank goes
+        // unused for the first 10 minutes.
         val now       = System.currentTimeMillis()
-        val lastCheck = lastUpgradeCheck.getOrPut(characterName) { now }
+        val lastCheck = lastUpgradeCheck.getOrPut(characterName) { 0L }
         if (now - lastCheck >= upgradeCheckIntervalMs) {
             lastUpgradeCheck[characterName] = now
             currentChar = tryUpgradeTool(characterName, currentChar, ing.gatherSkill, onStatus)
@@ -670,7 +704,7 @@ class TaskMasterExecutor(
             ?: return StepResult.Error("No $craftSkill workshop found")
 
         onStatus("Moving to $craftSkill workshop...")
-        char = helper.moveTo(characterName, workshop.x, workshop.y)
+        char = helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
 
         // Craft as many as possible — limited by whichever ingredient we have least of
         char = helper.refreshCharacter(characterName)
@@ -843,6 +877,9 @@ class TaskMasterExecutor(
         type: String,
         onStatus: (String) -> Unit
     ): StepResult {
+        // Cancelling costs a tasks_coin. Without one the task can't be re-rolled: stop cleanly.
+        if (!ensureTaskCoinInInventory(characterName, onStatus)) return StepResult.TaskMasterNoViableTask
+
         val char = helper.refreshCharacter(characterName)
 
         // Move to task master to cancel
@@ -881,18 +918,14 @@ class TaskMasterExecutor(
             onStatus("Found ${readyMade.tool.name} in bank! Withdrawing...")
             helper.bankWithdrawItems(characterName, listOf(SimpleItem(readyMade.tool.code, 1)))
 
-            var char = helper.refreshCharacter(characterName)
-            if (char.weaponSlot.isNotEmpty()) {
-                val oldTool = char.weaponSlot
-                char = helper.unequip(characterName, "weapon")
-                // Only deposit back to the bank if it's a gathering tool — never deposit combat weapons
-                val oldItem = runCatching { helper.getItem(oldTool) }.getOrNull()
-                if (oldItem?.subtype == "tool") {
-                    helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
-                }
+            // Equipping over the current weapon unequips it automatically (one action).
+            val oldTool = helper.refreshCharacter(characterName).weaponSlot
+            var char = helper.equip(characterName, readyMade.tool.code, "weapon")
+            // Bank the replaced item only if it's a gathering tool — never combat weapons.
+            if (oldTool.isNotEmpty() && runCatching { helper.getItem(oldTool) }.getOrNull()?.subtype == "tool") {
+                helper.bankDepositItems(characterName, listOf(SimpleItem(oldTool, 1)))
+                char = helper.refreshCharacter(characterName)
             }
-
-            char = helper.equip(characterName, readyMade.tool.code, "weapon")
             onStatus("Equipped ${readyMade.tool.name}!")
             return char
         }

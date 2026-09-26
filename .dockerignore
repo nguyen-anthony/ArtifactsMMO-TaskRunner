@@ -1,0 +1,10 @@
+.git
+**/build
+.gradle
+.kotlin
+web/node_modules
+web/dist
+.env
+logs
+artifacts-docs
+.idea

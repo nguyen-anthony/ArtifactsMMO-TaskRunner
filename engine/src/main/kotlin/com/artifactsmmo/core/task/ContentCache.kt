@@ -1,6 +1,8 @@
 package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.models.Character
+import com.artifactsmmo.client.models.Condition
+import com.artifactsmmo.client.models.DataPage
 import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.MapInfo
 import com.artifactsmmo.client.models.Monster
@@ -9,6 +11,8 @@ import com.artifactsmmo.client.models.Resource
 import com.artifactsmmo.client.services.ContentService
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
+import kotlinx.serialization.json.Json
+import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
@@ -16,8 +20,8 @@ import kotlin.math.abs
  * In-memory content cache wrapping [ContentService].
  *
  * Two caching tiers:
- *  1. Map tiles — pre-warmed on startup via [preWarmMaps]; all findNearest* calls are
- *     pure in-memory afterward with zero API calls.
+ *  1. Map tiles — loaded on startup via [preWarmMaps] (from all_maps.json) into a
+ *     [RegionGraph]; findNearest and planRoute are pure in-memory with zero API calls.
  *  2. Items — lazy, cache-first with a 24-hour TTL:
  *     - [getItem]/[getItemOrNull]: keyed by item code, max 2 000 entries.
  *     - [getItemsBySkill]: full paginated list per craft skill, max 50 skills.
@@ -25,84 +29,97 @@ import kotlin.math.abs
  */
 class ContentCache(private val contentService: ContentService) {
 
+    private val mapJson = Json { ignoreUnknownKeys = true }
+
     // ── Map cache (pre-warmed, no eviction) ──────────────────────────────────
 
     @Volatile
     private var allMaps: List<MapInfo> = emptyList()
 
-    /**
-     * Maps (destX, destY, destLayer) → the tile you stand on to reach that destination.
-     * "To be deposited at (dx,dy,dl) after a transition, stand on this tile."
-     *
-     * Built during [preWarmMaps]. Used by:
-     *  - [findSameLayerTransitionTo]: proactive detection of same-layer transition gates.
-     *  - [findNearestSameLayerTransitionToward]: reactive fallback after 595/596 errors.
-     */
+    /** Walkability/region model + route planner, rebuilt on every [preWarmMaps]. */
     @Volatile
-    private var transitionDestToSource: Map<Triple<Int,Int,String>, MapInfo> = emptyMap()
+    var regionGraph: RegionGraph? = null
+        private set
+
+    @Volatile
+    var routePlanner: RoutePlanner? = null
+        private set
+
+    @Volatile
+    private var completedAchievements: Set<String> = emptySet()
 
     /**
-     * Fetch every accessible map tile from the API (all pages) and store them in memory.
+     * Load every map tile and keep the accessible ones in memory, then build the
+     * [RegionGraph] / [RoutePlanner].
      *
-     * Tiles with access type "blocked" are excluded via the API's hideBlockedMaps filter.
-     * Tiles with access type "conditional" are included only if the account has met every
-     * condition on that tile. The only condition operator currently used by the game is
-     * "achievement_unlocked" — a tile is accessible when its required achievement code is
-     * present in [completedAchievementCodes].
+     * Source: the static [mapFile] (`all_maps.json`, full grid including blocked tiles —
+     * the map never changes within a season; refresh the file at season start). Falls back
+     * to paging the `/maps` API when the file is missing or unreadable.
      *
-     * Tiles whose conditions cannot be evaluated (unknown operator) are excluded by default
-     * to avoid 496 errors.
-     *
-     * Should be called once during application startup before any findNearest* method is used.
-     *
-     * @param completedAchievementCodes Set of achievement codes the account has completed.
-     *   Pass an empty set to treat all conditional tiles as inaccessible (safe fallback).
+     * Access filtering:
+     *  - `blocked`: skipped (water, void, walls).
+     *  - `standard` / `conditional`: included only if all conditions are met. The only
+     *    operator the game uses is `achievement_unlocked`; unknown operators → excluded.
+     *  - `restricted`: included (only walkable from other restricted tiles — the region
+     *    graph enforces that, e.g. the inner Enchanted Forest behind the gold gate).
      */
-    suspend fun preWarmMaps(completedAchievementCodes: Set<String> = emptySet()) {
+    suspend fun preWarmMaps(
+        completedAchievementCodes: Set<String> = emptySet(),
+        mapFile: File = File("all_maps.json"),
+    ) {
+        completedAchievements = completedAchievementCodes
+        val raw = loadMapFile(mapFile) ?: fetchMapsFromApi()
+        setMaps(accessibleTiles(raw, completedAchievementCodes))
+    }
+
+    companion object {
+        /** The access filter described on [preWarmMaps]. */
+        fun accessibleTiles(raw: List<MapInfo>, completedAchievementCodes: Set<String>): List<MapInfo> =
+            raw.filter { tile ->
+                when (tile.access.type) {
+                    "standard", "conditional" -> (tile.access.conditions ?: emptyList()).all { c ->
+                        c.operator == "achievement_unlocked" && c.code in completedAchievementCodes
+                    }
+                    "restricted" -> true
+                    else -> false
+                }
+            }
+    }
+
+    /** Replace the tile set directly (tests, or callers that already hold tiles). */
+    fun setMaps(maps: List<MapInfo>) {
+        allMaps = maps
+        val graph = RegionGraph(maps)
+        regionGraph = graph
+        routePlanner = RoutePlanner(graph)
+        val fragmented = graph.fragmentedNames()
+        println("Map graph: ${maps.size} accessible tiles, ${graph.regionCount} regions" +
+            (if (fragmented.isNotEmpty()) " (split areas: ${fragmented.entries.joinToString { "${it.key}×${it.value}" }})" else ""))
+    }
+
+    private fun loadMapFile(file: File): List<MapInfo>? {
+        if (!file.isFile) return null
+        return runCatching { mapJson.decodeFromString<DataPage<MapInfo>>(file.readText()).data }
+            .onFailure { println("Map file ${file.path} unreadable (${it.message}) — falling back to /maps API") }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+    }
+
+    private suspend fun fetchMapsFromApi(): List<MapInfo> {
         val maps = mutableListOf<MapInfo>()
         var page = 1
         while (true) {
             val result = contentService.getMaps(hideBlockedMaps = true, page = page, size = 100)
-            for (tile in result.data) {
-                when (tile.access.type) {
-                    "standard", "conditional" -> {
-                        val conditions = tile.access.conditions ?: emptyList()
-                        // Include the tile only if ALL conditions are satisfied.
-                        // Standard tiles with no conditions pass (empty list → all {} = true).
-                        val allMet = conditions.all { condition ->
-                            when (condition.operator) {
-                                "achievement_unlocked" -> condition.code in completedAchievementCodes
-                                else -> false  // unknown operator — exclude to be safe
-                            }
-                        }
-                        if (allMet) maps.add(tile)
-                    }
-                    "restricted" -> {
-                        // Restricted tiles are only walkable from other restricted maps
-                        // (they're behind a transition, e.g. boss instances like the Lich Tomb).
-                        // We still include them so findNearest() can return the tile as a target
-                        // for navigateToTile(), which will route through the transition.
-                        // A* moveTo() to these tiles from a non-restricted layer will fail — but
-                        // navigateToTile handles that by transitioning first.
-                        maps.add(tile)
-                    }
-                    // "blocked" and anything else — skip
-                }
-            }
-            if (page >= (result.pages ?: Int.MAX_VALUE)) break
-            if (result.data.size < 100) break
+            maps += result.data
+            if (page >= (result.pages ?: Int.MAX_VALUE) || result.data.size < 100) break
             page++
         }
-        allMaps = maps
-
-        // Build the transition destination lookup — used for same-layer transition detection.
-        transitionDestToSource = maps
-            .filter { it.interactions.transition != null }
-            .associate { tile ->
-                val t = tile.interactions.transition!!
-                Triple(t.x, t.y, t.layer) to tile
-            }
+        return maps
     }
+
+    /** Gate check that only knows about achievements (items/gold assumed obtainable). */
+    fun achievementGateAllowed(conditions: List<Condition>): Boolean =
+        conditions.all { it.operator != "achievement_unlocked" || it.code in completedAchievements }
 
     // ── Item caches (lazy, 24-hour TTL) ──────────────────────────────────────
 
@@ -145,123 +162,73 @@ class ContentCache(private val contentService: ContentService) {
     // ── Map queries (synchronous after pre-warming) ───────────────────────────
 
     /**
-     * Find the nearest map tile matching [contentType] and optionally [contentCode]
-     * using Manhattan distance. Returns null if no match or maps not yet loaded.
+     * Find the tile matching [contentType]/[contentCode] that is cheapest to actually
+     * REACH from [char] (route cost over the region graph, including gates), not merely the
+     * closest by straight-line distance — a tile two squares away across water may be many
+     * transitions away. [layer] restricts the candidates (null = all layers).
      *
-     * By default only tiles on the overworld layer are searched. Pass [layer] to
-     * restrict results to a specific layer (e.g. "underground" or "interior").
-     * Pass null to search all layers.
+     * [gateAllowed] decides which conditional transitions may be used; the default only
+     * rules out gates needing achievements the account lacks. Falls back to Manhattan
+     * distance if the graph isn't built or nothing is reachable.
      */
     fun findNearest(
         char: Character,
         contentType: String,
         contentCode: String? = null,
-        layer: String? = "overworld"
+        layer: String? = "overworld",
+        gateAllowed: (List<Condition>) -> Boolean = ::achievementGateAllowed,
     ): MapInfo? {
-        return allMaps
-            .filter { map ->
-                val content = map.interactions.content
-                content != null &&
+        val candidates = allMaps.filter { map ->
+            val content = map.interactions.content
+            content != null &&
                 content.type == contentType &&
                 (contentCode == null || content.code == contentCode) &&
                 (layer == null || map.layer == layer)
-            }
-            .minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
-    }
-
-    /**
-     * Find the overworld transition tile that leads to [targetLayer] and whose destination
-     * coordinates are closest (by Manhattan distance) to [destX]/[destY] on that layer.
-     *
-     * When multiple transitions lead to the same layer (e.g. two separate interior
-     * entrances), this selects the one that deposits the character nearest to the actual
-     * target, avoiding wrong-building situations.
-     *
-     * When [destX]/[destY] are null (destination unknown), falls back to the transition
-     * tile nearest to the character by Manhattan distance.
-     */
-    fun findTransitionTile(
-        char: Character,
-        targetLayer: String,
-        destX: Int? = null,
-        destY: Int? = null
-    ): MapInfo? {
-        // Always pick the transition whose destination lands closest to the target —
-        // regardless of whether it has a condition. This is essential for correctness:
-        // sub-layers can contain multiple disconnected regions, and each region is
-        // reachable only through a specific transition. Choosing a DIFFERENT transition
-        // just because it's "free" will drop the character in the wrong region, from
-        // which A* movement to the true target is impossible (595 no path).
-        //
-        // If the closest transition has a condition (e.g. a key item cost), the caller
-        // must satisfy it — see [ActionHelper.satisfyTransitionConditions]. If the
-        // condition can't be satisfied, the caller should abort the task.
-        val candidates = allMaps.filter { map ->
-            map.layer == "overworld" &&
-            map.interactions.transition?.layer == targetLayer
         }
-        return if (destX != null && destY != null) {
-            candidates.minByOrNull { map ->
-                val tx = map.interactions.transition!!.x
-                val ty = map.interactions.transition!!.y
-                abs(tx - destX) + abs(ty - destY)
-            }
-        } else {
-            candidates.minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
+        if (candidates.isEmpty()) return null
+        routePlanner?.planBest(TilePos(char.x, char.y, char.layer), candidates, gateAllowed)
+            ?.let { return it.target }
+        return candidates.minByOrNull { manhattan(it, char) }
+    }
+
+    /**
+     * Route to the cheapest-to-reach tile of [contentType]/[contentCode], or null if none is
+     * reachable with [gateAllowed] (unlike [findNearest], no straight-line fallback).
+     * Returns null too if the graph isn't built — callers should treat that as "unknown".
+     */
+    fun routeToNearest(
+        from: TilePos,
+        contentType: String,
+        contentCode: String?,
+        gateAllowed: (List<Condition>) -> Boolean = ::achievementGateAllowed,
+    ): Route? {
+        val candidates = allMaps.filter {
+            it.interactions.content?.type == contentType && (contentCode == null || it.interactions.content?.code == contentCode)
         }
+        return routePlanner?.planBest(from, candidates, gateAllowed)
     }
 
-    /**
-     * Find the nearest tile on [char]'s current layer that has an outgoing transition
-     * back to the OVERWORLD — the hub layer that all sub-layers connect through.
-     *
-     * Only overworld exits are considered (not "any other layer"). Sub-layer regions
-     * (interior, underground) can have multiple exit tiles leading to different layers;
-     * picking the nearest one regardless of destination layer previously caused characters
-     * to wander into the wrong layer (e.g. exiting interior into underground when overworld
-     * was needed), producing a routing loop that never reached the actual destination.
-     *
-     * Restricting to overworld exits matches [getTransitionCosts]'s existing assumption
-     * that sub-layer exits always route through overworld.
-     *
-     * Uses raw Manhattan distance to the character.
-     */
-    fun findExitTransitionTile(char: Character): MapInfo? {
-        return allMaps
-            .filter { map ->
-                map.layer == char.layer &&
-                map.interactions.transition?.layer == "overworld"
-            }
-            .minByOrNull { abs(it.x - char.x) + abs(it.y - char.y) }
-    }
+    val hasRouteGraph: Boolean get() = routePlanner != null
+
+    /** Route from [from] to [target] (null if unreachable or graph not built). */
+    fun planRoute(
+        from: TilePos,
+        target: MapInfo,
+        gateAllowed: (List<Condition>) -> Boolean = ::achievementGateAllowed,
+        potions: List<PotionOption> = emptyList(),
+    ): Route? = routePlanner?.plan(from, target, gateAllowed, potions)
+
+    /** Route from [from] to the cheapest-to-reach bank. */
+    fun planRouteToBank(
+        from: TilePos,
+        gateAllowed: (List<Condition>) -> Boolean = ::achievementGateAllowed,
+        potions: List<PotionOption> = emptyList(),
+    ): Route? = routePlanner?.planBest(from, allMaps.filter { it.interactions.content?.type == "bank" }, gateAllowed, potions)
 
     /**
-     * If the tile at (toX, toY, toLayer) can only be reached via a same-layer transition
-     * (i.e. it is a known transition destination AND the source tile is on the same layer),
-     * returns that source tile — the tile the character must stand on to use the transition.
-     *
-     * Returns null if the tile is freely walkable or if it is a destination of a cross-layer
-     * return transition (e.g. underground→overworld return deposits at an overworld tile, but
-     * that overworld tile is still freely walkable from the rest of the overworld).
-     *
-     * Used by [ActionHelper.navigateToTile] for proactive same-layer transition detection.
-     */
-    fun findSameLayerTransitionTo(toX: Int, toY: Int, toLayer: String): MapInfo? {
-        val sourceTile = transitionDestToSource[Triple(toX, toY, toLayer)] ?: return null
-        // Only a same-layer gate if the source tile is on the SAME layer as the destination.
-        // Cross-layer return transitions (e.g. interior(-3,12)→overworld(-3,12)) have a source
-        // on a different layer — those overworld tiles are freely walkable.
-        return if (sourceTile.layer == toLayer) sourceTile else null
-    }
-
-    /**
-     * When a moveTo fails with 595 (no path) or 596 (map blocked), search for the nearest
-     * same-layer transition tile on [char]'s layer whose destination is closest to (toX,toY).
-     *
-     * This is the reactive fallback in [ActionHelper.navigateToTile]: the character tried
-     * to walk somewhere and hit a wall, water, or gate that requires a transition to cross.
-     *
-     * Returns null if no same-layer transition is found.
+     * Reactive fallback after a 595/596 (server A* found no path): nearest same-layer
+     * transition on [char]'s layer whose destination is closest to (toX,toY). Only hit if
+     * the region graph over-merged tiles that aren't really mutually walkable.
      */
     fun findNearestSameLayerTransitionToward(
         char: Character,
@@ -269,9 +236,9 @@ class ContentCache(private val contentService: ContentService) {
     ): MapInfo? {
         return allMaps
             .filter { tile ->
-                tile.layer == char.layer &&                         // reachable by character
-                tile.interactions.transition?.layer == toLayer &&   // leads to target layer
-                tile.layer == toLayer                              // same-layer (source == dest layer)
+                tile.layer == char.layer &&
+                tile.layer == toLayer &&
+                tile.interactions.transition?.layer == toLayer
             }
             .minByOrNull { tile ->
                 val dest = tile.interactions.transition!!
@@ -279,14 +246,20 @@ class ContentCache(private val contentService: ContentService) {
             }
     }
 
-    fun findNearestBank(char: Character): MapInfo? = findNearest(char, "bank")
-
-    /** Find nearest accessible bank from an arbitrary (x,y,layer), not the character's position. */
-    fun findNearestBankFrom(x: Int, y: Int, layer: String = "overworld"): MapInfo? {
-        return allMaps
-            .filter { it.interactions.content?.type == "bank" && it.layer == layer }
-            .minByOrNull { abs(it.x - x) + abs(it.y - y) }
+    /**
+     * Content codes of [contentType] (e.g. "resource", "monster") with at least one tile the
+     * account can reach from spawn. Achievement gates count only if unlocked; gold/key gates
+     * are assumed payable (keys can be obtained). Event-only content has no map tile, so it
+     * is never included.
+     */
+    fun reachableContentCodes(contentType: String): Set<String> {
+        val planner = routePlanner ?: return emptySet()
+        val reachable = planner.reachableTiles(TilePos(0, 0, "overworld"), ::achievementGateAllowed)
+        return allMaps.filter { it.interactions.content?.type == contentType && it.pos in reachable }
+            .mapNotNullTo(HashSet()) { it.interactions.content?.code }
     }
+
+    fun findNearestBank(char: Character): MapInfo? = findNearest(char, "bank", layer = null)
 
     /** Look up a tile by its map_id. Used by [TeleportAdvisor] to resolve potion destinations. */
     fun getTileById(mapId: Int): MapInfo? = allMaps.find { it.mapId == mapId }
@@ -303,18 +276,15 @@ class ContentCache(private val contentService: ContentService) {
     fun findNearestTasksMaster(char: Character, type: String): MapInfo? =
         findNearest(char, "tasks_master", type)
 
-    /**
-     * Find the nearest map tile of [contentType]/[contentCode] on any layer (overworld,
-     * underground, or interior). Returns the tile along with the layer it lives on so
-     * callers can decide whether a map transition is required.
-     */
+    /** Cheapest-to-reach tile of [contentType]/[contentCode] on any layer. */
     fun findNearestAnyLayer(
         char: Character,
         contentType: String,
         contentCode: String? = null
-    ): MapInfo? {
-        return findNearest(char, contentType, contentCode, layer = null)
-    }
+    ): MapInfo? = findNearest(char, contentType, contentCode, layer = null)
+
+    private fun manhattan(tile: MapInfo, char: Character): Int =
+        abs(tile.x - char.x) + abs(tile.y - char.y) + if (tile.layer == char.layer) 0 else 1000
 
     // ── Item queries (suspend, cached) ────────────────────────────────────────
 

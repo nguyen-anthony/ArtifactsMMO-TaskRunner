@@ -55,6 +55,7 @@ class Engine(
     val bankState = BankState(client, scope, logger)
     val helper = ActionHelper(client, contentCache, bankState)
     private val fighting = FightingExecutor(helper)
+    val gearOptimizer get() = fighting.gearOptimizer
     val coop = CoopOptimizer(helper, fighting.gearOptimizer, client)
     val webSocket = WebSocketManager(RealtimeClient(token), client.events, scope, bankState)
 

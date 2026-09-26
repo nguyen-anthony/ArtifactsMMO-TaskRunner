@@ -1,0 +1,27 @@
+# SITE_ADDRESS comes from .env: your subdomain (e.g. ammo.example.com) gets automatic
+# HTTPS from Let's Encrypt. Until you have one, ":80" serves plain HTTP on the VPS IP
+# (then also set COOKIE_SECURE=false, or the login cookie won't stick).
+{$SITE_ADDRESS::80} {
+	encode gzip
+
+	# API + live stream go to the Kotlin backend. flush_interval -1 streams SSE immediately.
+	handle /api/* {
+		reverse_proxy backend:8080 {
+			flush_interval -1
+		}
+	}
+
+	# Everything else is the static Svelte build (hash routing, so no rewrites needed).
+	handle {
+		root * /srv
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

@@ -3,6 +3,7 @@ package com.artifactsmmo.core.task
 import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.ArtifactsApiException
 import com.artifactsmmo.client.models.Character
+import com.artifactsmmo.client.models.EquipmentRequest
 import com.artifactsmmo.client.models.MapInfo
 import com.artifactsmmo.client.models.NPCItem
 import com.artifactsmmo.client.models.SimpleItem
@@ -107,205 +108,193 @@ class ActionHelper(
         return char.x == x && char.y == y
     }
 
+    private val Character.pos: TilePos get() = TilePos(x, y, layer)
+
     /**
-     * Navigate to a map tile, handling all transitions transparently.
+     * Whether [char] could pay a transition's conditions right now: achievements unlocked,
+     * keys/items held in inventory or bank. Gold is assumed obtainable (bank gold isn't
+     * cached) — [satisfyTransitionConditions] throws cleanly if it isn't.
+     */
+    fun gateSatisfiable(char: Character): (List<com.artifactsmmo.client.models.Condition>) -> Boolean = { conditions ->
+        conditions.all { c ->
+            when (c.operator) {
+                "achievement_unlocked" -> c.code in completedAchievements
+                "cost" -> c.code == "gold" || getItemQuantity(char, c.code) + bankState.getQuantity(c.code) >= c.value
+                "has_item" -> getItemQuantity(char, c.code) + bankState.getQuantity(c.code) >= c.value
+                else -> false
+            }
+        }
+    }
+
+    /**
+     * Can [char] currently get to some tile of [contentType]/[contentCode]? Uses the keys
+     * and achievements it actually has (see [gateSatisfiable]). True when unknown (no graph),
+     * so callers never cancel work on missing data.
+     */
+    fun canReach(char: Character, contentType: String, contentCode: String?): Boolean =
+        !contentCache.hasRouteGraph ||
+            contentCache.routeToNearest(char.pos, contentType, contentCode, gateSatisfiable(char)) != null
+
+    /**
+     * Navigate to a map tile, crossing any number of transitions.
      *
-     * Routing logic (loop-based, max [MAX_NAV_ITERATIONS] hops):
+     * Plans the full route up front with the [RoutePlanner] (region graph + Dijkstra), so
+     * multi-hop paths work: e.g. overworld → gold gate → Sandwhisper Isle → Sandwhisper Mine,
+     * or overworld → interior → underground → key gate → deeper underground. Each step is
+     * executed in order (walk to the transition tile, pay its conditions, cross it); then
+     * the final walk uses [moveToWithTransitionFallback] as a safety net for 595/596.
      *
-     *   Case 1 — On a sub-layer, target is on a DIFFERENT layer:
-     *     Exit the current layer to overworld (or nearest other layer) first.
-     *     Supports multi-hop chains: underground → interior → overworld via repeated iterations.
+     * If a transition lands somewhere unexpected, the route is re-planned from the actual
+     * position (up to [MAX_REPLANS] times).
      *
-     *   Case 2 — On overworld, target is on a sub-layer:
-     *     Find and use the cross-layer entry transition closest to the target.
-     *
-     *   Case 3 — Same layer, proactive same-layer transition detection:
-     *     If the destination tile is only reachable via a same-layer transition gate
-     *     (e.g. overworld sub-region behind a gold gate, or underground sub-region behind
-     *     a key gate), use that transition before attempting moveTo.
-     *
-     *   Case 4 — Same layer, no known gate: plain moveTo with reactive 595/596 fallback.
-     *     If A* fails (terrain wall, water, blocked map), [moveToWithTransitionFallback]
-     *     searches for a nearby same-layer transition and routes through it.
-     *
-     * Each transition's conditions (item cost, gold cost, has_item) are satisfied
-     * automatically via [satisfyTransitionConditions]. Throws
-     * [TransitionConditionUnsatisfiableException] if a condition cannot be met.
+     * Throws [TransitionConditionUnsatisfiableException] when no route exists (e.g. a
+     * required key isn't owned) or a condition can't be met.
      */
     suspend fun navigateToTile(name: String, targetMap: MapInfo): Character {
         var char = refreshCharacter(name)
-        var iterations = 0
-
-        while (iterations++ < MAX_NAV_ITERATIONS) {
-            val targetLayer = targetMap.layer
-
-            // Already at destination
-            if (isAt(char, targetMap.x, targetMap.y) && char.layer == targetLayer) break
-
-            // ── Case 1: On a sub-layer, need to exit toward a different layer ────
-            if (char.layer != "overworld" && char.layer != targetLayer) {
-                val exitTile = contentCache.findExitTransitionTile(char)
-                    ?: throw TransitionConditionUnsatisfiableException(
-                        "Cannot navigate: on layer '${char.layer}' with no exit transition"
-                    )
-                char = moveTo(name, exitTile.x, exitTile.y)
-                val conditions = exitTile.interactions.transition?.conditions ?: emptyList()
-                if (conditions.isNotEmpty()) {
-                    char = satisfyTransitionConditions(name, char, conditions)
-                    if (!isAt(char, exitTile.x, exitTile.y)) char = moveTo(name, exitTile.x, exitTile.y)
-                }
-                char = useTransition(name)
-                continue
+        var replans = 0
+        while (!(isAt(char, targetMap.x, targetMap.y) && char.layer == targetMap.layer)) {
+            if (replans++ > MAX_REPLANS) {
+                throw TransitionConditionUnsatisfiableException(
+                    "Navigation to ${targetMap.pos} gave up after $MAX_REPLANS re-plans (at ${char.pos})"
+                )
             }
+            val route = contentCache.planRoute(char.pos, targetMap, gateSatisfiable(char))
+                ?: throw TransitionConditionUnsatisfiableException(
+                    "No route from ${char.pos} to ${targetMap.pos} (missing key/achievement for a required gate?)"
+                )
+            if (route.steps.isNotEmpty()) println("[$name] Route: $route")
 
-            // ── Case 2: On overworld, target is on a sub-layer ──────────────────
-            if (char.layer == "overworld" && targetLayer != "overworld") {
-                val entryTile = contentCache.findTransitionTile(char, targetLayer, targetMap.x, targetMap.y)
-                    ?: throw TransitionConditionUnsatisfiableException(
-                        "Cannot navigate: no overworld transition leads to layer '$targetLayer'"
-                    )
-                char = moveTo(name, entryTile.x, entryTile.y)
-                val conditions = entryTile.interactions.transition?.conditions ?: emptyList()
-                if (conditions.isNotEmpty()) {
-                    char = satisfyTransitionConditions(name, char, conditions)
-                    if (!isAt(char, entryTile.x, entryTile.y)) char = moveTo(name, entryTile.x, entryTile.y)
-                }
-                char = useTransition(name)
-                continue
-            }
-
-            // ── Case 3: Same layer — proactive same-layer transition check ───────
-            // Detects tiles that are only reachable via a same-layer gate (gold-gated
-            // overworld sub-regions, key-gated underground sub-regions, etc.).
-            if (char.layer == targetLayer) {
-                val sameLayerEntry = contentCache.findSameLayerTransitionTo(targetMap.x, targetMap.y, targetLayer)
-                if (sameLayerEntry != null) {
-                    char = moveTo(name, sameLayerEntry.x, sameLayerEntry.y)
-                    val conditions = sameLayerEntry.interactions.transition?.conditions ?: emptyList()
-                    if (conditions.isNotEmpty()) {
-                        char = satisfyTransitionConditions(name, char, conditions)
-                        if (!isAt(char, sameLayerEntry.x, sameLayerEntry.y)) char = moveTo(name, sameLayerEntry.x, sameLayerEntry.y)
-                    }
-                    char = useTransition(name)
-                    continue
+            var offRoute = false
+            for (step in route.steps) {
+                if (step !is RouteStep.Transition) continue  // potions are only planned by navigateWithTeleport
+                char = crossTransition(name, char, step.source)
+                if (char.pos != step.destination) {
+                    println("[$name] Transition landed at ${char.pos}, expected ${step.destination} — re-planning")
+                    offRoute = true
+                    break
                 }
             }
+            if (offRoute) continue
 
-            // ── Case 4: Same layer, freely walkable — moveTo with reactive fallback
-            char = moveToWithTransitionFallback(name, char, targetMap.x, targetMap.y, targetLayer)
-            break
+            char = moveToWithTransitionFallback(name, char, targetMap.x, targetMap.y, targetMap.layer)
         }
-
         return char
     }
 
+    /** Walk onto [source] (same region), pay its conditions, and use its transition. */
+    private suspend fun crossTransition(name: String, current: Character, source: MapInfo): Character {
+        var char = current
+        if (!isAt(char, source.x, source.y) || char.layer != source.layer) char = moveTo(name, source.x, source.y)
+        val conditions = source.interactions.transition?.conditions ?: emptyList()
+        if (conditions.isNotEmpty()) {
+            char = satisfyTransitionConditions(name, char, conditions)
+            // A bank trip may have taken us elsewhere (even another region): route back.
+            if (!isAt(char, source.x, source.y) || char.layer != source.layer) char = navigateToTile(name, source)
+        }
+        return useTransition(name)
+    }
+
     /**
-     * Navigate to [targetMap], using teleport potions when they save significant time.
+     * Navigate to [targetMap], using teleport potions when the route planner finds they
+     * beat walking.
      *
-     * Evaluates BOTH legs of the round trip independently before departing:
-     *  - Outbound: is there an owned, usable teleport potion whose destination is
-     *    meaningfully closer to [targetMap] than the character's current position?
-     *    If so, use it now (after withdrawing from bank if needed), then walk the
-     *    remaining distance via [navigateToTile].
-     *  - Return: is there a teleport potion that would meaningfully shorten the eventual
-     *    trip back to a bank from [targetMap]? If so, pre-load it into inventory now
-     *    (withdraw from bank if needed) so it's available whenever [navigateToBank] is
-     *    later called — no matter which executor triggers that bank trip.
+     *  - Outbound: owned potions (inventory, or bank at the cost of a bank detour) are
+     *    offered to the planner as virtual first steps; it picks walk vs. gates vs. teleport.
+     *  - Return: if a return potion ([TeleportAdvisor.RETURN_POTION_PREFERENCE]) would shorten
+     *    the eventual trip from [targetMap] back to a bank, it's pre-loaded into inventory so
+     *    [navigateToBank] can use it later.
      *
-     * Both withdrawals (outbound + return, if both needed) happen in a single bank visit.
-     * Falls through to plain [navigateToTile] if no potion saves enough time on either leg.
+     * Withdrawals for both legs happen in a single bank visit.
      */
     suspend fun navigateWithTeleport(name: String, char: Character, targetMap: MapInfo): Character {
-        val plan = teleportAdvisor.planTrip(char, targetMap, completedAchievements)
-
         var c = char
+        val gate = gateSatisfiable(c)
+        val bankDetour = contentCache.planRouteToBank(c.pos, gate)?.cost
+        val outbound = contentCache.planRoute(
+            c.pos, targetMap, gate, teleportAdvisor.potionOptions(c, completedAchievements, bankDetour)
+        )
+        val returnPotion = teleportAdvisor.bestReturnPotion(c, targetMap, completedAchievements)
 
-        // Withdraw any needed potions from bank before departing (outbound + return pre-load)
-        if (plan.potionsToWithdraw.isNotEmpty()) {
-            val bank = findNearestBank(c)
-            if (bank == null) {
-                return navigateToTile(name, targetMap)  // fallback: no bank found
+        val toWithdraw = buildList {
+            (outbound?.steps?.firstOrNull() as? RouteStep.Potion)?.takeIf { it.fromBank }?.let { add(it.code) }
+            if (returnPotion != null && getItemQuantity(c, returnPotion.code) <= 0) add(returnPotion.code)
+        }.distinct()
+
+        if (toWithdraw.isNotEmpty()) {
+            val bank = contentCache.planRouteToBank(c.pos, gate)?.target
+            if (bank != null) {
+                try {
+                    c = navigateToTile(name, bank)
+                    val result = client.bank.withdrawItems(name, toWithdraw.map { SimpleItem(it, 1) })
+                    waitForCooldown(result.cooldown.expiration)
+                    c = result.character
+                } catch (e: TransitionConditionUnsatisfiableException) {
+                    throw e
+                } catch (e: Exception) {
+                    println("[$name] navigateWithTeleport: potion withdrawal failed: ${e.message} — proceeding without")
+                    c = refreshCharacter(name)
+                }
             }
-            c = navigateToTile(name, bank)
+        }
+
+        // Re-plan from where we are now with the potions actually in inventory.
+        val route = contentCache.planRoute(
+            c.pos, targetMap, gateSatisfiable(c), teleportAdvisor.potionOptions(c, completedAchievements)
+        )
+        val potionStep = route?.steps?.firstOrNull() as? RouteStep.Potion
+        if (potionStep != null && getItemQuantity(c, potionStep.code) > 0) {
             try {
-                val withdrawItems = plan.potionsToWithdraw.map { SimpleItem(it, 1) }
-                val result = client.bank.withdrawItems(name, withdrawItems)
-                waitForCooldown(result.cooldown.expiration)
-                c = result.character
+                println("[$name] Teleporting with ${potionStep.code} toward ${targetMap.pos}")
+                useItem(name, potionStep.code, 1)
+                c = refreshCharacter(name)
             } catch (e: Exception) {
-                println("[$name] navigateWithTeleport: potion withdrawal failed: ${e.message} — proceeding without teleport")
-                return navigateToTile(name, targetMap)
+                println("[$name] navigateWithTeleport: potion use failed: ${e.message} — walking instead")
             }
         }
 
-        // Use outbound teleport potion if planned
-        if (plan.outboundPotion != null && getItemQuantity(c, plan.outboundPotion.code) > 0) {
-            try {
-                useItem(name, plan.outboundPotion.code, 1)
-                c = refreshCharacter(name)  // character coordinates have changed
-            } catch (e: Exception) {
-                println("[$name] navigateWithTeleport: outbound potion use failed: ${e.message} — walking instead")
-            }
-        }
-
-        // Navigate remaining distance to destination (may be 0-2 tiles after teleport)
-        if (!isAt(c, targetMap.x, targetMap.y) || c.layer != targetMap.layer) {
-            c = navigateToTile(name, targetMap)
-        }
-
-        return c
+        return navigateToTile(name, targetMap)
     }
 
     /**
-     * Navigate to the nearest accessible bank, using a return teleport potion if one is
-     * already in inventory and still saves enough time from the character's current position.
-     *
-     * Checks inventory only — return potions are pre-loaded by [navigateWithTeleport] during
-     * the outbound leg of a trip. This method never initiates a fresh bank withdrawal for a
-     * return potion (there's no sense fetching a potion from the bank in order to reach the
-     * bank). Falls back to plain [navigateToTile] to the nearest bank if no held potion helps.
+     * Navigate to the cheapest-to-reach bank, using a return potion already in inventory
+     * if the planner finds it beats walking. Never withdraws a potion to reach the bank.
      */
     suspend fun navigateToBank(name: String, char: Character): Character {
-        for (potionCode in TeleportAdvisor.RETURN_POTION_PREFERENCE) {
-            if (getItemQuantity(char, potionCode) <= 0) continue
-            val potion = teleportAdvisor.evaluateHeldReturnPotion(char, potionCode, completedAchievements)
-                ?: continue
+        val options = teleportAdvisor.potionOptions(
+            char, completedAchievements, onlyCodes = TeleportAdvisor.RETURN_POTION_PREFERENCE
+        )
+        val route = contentCache.planRouteToBank(char.pos, gateSatisfiable(char), options)
+            ?: throw IllegalStateException("No reachable bank from ${char.pos}")
 
-            return try {
-                useItem(name, potion.code, 1)
-                var c = refreshCharacter(name)
-                val bankFromLanding = contentCache.findNearestBankFrom(c.x, c.y, c.layer)
-                    ?: contentCache.findNearestBank(c)
-                if (bankFromLanding != null && !isAt(c, bankFromLanding.x, bankFromLanding.y)) {
-                    c = navigateToTile(name, bankFromLanding)
-                }
-                c
+        val potionStep = route.steps.firstOrNull() as? RouteStep.Potion
+        if (potionStep != null) {
+            try {
+                useItem(name, potionStep.code, 1)
+                val c = refreshCharacter(name)
+                val bank = contentCache.planRouteToBank(c.pos, gateSatisfiable(c))?.target ?: route.target
+                return navigateToTile(name, bank)
+            } catch (e: TransitionConditionUnsatisfiableException) {
+                throw e
             } catch (e: Exception) {
                 println("[$name] navigateToBank: return potion use failed: ${e.message} — walking instead")
-                val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-                navigateToTile(name, bank)
+                val c = refreshCharacter(name)
+                val bank = contentCache.planRouteToBank(c.pos, gateSatisfiable(c))?.target ?: route.target
+                return navigateToTile(name, bank)
             }
         }
-
-        // No useful held return potion — plain navigation to nearest bank
-        val bank = findNearestBank(char) ?: throw IllegalStateException("No bank found on map")
-        return navigateToTile(name, bank)
+        return navigateToTile(name, route.target)
     }
 
-    /** Safety cap on the number of transitions allowed in a single [navigateToTile] call. */
-    private val MAX_NAV_ITERATIONS = 8
+    /** Safety cap on re-plans in a single [navigateToTile] call. */
+    private val MAX_REPLANS = 4
 
     /**
      * Move character to (toX, toY) on [toLayer] with a reactive fallback for 595/596 errors.
      *
-     * Error codes 595 ("No path to destination") and 596 ("Map is blocked") indicate that
-     * direct A* movement failed — there is likely terrain, water, or a gate between the
-     * character and the target. When this happens, search for a nearby same-layer transition
-     * that routes toward the destination, satisfy its conditions, cross it, then attempt
-     * the final move.
-     *
-     * If no same-layer transition is found after a 595/596, rethrows as
-     * [TransitionConditionUnsatisfiableException] with a clear message.
+     * The region graph should make these impossible; if one happens anyway (the graph
+     * over-merged tiles that aren't really walkable to each other), cross the nearest
+     * same-layer transition toward the destination, then retry the move.
      */
     private suspend fun moveToWithTransitionFallback(
         name: String,
@@ -316,21 +305,14 @@ class ActionHelper(
             moveTo(name, toX, toY)
         } catch (e: ArtifactsApiException) {
             if (e.errorCode == 595 || e.errorCode == 596) {
-                println("[$name] Navigation: ${e.errorCode} moving to ($toX,$toY,$toLayer) — searching for same-layer transition")
+                println("[$name] Navigation: ${e.errorCode} moving to ($toX,$toY,$toLayer) despite route plan — trying same-layer transition")
                 val freshChar = refreshCharacter(name)
                 val transitionTile = contentCache.findNearestSameLayerTransitionToward(
                     freshChar, toX, toY, toLayer
                 ) ?: throw TransitionConditionUnsatisfiableException(
                     "No path to ($toX,$toY,$toLayer) and no same-layer transition found [${e.errorCode}]"
                 )
-                var c = moveTo(name, transitionTile.x, transitionTile.y)
-                val conditions = transitionTile.interactions.transition?.conditions ?: emptyList()
-                if (conditions.isNotEmpty()) {
-                    c = satisfyTransitionConditions(name, c, conditions)
-                    if (!isAt(c, transitionTile.x, transitionTile.y)) c = moveTo(name, transitionTile.x, transitionTile.y)
-                }
-                c = useTransition(name)
-                // After transition, attempt the final move to destination
+                val c = crossTransition(name, freshChar, transitionTile)
                 if (!isAt(c, toX, toY)) moveTo(name, toX, toY) else c
             } else throw e
         }
@@ -461,7 +443,7 @@ class ActionHelper(
         contentType: String,
         contentCode: String? = null
     ): MapInfo? {
-        return contentCache.findNearestAnyLayer(char, contentType, contentCode)
+        return contentCache.findNearest(char, contentType, contentCode, layer = null, gateAllowed = gateSatisfiable(char))
     }
 
     /**
@@ -522,6 +504,26 @@ class ActionHelper(
             return result.character
         }
         return char
+    }
+
+    /**
+     * Deposit everything in inventory except [keep] and gathering tools, in one bank visit.
+     * Unlike [bankDepositAll] this also banks unequipped gear (weapons, armour, …) — used at
+     * task start to begin with a clear inventory. No bank trip if nothing is depositable.
+     */
+    suspend fun depositInventoryExcept(name: String, keep: Set<String>, existingChar: Character? = null): Character {
+        suspend fun depositable(c: Character) = c.inventory.filter { slot ->
+            slot.quantity > 0 && slot.code.isNotEmpty() && slot.code !in keep &&
+                contentCache.getItemOrNull(slot.code)?.subtype != "tool"
+        }
+        var char = existingChar ?: refreshCharacter(name)
+        if (depositable(char).isEmpty()) return char
+        char = navigateToBank(name, char)
+        val items = depositable(char).map { SimpleItem(it.code, it.quantity) }  // re-read: a potion may have been used
+        if (items.isEmpty()) return char
+        val result = client.bank.depositItems(name, items)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
     }
 
     /**
@@ -678,6 +680,37 @@ class ActionHelper(
     }
 
     /**
+     * Every recipe for [skills] with how many can be crafted right now. Used by the web UI.
+     *
+     *  - [char] non-null: counts that character's inventory + gold plus the bank, and (unless
+     *    [includeAboveLevel]) only recipes within the character's skill level.
+     *  - [char] null ("any eligible"): counts the bank only, no gold, all levels.
+     *
+     * Recipes that can't be crafted now are KEPT (maxCraftable = 0) so the UI can show which
+     * ingredients are missing. Sorted craftable-first, then by level descending.
+     */
+    suspend fun listCraftableRecipes(
+        char: Character?,
+        skills: Collection<String>,
+        includeAboveLevel: Boolean = false,
+    ): List<CraftableItemInfo> {
+        val results = mutableListOf<CraftableItemInfo>()
+        for (skill in skills) {
+            val maxLevel = if (char == null || includeAboveLevel) Int.MAX_VALUE
+                           else CharacterUtils.getSkillLevel(char, skill) ?: 0
+            for (item in contentCache.getItemsBySkill(skill)) {
+                val craft = item.craft ?: continue
+                if ((craft.level ?: 0) > maxLevel) continue
+                val (max, available, npc) = if (char != null) resolveIngredientAvailability(char, craft.items)
+                    else resolveIngredientAvailability(craft.items, gold = 0) { bankState.getQuantity(it) }
+                results += CraftableItemInfo(item, max, craft.items, available, npc)
+            }
+        }
+        return results.sortedWith(compareByDescending<CraftableItemInfo> { it.maxCraftable > 0 }
+            .thenByDescending { it.item.craft?.level ?: 0 })
+    }
+
+    /**
      * Find miscellaneous craftable items from inventory + bank materials.
      * Excludes weaponcrafting, gearcrafting, and jewelrycrafting.
      * Also considers ingredients purchasable from NPCs when inventory + bank are insufficient.
@@ -730,15 +763,24 @@ class ActionHelper(
     private suspend fun resolveIngredientAvailability(
         char: Character,
         ingredients: List<SimpleItem>
+    ): Triple<Int, Map<String, Int>, List<NpcPurchaseInfo>> =
+        resolveIngredientAvailability(ingredients, gold = char.gold) { code -> getItemQuantity(char, code) + bankState.getQuantity(code) }
+
+    /**
+     * Core of [resolveIngredientAvailability]: [owned] = total quantity of an item across
+     * whatever sources count (inventory + bank, or bank only); [gold] = spendable gold.
+     */
+    private suspend fun resolveIngredientAvailability(
+        ingredients: List<SimpleItem>,
+        gold: Int,
+        owned: (String) -> Int,
     ): Triple<Int, Map<String, Int>, List<NpcPurchaseInfo>> {
         val available = mutableMapOf<String, Int>()
         val npcPurchases = mutableListOf<NpcPurchaseInfo>()
 
         // Per-ingredient limiting factor (floor-divided by qty-per-craft)
         val perIngredientMax = ingredients.map { ingredient ->
-            val invQty  = getItemQuantity(char, ingredient.code)
-            val bankQty = getBankItemQuantity(ingredient.code)
-            val ownedTotal = invQty + bankQty
+            val ownedTotal = owned(ingredient.code)
             available[ingredient.code] = ownedTotal
 
             val ownedCrafts = ownedTotal / ingredient.quantity
@@ -756,26 +798,16 @@ class ActionHelper(
                 val buyableSource = npcSources.firstOrNull { npcItem ->
                     val price = npcItem.buyPrice ?: return@firstOrNull false
                     val totalCost = price * ingredient.quantity
-                    if (npcItem.currency == "gold") {
-                        char.gold >= totalCost
-                    } else {
-                        // Non-gold currency: check inventory + bank combined
-                        val inInventory = getItemQuantity(char, npcItem.currency)
-                        val inBank = getBankItemQuantity(npcItem.currency)
-                        (inInventory + inBank) >= totalCost
-                    }
+                    if (npcItem.currency == "gold") gold >= totalCost
+                    else owned(npcItem.currency) >= totalCost  // non-gold currency
                 }
 
                 if (buyableSource != null) {
                     val price = buyableSource.buyPrice!!
 
                     // Calculate how many crafts we can afford via NPC purchase
-                    val currencyAvailable = if (buyableSource.currency == "gold") {
-                        char.gold
-                    } else {
-                        getItemQuantity(char, buyableSource.currency) +
-                        getBankItemQuantity(buyableSource.currency)
-                    }
+                    val currencyAvailable = if (buyableSource.currency == "gold") gold
+                                            else owned(buyableSource.currency)
                     // How many of this ingredient we can buy = floor(currencyAvailable / priceEach)
                     // How many crafts that supports = floor(buyable / ingredient.quantity)
                     val buyableQty    = currencyAvailable / price
@@ -1060,7 +1092,7 @@ class ActionHelper(
             )
 
         if (!isAt(char, npcTile.x, npcTile.y)) {
-            char = moveTo(characterName, npcTile.x, npcTile.y)
+            char = navigateWithTeleport(characterName, refreshCharacter(characterName), npcTile)
         }
 
         return try {
@@ -1139,6 +1171,55 @@ class ActionHelper(
         return result.character
     }
 
+    /**
+     * Equip several items in ONE action. Equipping into an occupied slot automatically
+     * moves the old item to the inventory, so swaps need no separate unequip. The
+     * cooldown is 3 s per distinct item (vs 3 s per unequip + 3 s per equip before).
+     *
+     * If the batch is rejected, falls back to one item at a time so as much as possible
+     * still gets equipped:
+     *  - 485 (already equipped) → skipped;
+     *  - 491 (slot not empty — e.g. a utility slot holding a different potion) →
+     *    unequip that slot, then equip;
+     *  - anything else (483 HP too high to remove the old item, missing item, …) →
+     *    logged and skipped; the old item stays equipped.
+     */
+    suspend fun equipMany(name: String, requests: List<EquipmentRequest>, context: String = "equip"): Character {
+        if (requests.isEmpty()) return refreshCharacter(name)
+        try {
+            val result = client.actions.equipMultiple(name, requests)
+            waitForCooldown(result.cooldown.expiration)
+            return result.character
+        } catch (e: ArtifactsApiException) {
+            if (requests.size == 1 && e.errorCode != 491) throw e
+            println("[$name] $context: batched equip of ${requests.size} item(s) failed [${e.errorCode}] ${e.message} — retrying one at a time")
+        }
+        var char = refreshCharacter(name)
+        for (r in requests) {
+            try {
+                char = equipOne(name, r)
+            } catch (e: ArtifactsApiException) {
+                when (e.errorCode) {
+                    485 -> Unit
+                    491 -> try {
+                        char = unequip(name, r.slot)
+                        char = equipOne(name, r)
+                    } catch (e2: Exception) {
+                        println("[$name] $context: could not swap ${r.slot} to ${r.code}: ${e2.message}")
+                    }
+                    else -> println("[$name] $context: skipping ${r.code} in ${r.slot} [${e.errorCode}] ${e.message}")
+                }
+            }
+        }
+        return char
+    }
+
+    private suspend fun equipOne(name: String, r: EquipmentRequest): Character {
+        val result = client.actions.equipMultiple(name, listOf(r))
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
+    }
+
     suspend fun unequip(name: String, slot: String): Character {
         val result = client.actions.unequip(name, slot)
         waitForCooldown(result.cooldown.expiration)
@@ -1210,12 +1291,7 @@ class ActionHelper(
         // Check if already equipped
         if (char.weaponSlot == bestTool.code) return char
 
-        // Unequip current weapon if one is equipped
-        if (char.weaponSlot.isNotEmpty()) {
-            char = unequip(name, "weapon")
-        }
-
-        // Equip the best tool
+        // Equipping over the current weapon unequips it automatically.
         char = equip(name, bestTool.code, "weapon")
         return char
     }
@@ -1767,9 +1843,10 @@ class ActionHelper(
      * Guarantees:
      *  - Pre-verifies all required items are available before modifying anything.
      *    If any item is missing, aborts without unequipping.
-     *  - Previous items are NOT deposited until AFTER new items are successfully equipped,
-     *    so rollback is possible on any per-slot failure.
-     *  - On withdrawal/craft failure, rolls back by re-equipping the previously equipped items.
+     *  - All new items are equipped in ONE call at the end ([equipMany]); the old items are
+     *    auto-unequipped by that call. Nothing is unequipped earlier, so a withdrawal/craft
+     *    failure leaves the current gear untouched.
+     *  - Replaced items are deposited only after the new items are confirmed equipped.
      *  - Explicit `println("name ...")` logging on every failure for diagnosability.
      *  - Safety net: after all swaps, verifies no critical combat slot was left empty.
      *
@@ -1782,6 +1859,9 @@ class ActionHelper(
         if (equipActions.isEmpty()) return refreshCharacter(characterName)
 
         var char = refreshCharacter(characterName)
+        // Slots already holding the wanted item need nothing (and would 485 the batch).
+        val equipActions = equipActions.filter { getEquippedInSlot(char, it.slot) != it.itemCode }
+        if (equipActions.isEmpty()) return char
 
         // ── Step 1: Soft-verify item availability via bankState snapshot ──
         // bankState is an eventually-consistent snapshot — it may lag behind actual bank
@@ -1843,42 +1923,12 @@ class ActionHelper(
             return c
         }
 
+        fun requests() = equipActions.map { EquipmentRequest(it.itemCode, it.slot) }
+
         // ── Fast path: all inventory sources — no bank trip needed ──
+        // One equip call; replaced items land in inventory (banked by the next deposit).
         if (bankActions.isEmpty() && craftActions.isEmpty()) {
-            val unequippedSlots = mutableSetOf<String>()
-            for (action in equipActions) {
-                val equipped = prevEquipped[action.slot] ?: ""
-                if (equipped.isNotEmpty()) {
-                    try {
-                        char = unequip(characterName, action.slot)
-                        unequippedSlots.add(action.slot)
-                    } catch (e: Exception) {
-                        println("[$characterName] retrieveAndEquipItems: unequip failed for ${action.slot}: ${e.message}")
-                        return rollback("unequip failed for ${action.slot}", unequippedSlots)
-                    }
-                } else {
-                    unequippedSlots.add(action.slot) // slot was empty; still track for rollback semantics
-                }
-            }
-            // Equip new items
-            for (action in equipActions) {
-                try {
-                    char = equip(characterName, action.itemCode, action.slot)
-                } catch (e: Exception) {
-                    println("[$characterName] retrieveAndEquipItems: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
-                    // Per-slot rollback: try to restore the original item for this slot
-                    val prev = prevEquipped[action.slot] ?: ""
-                    if (prev.isNotEmpty()) {
-                        try {
-                            char = equip(characterName, prev, action.slot)
-                            println("[$characterName] retrieveAndEquipItems: per-slot rollback restored $prev in ${action.slot}")
-                        } catch (e2: Exception) {
-                            println("[$characterName] retrieveAndEquipItems: per-slot rollback FAILED for ${action.slot}: ${e2.message} — SLOT LEFT EMPTY")
-                        }
-                    }
-                }
-            }
-            return char
+            return equipMany(characterName, requests(), "retrieveAndEquipItems")
         }
 
         // ── Bank/craftable path ──
@@ -1942,34 +1992,9 @@ class ActionHelper(
             }
         }
 
-        // Step 3: Unequip replaced slots (do NOT deposit yet — needed for rollback)
-        val unequippedSlots = mutableSetOf<String>()
-        val skippedSlots = mutableSetOf<String>()  // slots skipped due to 483 (HP too high)
-        for ((slot, equipped) in prevEquipped) {
-            if (equipped.isNotEmpty()) {
-                try {
-                    char = unequip(characterName, slot)
-                    unequippedSlots.add(slot)
-                } catch (e: ArtifactsApiException) {
-                    if (e.errorCode == 483) {
-                        // 483: "not enough HP to unequip this item" — the item provides an HP
-                        // bonus and current HP exceeds the max HP that would remain without it.
-                        // This happens at full HP when swapping HP-boosting armor at the bank.
-                        // We cannot reduce HP at the bank (resting heals, not damages).
-                        // Skip this slot — keep the current item equipped. The optimizer will
-                        // pick it up again next run once HP has naturally dropped in combat.
-                        println("[$characterName] retrieveAndEquipItems: skipping $slot swap — 483 (HP too high to unequip $equipped). Will retry next optimization pass.")
-                        skippedSlots.add(slot)
-                    } else {
-                        println("[$characterName] retrieveAndEquipItems: unequip failed for $slot: ${e.message}")
-                        return rollback("unequip failed for $slot", unequippedSlots)
-                    }
-                } catch (e: Exception) {
-                    println("[$characterName] retrieveAndEquipItems: unequip failed for $slot: ${e.message}")
-                    return rollback("unequip failed for $slot", unequippedSlots)
-                }
-            }
-        }
+        // Step 3 (gone): no unequip pass — equipping over a slot unequips it automatically,
+        // so until Step 7 nothing has changed and a failure needs no gear restored.
+        val unequippedSlots = emptySet<String>()
 
         // Step 4: Withdraw all bank items in a single batched API call.
         // Previously withdrawn one-at-a-time, which cost one API call + cooldown per item
@@ -2029,7 +2054,7 @@ class ActionHelper(
                 println("[$characterName] retrieveAndEquipItems: no $skill workshop found — skipping craft actions")
                 continue
             }
-            char = moveTo(characterName, workshop.x, workshop.y)
+            char = navigateWithTeleport(characterName, refreshCharacter(characterName), workshop)
             for (action in actions) {
                 try {
                     val result = client.actions.craft(characterName, action.itemCode, 1)
@@ -2042,31 +2067,11 @@ class ActionHelper(
             }
         }
 
-        // Step 7: Equip all new items — per-slot success tracking + rollback on failure.
-        // Skip slots that were not unequipped due to 483 (skippedSlots).
-        val successfullyEquippedSlots = mutableSetOf<String>()
-        for (action in equipActions) {
-            if (action.slot in skippedSlots) {
-                println("[$characterName] retrieveAndEquipItems: skipping equip for ${action.slot} (was skipped during unequip due to 483)")
-                continue
-            }
-            try {
-                char = equip(characterName, action.itemCode, action.slot)
-                successfullyEquippedSlots.add(action.slot)
-            } catch (e: Exception) {
-                println("[$characterName] retrieveAndEquipItems: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
-                // Per-slot rollback: try to restore the original item for this slot
-                val prev = prevEquipped[action.slot] ?: ""
-                if (prev.isNotEmpty()) {
-                    try {
-                        char = equip(characterName, prev, action.slot)
-                        println("[$characterName] retrieveAndEquipItems: per-slot rollback restored $prev in ${action.slot}")
-                    } catch (e2: Exception) {
-                        println("[$characterName] retrieveAndEquipItems: per-slot rollback FAILED for ${action.slot}: ${e2.message} — SLOT LEFT EMPTY")
-                    }
-                }
-            }
-        }
+        // Step 7: Equip everything in one call (per-item fallback inside equipMany).
+        char = equipMany(characterName, requests(), "retrieveAndEquipItems")
+        val successfullyEquippedSlots = equipActions
+            .filter { getEquippedInSlot(char, it.slot) == it.itemCode }
+            .map { it.slot }.toSet()
 
         // Step 8: Deposit successfully replaced prev items (skip tools)
         val itemsToDeposit = mutableListOf<SimpleItem>()
@@ -2153,34 +2158,16 @@ class ActionHelper(
             }
         }
 
-        // Equip inventory-only actions immediately (no bank trip)
-        for (action in inventoryActions) {
+        // Equip inventory-only actions immediately (no bank trip), all in one call.
+        // Topping up a stack = equipping more of the same code; a different potion replaces
+        // the current one (auto-unequip, or unequip+equip via the 491 fallback).
+        fun utilityRequest(action: GearOptimizer.UtilityEquipAction): EquipmentRequest? {
             val current = getEquippedInSlot(char, action.slot)
             val currentQty = if (current == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
-            val inInventory = getItemQuantity(char, action.itemCode)
-            try {
-                when {
-                    current == action.itemCode && currentQty >= action.quantity -> { /* already good */ }
-                    current == action.itemCode && inInventory > 0 -> {
-                        val addQty = inInventory.coerceAtMost(action.quantity - currentQty)
-                        if (addQty > 0) char = equip(characterName, action.itemCode, action.slot, addQty)
-                    }
-                    current.isNotEmpty() && current != action.itemCode -> {
-                        char = unequip(characterName, action.slot)
-                        val qty = inInventory.coerceAtMost(action.quantity).coerceAtLeast(1)
-                        char = equip(characterName, action.itemCode, action.slot, qty)
-                    }
-                    else -> {
-                        if (inInventory > 0) {
-                            val qty = inInventory.coerceAtMost(action.quantity)
-                            char = equip(characterName, action.itemCode, action.slot, qty)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                println("[$characterName] retrieveAndEquipUtilities: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
-            }
+            val qty = getItemQuantity(char, action.itemCode).coerceAtMost(action.quantity - currentQty)
+            return if (qty > 0) EquipmentRequest(action.itemCode, action.slot, qty) else null
         }
+        char = equipMany(characterName, inventoryActions.mapNotNull(::utilityRequest), "retrieveAndEquipUtilities")
 
         // Bank path: only for potions not already in inventory
         if (bankNeededActions.isNotEmpty()) {
@@ -2225,21 +2212,9 @@ class ActionHelper(
                     char = result.character
                 } catch (e: Exception) {
                     println("[$characterName] retrieveAndEquipUtilities: bank withdraw failed for ${action.itemCode}: ${e.message}")
-                    continue
-                }
-                // Equip what we now have
-                val current = getEquippedInSlot(char, action.slot)
-                val inInventory = getItemQuantity(char, action.itemCode)
-                try {
-                    if (current.isNotEmpty() && current != action.itemCode) char = unequip(characterName, action.slot)
-                    if (inInventory > 0) {
-                        val qty = inInventory.coerceAtMost(action.quantity)
-                        char = equip(characterName, action.itemCode, action.slot, qty)
-                    }
-                } catch (e: Exception) {
-                    println("[$characterName] retrieveAndEquipUtilities: equip failed for ${action.itemCode} in ${action.slot}: ${e.message}")
                 }
             }
+            char = equipMany(characterName, bankNeededActions.mapNotNull(::utilityRequest), "retrieveAndEquipUtilities")
         }
 
         return char
@@ -2249,40 +2224,19 @@ class ActionHelper(
      * Determine all item/gold costs incurred transitioning from [char]'s current position
      * to [targetMap], WITHOUT navigating. Inspects in-memory [ContentCache] tile data only.
      *
-     * Covers three transition categories that match [navigateToTile]'s routing logic:
-     *  1. Exit from sub-layer (if character is not on overworld and not already on target layer)
-     *  2. Cross-layer entry (if target is on a different layer)
-     *  3. Same-layer gate (if target is on the same layer but behind a same-layer transition)
+     * Sums the conditions of every transition on the planned route (the same plan
+     * [navigateToTile] would follow, ignoring whether keys are currently owned).
      *
      * Only `operator == "cost"` conditions are included — `has_item` is not a consumed cost.
      * Gold costs are returned under key "gold". Item costs use their item code as key.
      * Returns an empty map when the path has no cost conditions.
      */
     fun getTransitionCosts(char: com.artifactsmmo.client.models.Character, targetMap: MapInfo): Map<String, Int> {
+        val route = contentCache.planRoute(char.pos, targetMap) ?: return emptyMap()
         val costs = mutableMapOf<String, Int>()
-
-        fun collectCosts(tile: MapInfo?) {
-            tile?.interactions?.transition?.conditions
-                ?.filter { it.operator == "cost" }
-                ?.forEach { c -> costs[c.code] = (costs[c.code] ?: 0) + c.value }
-        }
-
-        val targetLayer = targetMap.layer
-
-        // 1. Exit from sub-layer if character is not already on target layer
-        if (char.layer != "overworld" && char.layer != targetLayer) {
-            collectCosts(contentCache.findExitTransitionTile(char))
-        }
-
-        // 2. Cross-layer entry transition
-        if (char.layer != targetLayer) {
-            val entryLayer = if (char.layer == "overworld") targetLayer else "overworld"
-            collectCosts(contentCache.findTransitionTile(char, entryLayer, targetMap.x, targetMap.y))
-        }
-
-        // 3. Same-layer gate (e.g. gold-gated overworld sub-region, key-gated underground area)
-        collectCosts(contentCache.findSameLayerTransitionTo(targetMap.x, targetMap.y, targetLayer))
-
+        route.transitions.flatMap { it.conditions }
+            .filter { it.operator == "cost" }
+            .forEach { c -> costs[c.code] = (costs[c.code] ?: 0) + c.value }
         return costs
     }
 

@@ -1,5 +1,10 @@
 package com.artifactsmmo.server.api
 
+import kotlinx.coroutines.flow.sample
+import com.artifactsmmo.engine.worker.ApiCharacterView
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import com.artifactsmmo.domain.queue.GroupRole
 import com.artifactsmmo.domain.queue.NewTask
 import com.artifactsmmo.domain.queue.TaskFilter
@@ -80,11 +85,18 @@ fun Route.apiRoutes(b: ApiBackend) {
             val req = call.receive<CreateTaskRequest>()
             if (req.spec is TaskSpec.BossFight) return@post call.badRequest("boss fights must be created via POST /api/tasks/group")
             validateCharacter(b, req.assignedCharacter)?.let { return@post call.badRequest(it) }
+            // Skill gates the game enforces (gathering/crafting level) become queue
+            // requirements, so the task waits until a character qualifies.
+            val requirements = b.engine?.let { e ->
+                SpecRequirements.withSkillMinimums(req.spec, req.requirements,
+                    resourceLevel = { code -> runCatching { e.contentCache.getResource(code).level }.getOrNull() },
+                    itemLevel = { code -> runCatching { e.contentCache.getItem(code).craft?.level }.getOrNull() })
+            } ?: req.requirements
             val task = b.queue.enqueue(
                 NewTask(
                     type = req.spec.typeName, spec = req.spec.toJson(), source = TaskSource.MANUAL,
                     priority = req.priority ?: TaskSource.MANUAL.defaultPriority,
-                    assignedCharacter = req.assignedCharacter, requirements = req.requirements,
+                    assignedCharacter = req.assignedCharacter, requirements = requirements,
                     stopCondition = req.stopCondition, dedupeKey = req.dedupeKey,
                     notBeforeMillis = req.notBeforeMillis, expiresAtMillis = req.expiresAtMillis,
                 )
@@ -129,8 +141,15 @@ fun Route.apiRoutes(b: ApiBackend) {
         get {
             val engine = b.engine
             val names = engine?.characters.orEmpty()
-            call.respond(names.map { n ->
-                CharacterDto(n, engine?.pool?.statuses?.get(n)?.value, b.settings.get(n).toDto())
+            val view = engine?.let { ApiCharacterView(it.helper) }
+            call.respond(coroutineScope {
+                names.map { n ->
+                    async {
+                        val snap = view?.let { v -> runCatching { v.snapshot(n) }.getOrNull() }
+                        CharacterDto(n, engine?.pool?.statuses?.get(n)?.value, b.settings.get(n).toDto(),
+                            level = snap?.level, skills = snap?.skills.orEmpty())
+                    }
+                }.awaitAll()
             })
         }
         get("/{name}/details") {
@@ -191,7 +210,7 @@ fun Route.apiRoutes(b: ApiBackend) {
     }
 
     // ── Live stream (Server-Sent Events) ───────────────────────────────────
-    // Events: `worker` (WorkerStatus), `task` ({id}), `log` (LogDto), `control` ({paused}).
+    // Events: `worker` (WorkerStatus), `task` ({id}), `log` (LogDto), `control` ({paused}), `bank` ({seq}).
     // The browser keeps one EventSource open and applies these to its stores.
     sse("/stream") {
         val out = Channel<ServerSentEvent>(capacity = 512)
@@ -209,6 +228,12 @@ fun Route.apiRoutes(b: ApiBackend) {
                 }
                 launch { e.logger.live.collect { emit("log", LogDto.serializer(), it.toDto()) } }
                 launch { e.control.fatalReason.drop(1).collect { emit("control", ControlDto.serializer(), ControlDto(it)) } }
+                // Bank contents change live (WebSocket deltas); tell the UI at most once a
+                // second so pickers showing "max craftable" can refresh.
+                launch {
+                    var n = 0L
+                    e.bankState.snapshot.drop(1).sample(1_000).collect { emit("bank", BankChangedDto.serializer(), BankChangedDto(++n)) }
+                }
             }
             launch { b.queue.changes.collect { emit("task", TaskChangedDto.serializer(), TaskChangedDto(it)) } }
             // Keep proxies from closing an idle connection.

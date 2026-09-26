@@ -1,0 +1,36 @@
+:root {
+  color-scheme: dark;
+  --bg: #14161a; --panel: #1d2026; --border: #2d323b; --text: #e3e6ea; --muted: #8b93a0;
+  --accent: #5aa9ff; --ok: #4cc38a; --warn: #f0b429; --bad: #ef5350;
+  font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 14px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: var(--accent); }
+button {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #0b1320; border-color: var(--accent); }
+button.danger { border-color: var(--bad); color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+input, select, textarea {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font: inherit;
+}
+textarea { font-family: ui-monospace, monospace; width: 100%; }
+label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.muted { color: var(--muted); }
+.error { color: var(--bad); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); }
+.badge.running, .badge.RUNNING { color: var(--ok); border-color: var(--ok); }
+.badge.suspended, .badge.PAUSED { color: var(--warn); border-color: var(--warn); }
+.badge.failed, .badge.cancelled { color: var(--bad); border-color: var(--bad); }
+.log { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }

@@ -32,6 +32,11 @@ class PgNotifier(private val connect: () -> Connection) {
     private val _changes = MutableSharedFlow<Long>(extraBufferCapacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val changes: SharedFlow<Long> = _changes
 
+    private companion object {
+        /** Worst-case wake-up latency for idle workers. One tiny query per second is negligible. */
+        const val POLL_MS = 1_000L
+    }
+
     fun start(scope: CoroutineScope): Job = scope.launch(Dispatchers.IO) {
         while (isActive) {
             try {
@@ -39,15 +44,23 @@ class PgNotifier(private val connect: () -> Connection) {
                     conn.createStatement().use { it.execute("LISTEN task_changed") }
                     val pg = conn.unwrap(PGConnection::class.java)
                     log.info { "Listening for task_changed notifications" }
+                    conn.prepareStatement("select 1").use { ping ->
                     while (isActive) {
-                        // Blocks up to 5 s, then returns so we can notice cancellation.
-                        val notes = pg.getNotifications(5_000) ?: continue
+                        // Don't use the blocking getNotifications(timeout): the Supabase pooler
+                        // sends periodic ParameterStatus ('S') messages, which that code path
+                        // rejects ("Unknown Response Type S") and the connection drops every ~60 s.
+                        // A trivial query goes through the normal protocol handler (which accepts
+                        // 'S'), pulls in any pending notifications, and proves the link is alive.
+                        ping.executeQuery().close()
+                        val notes = pg.notifications
+                        if (notes.isNullOrEmpty()) { delay(POLL_MS); continue }
                         for (n in notes) {
                             val id = runCatching {
                                 Json.parseToJsonElement(n.parameter).jsonObject["id"]?.jsonPrimitive?.longOrNull
                             }.getOrNull() ?: continue
                             _changes.tryEmit(id)
                         }
+                    }
                     }
                 }
             } catch (e: CancellationException) {

@@ -2,21 +2,18 @@ package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.MapInfo
-import kotlin.math.abs
 
 /**
- * Evaluates whether teleport potions should be used for a given trip.
+ * Turns owned teleport potions into [PotionOption]s for the [RoutePlanner], so a single
+ * route search decides between walking, crossing gates and teleporting.
  *
- * A potion is worth using when it saves at least [TILE_SAVINGS_THRESHOLD] tiles of walking.
- * Time model: [SECONDS_PER_TILE] seconds/tile for walking, [TELEPORT_COOLDOWN_SECONDS] flat
- * for potion use (confirmed fixed regardless of quantity per the game's /action/use docs).
+ * Time model: [SECONDS_PER_TILE] seconds/tile walking, [TELEPORT_COOLDOWN_SECONDS] flat for
+ * a potion. A potion is only worth consuming if it saves ≥ [TILE_SAVINGS_THRESHOLD] tiles —
+ * the planner charges exactly that for a potion edge ([RoutePlanner.POTION_COST]).
  *
- * Outbound and return legs are evaluated completely independently — either, both, or
- * neither may result in a potion being used/pre-loaded.
- *
- * Return potions are only ever pre-loaded during the outbound trip (there is no logical
- * "withdraw a potion from the bank in order to reach the bank" shortcut) — see
- * [ActionHelper.navigateToBank] which only ever consumes an already-held return potion.
+ * Return potions are only ever pre-loaded during an outbound trip (never "withdraw a
+ * potion from the bank in order to reach the bank") — [ActionHelper.navigateToBank] only
+ * considers potions already in inventory.
  */
 class TeleportAdvisor(
     private val contentCache: ContentCache,
@@ -31,155 +28,55 @@ class TeleportAdvisor(
         val RETURN_POTION_PREFERENCE = listOf("forest_bank_potion", "recall_potion")
     }
 
-    data class TeleportPlan(
-        val outboundPotion: TeleportPotionStore.TeleportPotion?,  // null = walk outbound
-        val returnPotion: TeleportPotionStore.TeleportPotion?,    // null = don't pre-load a return potion
-        val potionsToWithdraw: List<String>                       // codes to fetch from bank before departing
-    )
-
     /**
-     * Evaluate both legs of a round trip: character going to [destination] and eventually
-     * returning to a bank. Returns a [TeleportPlan] describing which potions (if any) help,
-     * and which of those need to be withdrawn from the bank before departure (i.e. aren't
-     * already sitting in inventory).
+     * Potions usable as the first route step. Inventory potions are free to use; bank
+     * potions are included only when [bankDetourCost] is given (the cost of first walking
+     * to the bank to withdraw one).
      */
-    fun planTrip(
+    fun potionOptions(
         char: Character,
-        destination: MapInfo,
-        completedAchievements: Set<String>
-    ): TeleportPlan {
-        val outbound = bestOutboundPotion(char, destination, completedAchievements)
-        val returnPotion = bestReturnPotion(char, destination, completedAchievements)
-
-        val potionsToWithdraw = mutableListOf<String>()
-        if (outbound != null && !inInventory(char, outbound.code)) {
-            potionsToWithdraw.add(outbound.code)
+        completedAchievements: Set<String>,
+        bankDetourCost: Int? = null,
+        onlyCodes: Collection<String>? = null,
+    ): List<PotionOption> = TeleportPotionStore.getPotions().mapNotNull { potion ->
+        if (onlyCodes != null && potion.code !in onlyCodes) return@mapNotNull null
+        if (!canUsePotion(char, potion, completedAchievements)) return@mapNotNull null
+        val landing = contentCache.getTileById(potion.destinationMapId)?.pos ?: return@mapNotNull null
+        when {
+            inInventory(char, potion.code) -> PotionOption(potion.code, landing, fromBank = false)
+            bankDetourCost != null && bankState.getQuantity(potion.code) > 0 ->
+                PotionOption(potion.code, landing, fromBank = true, extraCost = bankDetourCost)
+            else -> null
         }
-        if (returnPotion != null && !inInventory(char, returnPotion.code)) {
-            potionsToWithdraw.add(returnPotion.code)
-        }
-
-        return TeleportPlan(outbound, returnPotion, potionsToWithdraw)
     }
 
     /**
-     * Find the best outbound potion for going from [char]'s current position to
-     * [destination], or null if none saves enough time. Considers all potions owned
-     * (inventory + bank), usable (level + achievement conditions met), and whose
-     * destination tile is accessible (present in the pre-warmed map cache).
+     * The return potion worth pre-loading for a trip to [destination]: the first potion in
+     * [RETURN_POTION_PREFERENCE] (owned in inventory or bank) that the planner would actually
+     * use to get from [destination] back to a bank. Null if walking back is as good.
      */
-    private fun bestOutboundPotion(
+    fun bestReturnPotion(
         char: Character,
         destination: MapInfo,
-        completedAchievements: Set<String>
+        completedAchievements: Set<String>,
     ): TeleportPotionStore.TeleportPotion? {
-        val baseDistance = distance(char.x, char.y, destination.x, destination.y)
-
-        var best: TeleportPotionStore.TeleportPotion? = null
-        var bestSavings = TILE_SAVINGS_THRESHOLD - 1  // must strictly meet/exceed threshold
-
-        for (potion in TeleportPotionStore.getPotions()) {
-            if (!ownsPotion(char, potion.code)) continue
+        for (code in RETURN_POTION_PREFERENCE) {
+            val potion = TeleportPotionStore.getPotions().find { it.code == code } ?: continue
+            if (!inInventory(char, code) && bankState.getQuantity(code) <= 0) continue
             if (!canUsePotion(char, potion, completedAchievements)) continue
-
-            val destTile = contentCache.getTileById(potion.destinationMapId) ?: continue
-            if (!isTileAccessible(potion.destinationMapId)) continue
-            // Cross-layer destinations aren't directly comparable via Manhattan distance to
-            // an overworld target — only consider same-layer teleport destinations here.
-            if (destTile.layer != destination.layer) continue
-
-            val postTeleportDistance = distance(destTile.x, destTile.y, destination.x, destination.y)
-            val tilesSaved = baseDistance - postTeleportDistance
-
-            if (tilesSaved > bestSavings) {
-                bestSavings = tilesSaved
-                best = potion
-            }
+            val landing = contentCache.getTileById(potion.destinationMapId)?.pos ?: continue
+            // Pretend it's already held (it will be, once pre-loaded) and see if the planner uses it.
+            val route = contentCache.planRouteToBank(
+                destination.pos,
+                potions = listOf(PotionOption(code, landing, fromBank = false)),
+            ) ?: continue
+            if (route.steps.firstOrNull() is RouteStep.Potion) return potion
         }
-
-        return best
-    }
-
-    /**
-     * Find the best return potion to pre-load for the trip from [char]'s current position
-     * via [destination] back to the nearest accessible bank, or null if none saves enough time.
-     *
-     * Checks [RETURN_POTION_PREFERENCE] in order (forest_bank_potion first — lands directly
-     * at a bank; recall_potion second — lands at spawn, still needs a short walk to a bank).
-     * The comparison baseline is the walk from [destination] (where the character will BE
-     * when they're ready to return) to the nearest bank from there.
-     */
-    private fun bestReturnPotion(
-        char: Character,
-        destination: MapInfo,
-        completedAchievements: Set<String>
-    ): TeleportPotionStore.TeleportPotion? {
-        val nearestBankFromDestination = contentCache.findNearestBankFrom(destination.x, destination.y, destination.layer)
-            ?: contentCache.findNearestBankFrom(destination.x, destination.y, "overworld")
-            ?: return null
-        val baseReturnDistance = distance(destination.x, destination.y, nearestBankFromDestination.x, nearestBankFromDestination.y)
-
-        for (potionCode in RETURN_POTION_PREFERENCE) {
-            val potion = TeleportPotionStore.getPotions().find { it.code == potionCode } ?: continue
-            if (!ownsPotion(char, potion.code)) continue
-            if (!canUsePotion(char, potion, completedAchievements)) continue
-
-            val destTile = contentCache.getTileById(potion.destinationMapId) ?: continue
-            if (!isTileAccessible(potion.destinationMapId)) continue
-
-            val bankFromPotionLanding = contentCache.findNearestBankFrom(destTile.x, destTile.y, destTile.layer)
-                ?: continue
-            val postTeleportDistance = distance(destTile.x, destTile.y, bankFromPotionLanding.x, bankFromPotionLanding.y)
-            val tilesSaved = baseReturnDistance - postTeleportDistance
-
-            if (tilesSaved >= TILE_SAVINGS_THRESHOLD) {
-                return potion  // first match in preference order wins
-            }
-        }
-
         return null
     }
 
-    /**
-     * Re-evaluate whether an already-held [potionCode] still saves enough time returning
-     * to a bank from the character's CURRENT position (not wherever it was originally
-     * planned for — the character may have moved since [planTrip] was called).
-     *
-     * Used by [ActionHelper.navigateToBank] which only ever consumes a pre-loaded potion.
-     */
-    fun evaluateHeldReturnPotion(
-        char: Character,
-        potionCode: String,
-        completedAchievements: Set<String>
-    ): TeleportPotionStore.TeleportPotion? {
-        val potion = TeleportPotionStore.getPotions().find { it.code == potionCode } ?: return null
-        if (!canUsePotion(char, potion, completedAchievements)) return null
-
-        val destTile = contentCache.getTileById(potion.destinationMapId) ?: return null
-        if (!isTileAccessible(potion.destinationMapId)) return null
-
-        val directBank = contentCache.findNearestBank(char) ?: contentCache.findNearestBankFrom(char.x, char.y, char.layer)
-        val directDistance = if (directBank != null) distance(char.x, char.y, directBank.x, directBank.y) else Int.MAX_VALUE
-
-        val bankFromLanding = contentCache.findNearestBankFrom(destTile.x, destTile.y, destTile.layer) ?: return null
-        val teleportDistance = distance(destTile.x, destTile.y, bankFromLanding.x, bankFromLanding.y)
-
-        val tilesSaved = directDistance - teleportDistance
-        return if (tilesSaved >= TILE_SAVINGS_THRESHOLD) potion else null
-    }
-
-    // ── Helpers ──────────────────────────────────────────────────
-
-    private fun distance(x1: Int, y1: Int, x2: Int, y2: Int): Int = abs(x1 - x2) + abs(y1 - y2)
-
     private fun inInventory(char: Character, code: String): Boolean =
         char.inventory.any { it.code == code && it.quantity > 0 }
-
-    /** True if the character owns this potion — either in inventory or the bank. */
-    private fun ownsPotion(char: Character, code: String): Boolean {
-        if (inInventory(char, code)) return true
-        return bankState.getQuantity(code) > 0
-    }
 
     /** True if the character can use this potion (level requirement + achievement conditions). */
     private fun canUsePotion(
@@ -195,7 +92,4 @@ class TeleportAdvisor(
             }
         }
     }
-
-    /** True if the destination tile passed the accessibility filter in [ContentCache.preWarmMaps]. */
-    private fun isTileAccessible(mapId: Int): Boolean = contentCache.getTileById(mapId) != null
 }

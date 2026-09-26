@@ -226,7 +226,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
 
         if (!helper.isAt(char, workshop.x, workshop.y)) {
             onStatus("Moving to ${task.skill} workshop...")
-            char = helper.moveTo(characterName, workshop.x, workshop.y)
+            char = helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
         }
 
         // Recalculate actual craftable from current inventory (after withdrawal + move).

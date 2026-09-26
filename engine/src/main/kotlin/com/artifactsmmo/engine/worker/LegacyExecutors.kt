@@ -3,6 +3,7 @@ package com.artifactsmmo.engine.worker
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.BankExecutor
 import com.artifactsmmo.core.task.CraftingExecutor
+import com.artifactsmmo.core.task.DropStrategy
 import com.artifactsmmo.core.task.EventExecutor
 import com.artifactsmmo.core.task.FightingExecutor
 import com.artifactsmmo.core.task.GatheringExecutor
@@ -42,6 +43,9 @@ class LegacyExecutors(
     private inner class Adapter : TaskExecutor {
 
         override suspend fun start(ctx: ExecContext) {
+            // Runs on every claim, including resumes after preemption.
+            depositForTaskStart(ctx)
+            ensureGatheringTool(ctx)
             if (ctx.state.prepared) return
             when (val task = legacy(ctx)) {
                 is TaskType.Fight -> {
@@ -72,6 +76,39 @@ class LegacyExecutors(
                 else -> Unit
             }
             ctx.state.prepared = true
+        }
+
+        /** Clear the inventory before starting — see [TaskStartDeposit]. Best-effort. */
+        private suspend fun depositForTaskStart(ctx: ExecContext) {
+            val task = legacy(ctx)
+            runCatching {
+                val char = helper.refreshCharacter(ctx.character)
+                val keep = TaskStartDeposit.keepFor(task, char, useFoodCodes(task)) ?: return
+                ctx.status("Depositing inventory before starting...")
+                helper.depositInventoryExcept(ctx.character, keep, char)
+            }.onFailure { rethrowCancellation(it); ctx.status("Pre-task deposit error: ${it.message}") }
+        }
+
+        /** Best tool (inventory or bank) before gathering. Best-effort. */
+        private suspend fun ensureGatheringTool(ctx: ExecContext) {
+            val skill = when (val task = legacy(ctx)) {
+                is TaskType.Gather -> task.skill
+                is TaskType.EventGather -> task.skill
+                else -> return
+            }
+            runCatching { gathering.ensureBestTool(ctx.character, skill, ctx.status) }
+                .onFailure { rethrowCancellation(it); ctx.status("Tool check error: ${it.message}") }
+        }
+
+        private suspend fun useFoodCodes(task: TaskType): Set<String> {
+            val (monster, strategies, default) = when (task) {
+                is TaskType.Fight -> Triple(task.monsterCode, task.dropStrategies, task.defaultDropStrategy)
+                is TaskType.EventFight -> Triple(task.monsterCode, task.dropStrategies, task.defaultDropStrategy)
+                else -> return emptySet()
+            }
+            return helper.findCookableDrops(monster)
+                .filter { (strategies[it.rawCode] ?: default) == DropStrategy.COOK_AND_USE }
+                .map { it.cookedCode }.toSet()
         }
 
         override suspend fun step(ctx: ExecContext): StepOutcome {
