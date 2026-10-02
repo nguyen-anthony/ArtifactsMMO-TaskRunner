@@ -6,7 +6,7 @@
   import { api } from '../lib/api'
   import { catalog } from '../lib/catalog'
   import SpecEditor from '../components/SpecEditor.svelte'
-  import type { Catalog, CharacterDto, MemberPlan, StopCondition, TaskSpec } from '../lib/types'
+  import type { Catalog, CharacterDto, CoopResult, StopCondition, TaskSpec } from '../lib/types'
   import { SKILLS } from '../lib/types'
 
   let mode = $state<'solo' | 'boss'>('solo')
@@ -48,13 +48,20 @@
   catalog().then((c) => (cat = c))
   let bossCode = $state('')
   let members = $state<string[]>(['', '', ''])
-  let plans = $state<Record<string, MemberPlan>>({})
+  // Tank defaults to the initiator (members[0]) and follows it when changed, until the user
+  // explicitly picks someone else via the dropdown.
+  let tank = $state('')
+  let tankTouched = $state(false)
+  $effect(() => { if (!tankTouched) tank = members[0] })
+  function setTank(name: string) { tank = name; tankTouched = true }
+
+  let coopResult = $state<CoopResult | null>(null)
   let planning = $state(false)
   const chosen = $derived(members.filter(Boolean))
 
   async function planCoop() {
-    planning = true; error = ''
-    try { plans = await api.simCoop(chosen, bossCode) } catch (e: any) { error = e.message } finally { planning = false }
+    planning = true; error = ''; coopResult = null
+    try { coopResult = await api.simCoop(chosen, bossCode, tank) } catch (e: any) { error = e.message } finally { planning = false }
   }
 
   async function createBoss() {
@@ -62,7 +69,7 @@
     const monster = cat?.monsters.find((m) => m.code === bossCode)
     try {
       await api.createGroup({
-        spec: { kind: 'boss_fight', monsterCode: bossCode, monsterName: monster?.name, plans },
+        spec: { kind: 'boss_fight', monsterCode: bossCode, monsterName: monster?.name, plans: coopResult?.plans ?? {} },
         // First slot = initiator (calls the fight endpoint with the others as participants).
         slots: chosen.map((c) => ({ assignedCharacter: c })),
         priority, stopCondition: stopCondition(),
@@ -106,10 +113,23 @@
           </select>
         </label>
       {/each}
+      <label>Tank
+        <select value={tank} onchange={(e) => setTank((e.target as HTMLSelectElement).value)}>
+          {#each chosen as c}<option value={c}>{c}{c === members[0] ? ' (initiator)' : ''}</option>{/each}
+        </select>
+      </label>
       <button onclick={planCoop} disabled={!bossCode || !members[0] || planning}>{planning ? 'Planning…' : 'Plan gear (co-op optimizer)'}</button>
     </div>
-    {#if Object.keys(plans).length}
-      <pre class="log">{JSON.stringify(plans, null, 2)}</pre>
+    {#if coopResult}
+      <div class:error={!coopResult.winnable} class="coop-summary">
+        Tank: <b>{coopResult.tank}</b> — win rate {(coopResult.winRate * 100).toFixed(0)}%
+        (gear only: {(coopResult.baselineWinRate * 100).toFixed(0)}%){coopResult.winRate > 0 ? `, avg ${coopResult.avgWinTurns.toFixed(1)} turns` : ''}
+        {#if !coopResult.winnable}
+          <div class="warn">Not winnable with gear + potions currently owned across these characters (equipped, inventory, and bank).
+            You can still queue this group, but expect repeated losses.</div>
+        {/if}
+      </div>
+      <pre class="log">{JSON.stringify(coopResult.plans, null, 2)}</pre>
     {/if}
   {/if}
 
@@ -144,4 +164,7 @@
 
 <style>
   .stack { display: flex; flex-direction: column; gap: 16px; }
+  .coop-summary { font-size: 13px; }
+  .coop-summary.error { color: #c0392b; }
+  .coop-summary .warn { margin-top: 4px; font-weight: 600; }
 </style>

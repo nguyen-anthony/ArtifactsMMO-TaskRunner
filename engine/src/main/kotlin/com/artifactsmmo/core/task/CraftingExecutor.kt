@@ -21,6 +21,16 @@ import com.artifactsmmo.client.models.SimpleItem
 class CraftingExecutor(private val helper: ActionHelper) {
 
     /**
+     * Inventory capacity units kept free when sizing a batch to withdraw, on top of the
+     * ingredients themselves. Reaching the workshop after withdrawing may require a bank-trip
+     * pickup along the way (a teleport potion, a gold/key gate) — with the inventory packed
+     * completely full by the ingredient withdrawal, that pickup has nowhere to go and the
+     * whole task fails ("can't reach workshop", inventory full). Small and fixed rather than
+     * computed from the actual route, since the route may change (bank state, achievements).
+     */
+    private val RESERVED_INVENTORY_HEADROOM = 4
+
+    /**
      * Execute a single step of the crafting loop.
      * A "step" may involve: withdrawing materials, moving to workshop, crafting a batch,
      * and recycling (RECYCLE) or depositing (BANK).
@@ -126,7 +136,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
                 CraftMode.RECYCLE -> if (task.craftedSoFar == 0) task.targetQuantity else Int.MAX_VALUE
             }
             val totalIngredientsPerCraft = recipe.items.sumOf { it.quantity }
-            val freeSlots = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
+            val freeSlots = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity } - RESERVED_INVENTORY_HEADROOM).coerceAtLeast(0)
             val batchByInventory = if (totalIngredientsPerCraft > 0) maxOf(1, freeSlots / totalIngredientsPerCraft) else 1
             val batchSize = minOf(maxCraftableTotal, remaining, batchByInventory)
 
@@ -192,7 +202,12 @@ class CraftingExecutor(private val helper: ActionHelper) {
         // Calculate batch size based on inventory capacity
         val totalIngredientsPerCraft = recipe.items.sumOf { it.quantity }
         val currentInvItems = char.inventory.sumOf { it.quantity }
-        val freeSlots = char.inventoryMaxItems - currentInvItems
+        // Leave a little headroom below full capacity: if the workshop turns out to need a
+        // bank trip on the way (a teleport potion, or a gold/key gate), that trip withdraws
+        // 1+ items into inventory — with 0 free capacity, that withdrawal itself fails and
+        // the whole task dies stuck ("full inventory, can't reach the workshop"). See
+        // RESERVED_INVENTORY_HEADROOM.
+        val freeSlots = (char.inventoryMaxItems - currentInvItems - RESERVED_INVENTORY_HEADROOM).coerceAtLeast(0)
         val batchByInventory = if (totalIngredientsPerCraft > 0) {
             maxOf(1, freeSlots / totalIngredientsPerCraft)
         } else 1

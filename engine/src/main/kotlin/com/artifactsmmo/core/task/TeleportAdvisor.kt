@@ -26,6 +26,27 @@ class TeleportAdvisor(
 
         /** Preference order for return-trip potions (bank-delivering first). */
         val RETURN_POTION_PREFERENCE = listOf("forest_bank_potion", "recall_potion")
+
+        /**
+         * Evaluate one item condition. Stat codes: `level` or `<skill>_level` (e.g.
+         * `mining_level`). Unknown stats/operators don't block (the game rejects the action
+         * with a clear error if we're wrong, rather than us silently never trying).
+         */
+        fun meetsCondition(char: Character, c: com.artifactsmmo.client.models.Condition, achievements: Set<String>): Boolean {
+            if (c.operator == "achievement_unlocked") return c.code in achievements
+            val stat = when {
+                c.code == "level" -> char.level
+                c.code.endsWith("_level") -> com.artifactsmmo.client.utils.CharacterUtils.getSkillLevel(char, c.code.removeSuffix("_level"))
+                else -> null
+            } ?: return true
+            return when (c.operator) {
+                "gt" -> stat > c.value
+                "lt" -> stat < c.value
+                "eq" -> stat == c.value
+                "ne" -> stat != c.value
+                else -> true
+            }
+        }
     }
 
     /**
@@ -78,18 +99,16 @@ class TeleportAdvisor(
     private fun inInventory(char: Character, code: String): Boolean =
         char.inventory.any { it.code == code && it.quantity > 0 }
 
-    /** True if the character can use this potion (level requirement + achievement conditions). */
+    /**
+     * True if the character meets the potion's use [conditions][TeleportPotionStore.TeleportPotion.conditions].
+     *
+     * Only the conditions matter — the item's `level` field is NOT a use requirement (items
+     * that need a level carry an explicit `level gt N` condition; `sandwhisper_potion` is
+     * level 50 but only needs the `secure_the_island` achievement).
+     */
     private fun canUsePotion(
         char: Character,
         potion: TeleportPotionStore.TeleportPotion,
         completedAchievements: Set<String>
-    ): Boolean {
-        if (char.level < potion.level) return false
-        return potion.conditions.all { condition ->
-            when (condition.operator) {
-                "achievement_unlocked" -> condition.code in completedAchievements
-                else -> true  // unknown condition type — don't block on it defensively
-            }
-        }
-    }
+    ): Boolean = potion.conditions.all { meetsCondition(char, it, completedAchievements) }
 }

@@ -431,6 +431,153 @@ class GearOptimizer(
         return beam.sortedWith(beamStateComparator)
     }
 
+    /** One character's gear pick for a boss/raid team slot, produced by [searchCoopLoadout]. */
+    data class CoopLoadoutResult(
+        val targetLoadout: Map<String, String>,
+        val expectedDamage: Double,
+        val effectiveHp: Double,
+    )
+
+    /**
+     * Whole-loadout beam search for a boss/raid team member, combining offense/defense the
+     * same way [searchGearLoadouts] does for solo fights (so e.g. a fire-damage weapon pairs
+     * with fire-damage armor instead of scoring each item in isolation) — see
+     * [LoadoutHeuristic]/[evaluateLoadout], which multiplies attack by the matching element's
+     * damage bonus and nets resistance against the boss's own attack elements.
+     *
+     * Ranking differs by [role]:
+     *  - SUPPORT: highest expected damage wins; effective HP only breaks ties.
+     *  - TANK: loadouts that would die before the boss goes down are ruled out first — the
+     *    tank is attacked ~90% of the time, so pure damage risks a wipe. The survival bar
+     *    assumes the OTHER ~2 team members contribute comparable damage (monster HP /
+     *    (this loadout's damage × 3)); loadouts clearing it are then ranked by damage, then
+     *    effective HP. If none clear it, the highest effective HP is used instead.
+     *
+     * [claimedGear] is a shared, mutated-by-reference map of item code -> copies already
+     * committed to earlier team members (tank first) — this call subtracts what's already
+     * claimed from the owned pool and does NOT commit its own picks (the caller does, once
+     * it settles on a target loadout, mirroring [pickBestGearHeuristic]'s claim tracking).
+     * [excludedBankCodes]/[allowBank] mirror the same knobs on [pickBestGearHeuristic].
+     */
+    suspend fun searchCoopLoadout(
+        char: Character,
+        monster: Monster,
+        role: CoopOptimizer.Role,
+        claimedGear: Map<String, Int> = emptyMap(),
+        excludedBankCodes: Set<String> = emptySet(),
+        allowBank: Boolean = true,
+    ): CoopLoadoutResult {
+        val currentItems = mutableMapOf<String, Item>()
+        for (slotInfo in GEAR_SLOTS) {
+            val code = helper.getEquippedInSlot(char, slotInfo.slot)
+            if (code.isEmpty()) continue
+            try { helper.contentCache.getItemOrNull(code)?.let { currentItems[slotInfo.slot] = it } } catch (_: Exception) {}
+        }
+
+        val availableQuantities = accessibleGearQuantities(char).mapValues { (code, qty) ->
+            (qty - (claimedGear[code] ?: 0)).coerceAtLeast(0)
+        }
+        val candidatesBySlot = buildCoopBeamCandidates(char, monster, currentItems, excludedBankCodes, allowBank)
+        val initial = makeBeamState(
+            char = char, monster = monster, loadout = currentItems,
+            usedQuantities = currentItems.values.groupingBy { it.code }.eachCount(),
+            stats = char, currentLoadout = currentItems
+        )
+        var beam = listOf(initial)
+        val comparator = coopBeamComparator(role, monster.hp.toDouble())
+
+        for (slotInfo in GEAR_SLOTS) {
+            if (slotInfo.slot == "rune") continue  // rune is picked separately, by role, in CoopOptimizer
+            val candidates = candidatesBySlot[slotInfo.slot].orEmpty()
+            if (candidates.isEmpty()) continue
+            val expanded = mutableListOf<BeamState>()
+            for (state in beam) {
+                val oldItem = state.loadout[slotInfo.slot]
+                for (candidate in candidates) {
+                    val counts = state.usedQuantities.toMutableMap()
+                    oldItem?.let {
+                        val remaining = counts.getOrDefault(it.code, 0) - 1
+                        if (remaining <= 0) counts.remove(it.code) else counts[it.code] = remaining
+                    }
+                    counts[candidate.code] = counts.getOrDefault(candidate.code, 0) + 1
+                    if (counts.getValue(candidate.code) > availableQuantities.getOrDefault(candidate.code, 0)) continue
+                    val loadout = state.loadout + (slotInfo.slot to candidate)
+                    if (!artifactsAreUnique(loadout)) continue
+                    val stats = if (oldItem?.code == candidate.code) state.stats else state.stats.applyItemDelta(oldItem, candidate)
+                    expanded += makeBeamState(char, monster, loadout, counts, stats, currentItems)
+                }
+            }
+            beam = expanded.sortedWith(comparator).distinctBy { canonicalLoadoutKey(it.loadout) }.take(BEAM_WIDTH)
+            if (beam.isEmpty()) { beam = listOf(initial); break }
+        }
+        val best = beam.sortedWith(comparator).firstOrNull() ?: initial
+        return CoopLoadoutResult(
+            targetLoadout = GEAR_SLOTS.filter { it.slot != "rune" }.mapNotNull { s -> best.loadout[s.slot]?.code?.let { s.slot to it } }.toMap(),
+            expectedDamage = best.heuristic.expectedDamage,
+            effectiveHp = best.heuristic.effectiveHp,
+        )
+    }
+
+    /** [role]-specific ordering over beam states — see [searchCoopLoadout] kdoc. */
+    private fun coopBeamComparator(role: CoopOptimizer.Role, monsterHp: Double): Comparator<BeamState> = when (role) {
+        CoopOptimizer.Role.SUPPORT -> compareByDescending<BeamState> { it.heuristic.expectedDamage }
+            .thenByDescending { it.heuristic.effectiveHp }
+            .thenBy { it.changedSlots }.thenBy { it.signature }
+        CoopOptimizer.Role.TANK -> compareByDescending<BeamState> { survivesTeamFight(it.heuristic, monsterHp) }
+            .thenByDescending { it.heuristic.expectedDamage }
+            .thenByDescending { it.heuristic.effectiveHp }
+            .thenBy { it.changedSlots }.thenBy { it.signature }
+    }
+
+    /**
+     * True if this loadout's effective HP (survival turns) covers the fight's expected
+     * length, assuming up to two teammates contribute comparable damage on top of this
+     * loadout's own (monsterHp / (expectedDamage × 3)). A heuristic floor, not a guarantee —
+     * the tank is targeted ~90% of the time per [artifacts-docs], not always.
+     */
+    private fun survivesTeamFight(heuristic: LoadoutHeuristic, monsterHp: Double): Boolean {
+        val teamKillTurns = monsterHp / (heuristic.expectedDamage.coerceAtLeast(1.0) * 3.0)
+        return heuristic.effectiveHp >= teamKillTurns
+    }
+
+    /** Like [buildBeamCandidates], but respects cross-character bank claims (boss/raid teams). */
+    private suspend fun buildCoopBeamCandidates(
+        char: Character,
+        monster: Monster,
+        currentLoadout: Map<String, Item>,
+        excludedBankCodes: Set<String>,
+        allowBank: Boolean,
+    ): Map<String, List<Item>> {
+        return GEAR_SLOTS.filter { it.slot != "rune" }.associate { slotInfo ->
+            val current = currentLoadout[slotInfo.slot]
+            val discovered = try {
+                helper.getAvailableEquipmentForSlot(char, slotInfo)
+                    .filter { it.source == "inventory" || (it.source == "bank" && allowBank && it.item.code !in excludedBankCodes) }
+                    .filter { slotInfo.slot != "weapon" || it.item.subtype != "tool" }
+                    .map { it.item }
+            } catch (_: Exception) { emptyList() }
+            val ranked = (discovered + listOfNotNull(current))
+                .distinctBy { it.code }
+                .map { item ->
+                    val stats = if (current?.code == item.code) char else char.applyItemDelta(current, item)
+                    item to evaluateLoadout(stats, monster)
+                }
+                .sortedWith(
+                    compareByDescending<Pair<Item, LoadoutHeuristic>> { it.second.expectedDamage }
+                        .thenByDescending { it.second.effectiveHp }
+                        .thenByDescending { it.first.level }
+                        .thenBy { it.first.code }
+                )
+                .map { it.first }
+            val bounded = ranked.take(CANDIDATES_PER_SLOT).toMutableList()
+            if (current != null && bounded.none { it.code == current.code }) {
+                if (bounded.size == CANDIDATES_PER_SLOT) bounded.removeAt(bounded.lastIndex)
+                bounded += current
+            }
+            slotInfo.slot to bounded.distinctBy { it.code }
+        }
+    }
+
     private suspend fun buildBeamCandidates(
         char: Character,
         monster: Monster,

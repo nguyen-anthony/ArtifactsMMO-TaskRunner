@@ -14,6 +14,11 @@ export type GroupRole = 'solo' | 'group' | 'initiator' | 'participant'
 export interface ItemQty { code: string; quantity: number }
 export interface EquipPlan { slot: string; itemCode: string; source: string }
 export interface UtilityPlan { slot: string; itemCode: string; quantity: number; source: string }
+export interface CoopResult {
+  tank: string; baselineWinRate: number; winRate: number; avgWinTurns: number
+  winnable: boolean; plans: Record<string, MemberPlan>
+}
+
 export interface MemberPlan {
   equip?: EquipPlan[]; utilities?: UtilityPlan[]; reservePotions?: Record<string, number>
   foodCode?: string; foodQuantity?: number; transitionCosts?: Record<string, number>; spareKeys?: Record<string, number>

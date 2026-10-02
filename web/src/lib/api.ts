@@ -4,7 +4,7 @@
  */
 import type {
   Catalog, CharacterDto, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
-  StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable,
+  StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult,
 } from './types'
 
 export class ApiError extends Error {
@@ -68,5 +68,6 @@ export const api = {
   simLoadout: (character: string, monsterCode: string) =>
     request<{ baselineWinRate: number; winRate: number; equip: EquipPlan[]; utilities: UtilityPlan[] }>(
       'POST', '/sim/loadout', { character, monsterCode }),
-  simCoop: (members: string[], monsterCode: string) => request<Record<string, MemberPlan>>('POST', '/sim/coop', { members, monsterCode }),
+  simCoop: (members: string[], monsterCode: string, tankOverride?: string) =>
+    request<CoopResult>('POST', '/sim/coop', { members, monsterCode, tankOverride: tankOverride || undefined }),
 }

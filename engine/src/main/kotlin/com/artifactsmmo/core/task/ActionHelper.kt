@@ -111,46 +111,93 @@ class ActionHelper(
     private val Character.pos: TilePos get() = TilePos(x, y, layer)
 
     /**
-     * Whether [char] could pay a transition's conditions right now: achievements unlocked,
-     * keys/items held in inventory or bank. Gold is assumed obtainable (bank gold isn't
-     * cached) — [satisfyTransitionConditions] throws cleanly if it isn't.
+     * Whether [char] could pay a transition's conditions: achievements unlocked, gold within
+     * [goldAvailable], keys/items in inventory (plus bank when [itemsFromBank]).
+     *
+     * Bank trips use the strict form (`itemsFromBank = false`, inventory gold) so a route to
+     * the bank never relies on a gate whose payment is itself in the bank — that's what
+     * caused a gold-gate → bank → same gold gate recursion (and API rate limiting).
      */
-    fun gateSatisfiable(char: Character): (List<com.artifactsmmo.client.models.Condition>) -> Boolean = { conditions ->
+    fun gateSatisfiable(
+        char: Character,
+        goldAvailable: Int = char.gold,
+        itemsFromBank: Boolean = true,
+    ): (List<com.artifactsmmo.client.models.Condition>) -> Boolean = { conditions ->
+        fun have(code: String) = getItemQuantity(char, code) + if (itemsFromBank) bankState.getQuantity(code) else 0
         conditions.all { c ->
             when (c.operator) {
                 "achievement_unlocked" -> c.code in completedAchievements
-                "cost" -> c.code == "gold" || getItemQuantity(char, c.code) + bankState.getQuantity(c.code) >= c.value
-                "has_item" -> getItemQuantity(char, c.code) + bankState.getQuantity(c.code) >= c.value
+                "cost" -> if (c.code == "gold") c.value <= goldAvailable else have(c.code) >= c.value
+                "has_item" -> have(c.code) >= c.value
                 else -> false
             }
         }
     }
 
+    /** Gates payable from what the character carries right now (no bank needed). */
+    private fun carriedGates(char: Character) = gateSatisfiable(char, char.gold, itemsFromBank = false)
+
     /**
-     * Can [char] currently get to some tile of [contentType]/[contentCode]? Uses the keys
-     * and achievements it actually has (see [gateSatisfiable]). True when unknown (no graph),
-     * so callers never cancel work on missing data.
+     * Can [char] currently get to some tile of [contentType]/[contentCode]? Allows gold from
+     * the bank, owned keys and potions. True when unknown (no graph), so callers never cancel
+     * work on missing data.
      */
     fun canReach(char: Character, contentType: String, contentCode: String?): Boolean =
         !contentCache.hasRouteGraph ||
-            contentCache.routeToNearest(char.pos, contentType, contentCode, gateSatisfiable(char)) != null
+            contentCache.routeToNearest(char.pos, contentType, contentCode, gateSatisfiable(char, goldAvailable = Int.MAX_VALUE)) != null
+
+    /** Route to the nearest bank using only carried gates/potions — never needs the bank itself. */
+    private fun bankTripRoute(char: Character): Route? =
+        contentCache.planRouteToBank(char.pos, carriedGates(char), teleportAdvisor.potionOptions(char, completedAchievements))
 
     /**
-     * Navigate to a map tile, crossing any number of transitions.
-     *
-     * Plans the full route up front with the [RoutePlanner] (region graph + Dijkstra), so
-     * multi-hop paths work: e.g. overworld → gold gate → Sandwhisper Isle → Sandwhisper Mine,
-     * or overworld → interior → underground → key gate → deeper underground. Each step is
-     * executed in order (walk to the transition tile, pay its conditions, cross it); then
-     * the final walk uses [moveToWithTransitionFallback] as a safety net for 595/596.
-     *
-     * If a transition lands somewhere unexpected, the route is re-planned from the actual
-     * position (up to [MAX_REPLANS] times).
-     *
-     * Throws [TransitionConditionUnsatisfiableException] when no route exists (e.g. a
-     * required key isn't owned) or a condition can't be met.
+     * Plan the cheapest way to [target], considering:
+     *  1. gates payable from inventory/bank keys and carried gold, plus teleport potions
+     *     (held, or in the bank at the cost of a bank detour);
+     *  2. gold gates paid with bank gold (bank detour added to the cost).
+     * [bankTrip] = this navigation IS a bank trip: only carried gates and held potions.
      */
-    suspend fun navigateToTile(name: String, targetMap: MapInfo): Character {
+    private suspend fun planNavigation(char: Character, target: MapInfo, bankTrip: Boolean): Route? {
+        if (bankTrip) {
+            return contentCache.planRoute(char.pos, target, carriedGates(char),
+                teleportAdvisor.potionOptions(char, completedAchievements))
+        }
+        val detour = bankTripRoute(char)?.cost
+        val withPotions = contentCache.planRoute(char.pos, target, gateSatisfiable(char),
+            teleportAdvisor.potionOptions(char, completedAchievements, detour))
+        if (detour == null) return withPotions
+        // Would bank gold open a cheaper route? Only worth a bank lookup if gold gates exist on it.
+        val richGates = gateSatisfiable(char, goldAvailable = Int.MAX_VALUE)
+        val goldRoute = contentCache.planRoute(char.pos, target, richGates) ?: return withPotions
+        val goldNeeded = goldRoute.transitions.flatMap { it.conditions }
+            .filter { it.operator == "cost" && it.code == "gold" }.sumOf { it.value }
+        if (goldNeeded <= char.gold) return withPotions ?: goldRoute  // already covered by plan 1
+        val bankGold = runCatching { client.bank.getBankDetails().gold }.getOrDefault(0)
+        if (char.gold + bankGold < goldNeeded) return withPotions
+        val goldRouteCost = goldRoute.cost + detour
+        return if (withPotions != null && withPotions.cost <= goldRouteCost) withPotions else goldRoute
+    }
+
+    /**
+     * Navigate to a map tile, crossing any number of transitions and using teleport potions
+     * when they're cheaper (or the only way, e.g. no gold for a gate).
+     *
+     * Plans the full route up front with the [RoutePlanner] (region graph + Dijkstra), then
+     * executes it: potion steps (withdrawing the potion from the bank first if needed),
+     * transitions (walk, pay conditions — withdrawing gold/keys if needed — cross). The final
+     * walk uses [moveToWithTransitionFallback] as a safety net for 595/596. Re-plans after
+     * any teleport or unexpected landing (up to [MAX_REPLANS] times).
+     *
+     * Throws [TransitionConditionUnsatisfiableException] when no route exists or a condition
+     * can't be met.
+     */
+    suspend fun navigateToTile(name: String, targetMap: MapInfo): Character =
+        navigateToTile(name, targetMap, bankTrip = false, depth = 0)
+
+    private suspend fun navigateToTile(name: String, targetMap: MapInfo, bankTrip: Boolean, depth: Int): Character {
+        if (depth > MAX_NAV_DEPTH) {
+            throw TransitionConditionUnsatisfiableException("Navigation to ${targetMap.pos} nested too deeply (bank trips)")
+        }
         var char = refreshCharacter(name)
         var replans = 0
         while (!(isAt(char, targetMap.x, targetMap.y) && char.layer == targetMap.layer)) {
@@ -159,132 +206,102 @@ class ActionHelper(
                     "Navigation to ${targetMap.pos} gave up after $MAX_REPLANS re-plans (at ${char.pos})"
                 )
             }
-            val route = contentCache.planRoute(char.pos, targetMap, gateSatisfiable(char))
+            val route = planNavigation(char, targetMap, bankTrip)
                 ?: throw TransitionConditionUnsatisfiableException(
-                    "No route from ${char.pos} to ${targetMap.pos} (missing key/achievement for a required gate?)"
+                    "No route from ${char.pos} to ${targetMap.pos} (missing key/achievement/gold for a required gate?)"
                 )
             if (route.steps.isNotEmpty()) println("[$name] Route: $route")
 
-            var offRoute = false
+            var replan = false
             for (step in route.steps) {
-                if (step !is RouteStep.Transition) continue  // potions are only planned by navigateWithTeleport
-                char = crossTransition(name, char, step.source)
-                if (char.pos != step.destination) {
-                    println("[$name] Transition landed at ${char.pos}, expected ${step.destination} — re-planning")
-                    offRoute = true
-                    break
+                when (step) {
+                    is RouteStep.Potion -> {
+                        char = usePotion(name, char, step, depth)
+                        replan = true  // position changed (or potion failed): plan again from here
+                    }
+                    is RouteStep.Transition -> {
+                        char = crossTransition(name, char, step.source, depth)
+                        if (char.pos != step.destination) {
+                            println("[$name] Transition landed at ${char.pos}, expected ${step.destination} — re-planning")
+                            replan = true
+                        }
+                    }
                 }
+                if (replan) break
             }
-            if (offRoute) continue
+            if (replan) continue
 
             char = moveToWithTransitionFallback(name, char, targetMap.x, targetMap.y, targetMap.layer)
         }
         return char
     }
 
+    /** Withdraw (if needed) and drink a teleport potion. Returns the refreshed character. */
+    private suspend fun usePotion(name: String, current: Character, step: RouteStep.Potion, depth: Int): Character {
+        var char = current
+        if (getItemQuantity(char, step.code) <= 0) {
+            val bank = bankTripRoute(char)?.target
+                ?: throw TransitionConditionUnsatisfiableException("Need ${step.code} from the bank, but no bank is reachable")
+            char = navigateToTile(name, bank, bankTrip = true, depth = depth + 1)
+            val result = client.bank.withdrawItems(name, listOf(SimpleItem(step.code, 1)))
+            waitForCooldown(result.cooldown.expiration)
+            char = result.character
+        }
+        println("[$name] Teleporting with ${step.code} to ${step.landing}")
+        useItem(name, step.code, 1)
+        return refreshCharacter(name)
+    }
+
     /** Walk onto [source] (same region), pay its conditions, and use its transition. */
-    private suspend fun crossTransition(name: String, current: Character, source: MapInfo): Character {
+    private suspend fun crossTransition(name: String, current: Character, source: MapInfo, depth: Int = 0): Character {
         var char = current
         if (!isAt(char, source.x, source.y) || char.layer != source.layer) char = moveTo(name, source.x, source.y)
         val conditions = source.interactions.transition?.conditions ?: emptyList()
         if (conditions.isNotEmpty()) {
-            char = satisfyTransitionConditions(name, char, conditions)
+            char = satisfyTransitionConditions(name, char, conditions, depth)
             // A bank trip may have taken us elsewhere (even another region): route back.
-            if (!isAt(char, source.x, source.y) || char.layer != source.layer) char = navigateToTile(name, source)
+            if (!isAt(char, source.x, source.y) || char.layer != source.layer) {
+                char = navigateToTile(name, source, bankTrip = false, depth = depth + 1)
+            }
         }
         return useTransition(name)
     }
 
     /**
-     * Navigate to [targetMap], using teleport potions when the route planner finds they
-     * beat walking.
-     *
-     *  - Outbound: owned potions (inventory, or bank at the cost of a bank detour) are
-     *    offered to the planner as virtual first steps; it picks walk vs. gates vs. teleport.
-     *  - Return: if a return potion ([TeleportAdvisor.RETURN_POTION_PREFERENCE]) would shorten
-     *    the eventual trip from [targetMap] back to a bank, it's pre-loaded into inventory so
-     *    [navigateToBank] can use it later.
-     *
-     * Withdrawals for both legs happen in a single bank visit.
+     * Navigate to [targetMap] (teleport potions are considered by [navigateToTile]) and, if a
+     * return potion ([TeleportAdvisor.RETURN_POTION_PREFERENCE]) would shorten the eventual
+     * trip back to a bank, pre-load one so [navigateToBank] can use it later.
      */
     suspend fun navigateWithTeleport(name: String, char: Character, targetMap: MapInfo): Character {
-        var c = char
-        val gate = gateSatisfiable(c)
-        val bankDetour = contentCache.planRouteToBank(c.pos, gate)?.cost
-        val outbound = contentCache.planRoute(
-            c.pos, targetMap, gate, teleportAdvisor.potionOptions(c, completedAchievements, bankDetour)
-        )
-        val returnPotion = teleportAdvisor.bestReturnPotion(c, targetMap, completedAchievements)
-
-        val toWithdraw = buildList {
-            (outbound?.steps?.firstOrNull() as? RouteStep.Potion)?.takeIf { it.fromBank }?.let { add(it.code) }
-            if (returnPotion != null && getItemQuantity(c, returnPotion.code) <= 0) add(returnPotion.code)
-        }.distinct()
-
-        if (toWithdraw.isNotEmpty()) {
-            val bank = contentCache.planRouteToBank(c.pos, gate)?.target
+        val returnPotion = teleportAdvisor.bestReturnPotion(char, targetMap, completedAchievements)
+        if (returnPotion != null && getItemQuantity(char, returnPotion.code) <= 0) {
+            val bank = bankTripRoute(char)?.target
             if (bank != null) {
                 try {
-                    c = navigateToTile(name, bank)
-                    val result = client.bank.withdrawItems(name, toWithdraw.map { SimpleItem(it, 1) })
+                    navigateToTile(name, bank, bankTrip = true, depth = 1)
+                    val result = client.bank.withdrawItems(name, listOf(SimpleItem(returnPotion.code, 1)))
                     waitForCooldown(result.cooldown.expiration)
-                    c = result.character
                 } catch (e: TransitionConditionUnsatisfiableException) {
                     throw e
                 } catch (e: Exception) {
-                    println("[$name] navigateWithTeleport: potion withdrawal failed: ${e.message} — proceeding without")
-                    c = refreshCharacter(name)
+                    println("[$name] navigateWithTeleport: return potion withdrawal failed: ${e.message} — proceeding without")
                 }
             }
         }
-
-        // Re-plan from where we are now with the potions actually in inventory.
-        val route = contentCache.planRoute(
-            c.pos, targetMap, gateSatisfiable(c), teleportAdvisor.potionOptions(c, completedAchievements)
-        )
-        val potionStep = route?.steps?.firstOrNull() as? RouteStep.Potion
-        if (potionStep != null && getItemQuantity(c, potionStep.code) > 0) {
-            try {
-                println("[$name] Teleporting with ${potionStep.code} toward ${targetMap.pos}")
-                useItem(name, potionStep.code, 1)
-                c = refreshCharacter(name)
-            } catch (e: Exception) {
-                println("[$name] navigateWithTeleport: potion use failed: ${e.message} — walking instead")
-            }
-        }
-
         return navigateToTile(name, targetMap)
     }
 
     /**
-     * Navigate to the cheapest-to-reach bank, using a return potion already in inventory
-     * if the planner finds it beats walking. Never withdraws a potion to reach the bank.
+     * Navigate to the cheapest-to-reach bank using only what the character carries (gold,
+     * keys, potions in inventory). Never needs the bank to reach the bank.
      */
     suspend fun navigateToBank(name: String, char: Character): Character {
-        val options = teleportAdvisor.potionOptions(
-            char, completedAchievements, onlyCodes = TeleportAdvisor.RETURN_POTION_PREFERENCE
-        )
-        val route = contentCache.planRouteToBank(char.pos, gateSatisfiable(char), options)
-            ?: throw IllegalStateException("No reachable bank from ${char.pos}")
-
-        val potionStep = route.steps.firstOrNull() as? RouteStep.Potion
-        if (potionStep != null) {
-            try {
-                useItem(name, potionStep.code, 1)
-                val c = refreshCharacter(name)
-                val bank = contentCache.planRouteToBank(c.pos, gateSatisfiable(c))?.target ?: route.target
-                return navigateToTile(name, bank)
-            } catch (e: TransitionConditionUnsatisfiableException) {
-                throw e
-            } catch (e: Exception) {
-                println("[$name] navigateToBank: return potion use failed: ${e.message} — walking instead")
-                val c = refreshCharacter(name)
-                val bank = contentCache.planRouteToBank(c.pos, gateSatisfiable(c))?.target ?: route.target
-                return navigateToTile(name, bank)
-            }
-        }
-        return navigateToTile(name, route.target)
+        val route = bankTripRoute(char) ?: throw IllegalStateException("No reachable bank from ${char.pos}")
+        return navigateToTile(name, route.target, bankTrip = true, depth = 0)
     }
+
+    /** Max nesting of bank trips inside navigation (withdraw gold/key/potion → go on). */
+    private val MAX_NAV_DEPTH = 2
 
     /** Safety cap on re-plans in a single [navigateToTile] call. */
     private val MAX_REPLANS = 4
@@ -312,7 +329,7 @@ class ActionHelper(
                 ) ?: throw TransitionConditionUnsatisfiableException(
                     "No path to ($toX,$toY,$toLayer) and no same-layer transition found [${e.errorCode}]"
                 )
-                val c = crossTransition(name, freshChar, transitionTile)
+                val c = crossTransition(name, freshChar, transitionTile, depth = MAX_NAV_DEPTH)
                 if (!isAt(c, toX, toY)) moveTo(name, toX, toY) else c
             } else throw e
         }
@@ -340,7 +357,8 @@ class ActionHelper(
     private suspend fun satisfyTransitionConditions(
         characterName: String,
         charAtTile: Character,
-        conditions: List<com.artifactsmmo.client.models.Condition>
+        conditions: List<com.artifactsmmo.client.models.Condition>,
+        depth: Int = 0,
     ): Character {
         var char = charAtTile
         val itemsToWithdraw = mutableListOf<SimpleItem>()
@@ -399,11 +417,12 @@ class ActionHelper(
         }
 
         if (itemsToWithdraw.isNotEmpty() || goldToWithdraw > 0) {
-            val bank = contentCache.findNearest(char, "bank", null, layer = "overworld")
+            // Only banks reachable WITHOUT this (unpaid) gate — otherwise we'd loop.
+            val bank = bankTripRoute(char)?.target
                 ?: throw TransitionConditionUnsatisfiableException(
-                    "Need bank to satisfy transition, but no bank found"
+                    "Need bank to satisfy transition, but no bank is reachable without paying it"
                 )
-            char = navigateToTile(characterName, bank)
+            char = navigateToTile(characterName, bank, bankTrip = true, depth = depth + 1)
 
             if (goldToWithdraw > 0) {
                 val goldResult = client.bank.withdrawGold(characterName, goldToWithdraw)
@@ -956,6 +975,12 @@ class ActionHelper(
     }
 
     /**
+     * Food items never auto-selected as combat healing, even if no other food is available
+     * (e.g. `coconut`: kept for alchemy/potion crafting, not eaten in fights).
+     */
+    private val FOOD_EXCLUDED_FROM_COMBAT = setOf("coconut")
+
+    /**
      * Find the best food item in the character's inventory (highest heal amount)
      * that the character meets the level requirement for.
      * Returns (itemCode, healAmount, quantity) or null if no usable food found.
@@ -965,6 +990,7 @@ class ActionHelper(
 
         for (slot in char.inventory) {
             if (slot.quantity <= 0) continue
+            if (slot.code in FOOD_EXCLUDED_FROM_COMBAT) continue
             val item = try {
                 contentCache.getItem(slot.code)
             } catch (_: Exception) {
@@ -992,6 +1018,7 @@ class ActionHelper(
         val bankItems = bankState.snapshot.value
         for ((code, quantity) in bankItems) {
             if (quantity <= 0) continue
+            if (code in FOOD_EXCLUDED_FROM_COMBAT) continue
             val item = try {
                 contentCache.getItem(code)
             } catch (_: Exception) {
@@ -1181,8 +1208,10 @@ class ActionHelper(
      *  - 485 (already equipped) → skipped;
      *  - 491 (slot not empty — e.g. a utility slot holding a different potion) →
      *    unequip that slot, then equip;
-     *  - anything else (483 HP too high to remove the old item, missing item, …) →
-     *    logged and skipped; the old item stays equipped.
+     *  - 483 (not enough HP to remove the item currently in that slot, because it has an HP
+     *    bonus and current HP exceeds max HP without it) → rest (free, just costs time) to
+     *    lower current HP below the new max, then retry once;
+     *  - anything else (missing item, …) → logged and skipped; the old item stays equipped.
      */
     suspend fun equipMany(name: String, requests: List<EquipmentRequest>, context: String = "equip"): Character {
         if (requests.isEmpty()) return refreshCharacter(name)
@@ -1191,7 +1220,7 @@ class ActionHelper(
             waitForCooldown(result.cooldown.expiration)
             return result.character
         } catch (e: ArtifactsApiException) {
-            if (requests.size == 1 && e.errorCode != 491) throw e
+            if (requests.size == 1 && e.errorCode != 491 && e.errorCode != 483) throw e
             println("[$name] $context: batched equip of ${requests.size} item(s) failed [${e.errorCode}] ${e.message} — retrying one at a time")
         }
         var char = refreshCharacter(name)
@@ -1207,6 +1236,13 @@ class ActionHelper(
                     } catch (e2: Exception) {
                         println("[$name] $context: could not swap ${r.slot} to ${r.code}: ${e2.message}")
                     }
+                    483 -> try {
+                        println("[$name] $context: ${r.code} in ${r.slot} — not enough HP to remove the current item, resting then retrying")
+                        rest(name)
+                        char = equipOne(name, r)
+                    } catch (e2: Exception) {
+                        println("[$name] $context: could not equip ${r.code} in ${r.slot} after resting: ${e2.message}")
+                    }
                     else -> println("[$name] $context: skipping ${r.code} in ${r.slot} [${e.errorCode}] ${e.message}")
                 }
             }
@@ -1220,17 +1256,40 @@ class ActionHelper(
         return result.character
     }
 
+    /**
+     * Unequip a single slot. On 483 (current HP exceeds the max HP the character would have
+     * without this item's HP bonus) rests — free, just costs time — to bring HP down, then
+     * retries once. Every caller (including [equipMany]'s 491 fallback) gets this for free.
+     */
     suspend fun unequip(name: String, slot: String): Character {
-        val result = client.actions.unequip(name, slot)
-        waitForCooldown(result.cooldown.expiration)
-        return result.character
+        return try {
+            val result = client.actions.unequip(name, slot)
+            waitForCooldown(result.cooldown.expiration)
+            result.character
+        } catch (e: ArtifactsApiException) {
+            if (e.errorCode != 483) throw e
+            println("[$name] unequip($slot): not enough HP to remove the item — resting then retrying")
+            rest(name)
+            val result = client.actions.unequip(name, slot)
+            waitForCooldown(result.cooldown.expiration)
+            result.character
+        }
     }
 
-    /** Unequip with a quantity — used for utility potion stacks. */
+    /** Unequip with a quantity — used for utility potion stacks. Same 483 handling as above. */
     suspend fun unequip(name: String, slot: String, quantity: Int): Character {
-        val result = client.actions.unequip(name, slot, quantity)
-        waitForCooldown(result.cooldown.expiration)
-        return result.character
+        return try {
+            val result = client.actions.unequip(name, slot, quantity)
+            waitForCooldown(result.cooldown.expiration)
+            result.character
+        } catch (e: ArtifactsApiException) {
+            if (e.errorCode != 483) throw e
+            println("[$name] unequip($slot x$quantity): not enough HP to remove the item — resting then retrying")
+            rest(name)
+            val result = client.actions.unequip(name, slot, quantity)
+            waitForCooldown(result.cooldown.expiration)
+            result.character
+        }
     }
 
     // ── Tool management ──
@@ -2245,9 +2304,16 @@ class ActionHelper(
      * boss fight loop sustainability. These stacks are carried in inventory and re-equipped
      * mid-loop when a utility slot drops to [CoopOptimizer.UTILITY_REEQUIP_THRESHOLD].
      *
-     * Only withdraws what is needed — if the character already has some of a given potion
-     * in inventory, the deficit is calculated and only the missing quantity is withdrawn.
-     * Skips silently if the bank has none of a requested potion.
+     * [reservePotions] quantities are a CEILING, not a guarantee: this sizes the actual
+     * withdrawal to what currently fits, so it never fails the way an all-or-nothing
+     * withdrawal for the full planned amount could once gear/utilities/food/keys have
+     * already claimed part of the inventory. Free space is split evenly across the
+     * requested potion codes, minus a loot buffer ([CoopOptimizer.LOOT_RESERVE_FRACTION])
+     * so the fight loop still has room to bring back boss drops.
+     *
+     * Call this LAST in provisioning (after gear, utilities, food, and transition keys are
+     * already withdrawn) so reserves fill whatever room is actually left, not room that's
+     * about to be claimed by something else.
      */
     suspend fun withdrawReservePotions(
         characterName: String,
@@ -2256,11 +2322,18 @@ class ActionHelper(
         if (reservePotions.isEmpty()) return refreshCharacter(characterName)
 
         var char = refreshCharacter(characterName)
+        val used = char.inventory.sumOf { it.quantity }
+        val lootReserve = kotlin.math.ceil(char.inventoryMaxItems * CoopOptimizer.LOOT_RESERVE_FRACTION).toInt()
+        val freeForReserves = (char.inventoryMaxItems - used - lootReserve).coerceAtLeast(0)
+
+        val needingTopUp = reservePotions.filter { (code, desired) -> getItemQuantity(char, code) < desired }
+        if (needingTopUp.isEmpty()) return char
+        val perCode = if (needingTopUp.isNotEmpty()) freeForReserves / needingTopUp.size else 0
 
         val toWithdraw = mutableListOf<SimpleItem>()
-        for ((code, desiredQty) in reservePotions) {
+        for ((code, desiredQty) in needingTopUp) {
             val inInv = getItemQuantity(char, code)
-            val deficit = desiredQty - inInv
+            val deficit = (desiredQty - inInv).coerceAtMost(perCode)
             if (deficit <= 0) continue
             val bankQty = bankState.getQuantity(code)
             val qty = deficit.coerceAtMost(bankQty)
@@ -2278,10 +2351,25 @@ class ActionHelper(
         return try {
             val result = client.bank.withdrawItems(characterName, toWithdraw)
             waitForCooldown(result.cooldown.expiration)
+            println("[$characterName] withdrawReservePotions: withdrew ${toWithdraw.joinToString { "${it.quantity}x ${it.code}" }} (fits current inventory)")
             result.character
         } catch (e: Exception) {
-            println("[$characterName] withdrawReservePotions: withdraw failed: ${e.message}")
-            char
+            // Still didn't fit (e.g. another character's action landed in between) — try each
+            // item at half the sized quantity once, rather than getting nothing at all.
+            println("[$characterName] withdrawReservePotions: withdraw of ${toWithdraw.sumOf { it.quantity }} failed (${e.message}) — retrying at half quantity")
+            var c = refreshCharacter(characterName)
+            for (item in toWithdraw) {
+                val halved = item.quantity / 2
+                if (halved <= 0) continue
+                try {
+                    val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(item.code, halved)))
+                    waitForCooldown(result.cooldown.expiration)
+                    c = result.character
+                } catch (e2: Exception) {
+                    println("[$characterName] withdrawReservePotions: skipping ${item.code}: ${e2.message}")
+                }
+            }
+            c
         }
     }
 

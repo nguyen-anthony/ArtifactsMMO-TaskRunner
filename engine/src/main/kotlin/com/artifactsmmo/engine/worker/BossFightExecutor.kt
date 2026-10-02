@@ -77,6 +77,19 @@ interface BossOps {
 /** [BossOps] backed by the existing, tuned FightingExecutor/ActionHelper logic. */
 class LegacyBossOps(private val helper: ActionHelper, private val fighting: FightingExecutor) : BossOps {
     override suspend fun provision(character: String, plan: MemberPlan, status: (String) -> Unit) {
+        // Clear the inventory of whatever the character was carrying before this fight (e.g.
+        // gathering leftovers) down to just what THIS plan needs, so gear/utility/food/key
+        // withdrawals below — and, crucially, the reserve-potion withdrawal at the end — have
+        // real free space to work with instead of competing with unrelated stray items.
+        val keep = plan.equip.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
+            plan.utilities.map { it.itemCode } +
+            plan.reservePotions.keys +
+            setOfNotNull(plan.foodCode) +
+            plan.transitionCosts.keys +
+            plan.spareKeys.keys
+        runCatching { helper.depositInventoryExcept(character, keep) }
+            .onFailure { rethrowCancellation(it); status("Pre-fight deposit error: ${it.message}") }
+
         if (plan.equip.isNotEmpty()) {
             status("Equipping boss gear...")
             helper.retrieveAndEquipItems(character, plan.equip.map { ActionHelper.EquipAction(it.slot, it.itemCode, it.source) })
@@ -87,7 +100,6 @@ class LegacyBossOps(private val helper: ActionHelper, private val fighting: Figh
                 com.artifactsmmo.core.task.GearOptimizer.UtilityEquipAction(it.slot, it.itemCode, it.quantity, it.source)
             })
         }
-        if (plan.reservePotions.isNotEmpty()) helper.withdrawReservePotions(character, plan.reservePotions)
         val food = plan.foodCode
         if (food != null && plan.foodQuantity > 0) {
             helper.bankWithdrawItems(character, listOf(SimpleItem(food, plan.foodQuantity)))
@@ -98,6 +110,9 @@ class LegacyBossOps(private val helper: ActionHelper, private val fighting: Figh
             .groupBy({ it.key }, { it.value })
             .mapValues { it.value.sum() }
         if (keys.isNotEmpty()) helper.bankWithdrawItems(character, keys.map { SimpleItem(it.key, it.value) })
+        // Reserves LAST: they fill whatever inventory room is left after everything else
+        // above has claimed its share (see ActionHelper.withdrawReservePotions).
+        if (plan.reservePotions.isNotEmpty()) helper.withdrawReservePotions(character, plan.reservePotions)
     }
 
     override suspend fun step(character: String, task: TaskType.BossFight, encounters: BossEncounterCoordinator,

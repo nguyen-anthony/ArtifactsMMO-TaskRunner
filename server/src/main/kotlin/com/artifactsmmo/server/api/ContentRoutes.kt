@@ -4,7 +4,6 @@ import com.artifactsmmo.client.models.DataPage
 import com.artifactsmmo.domain.task.EquipPlan
 import com.artifactsmmo.domain.task.MemberPlan
 import com.artifactsmmo.domain.task.UtilityPlan
-import com.artifactsmmo.engine.realtime.LegacyRaidPlanner
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -30,6 +29,16 @@ data class LoadoutResponse(
 )
 
 @Serializable data class CoopRequest(val members: List<String>, val monsterCode: String, val tankOverride: String? = null)
+@Serializable
+data class CoopResponse(
+    val tank: String,
+    val baselineWinRate: Double,
+    val winRate: Double,
+    val avgWinTurns: Double,
+    /** False = not beatable with what the team currently owns (gear, inventory, bank, potions). */
+    val winnable: Boolean,
+    val plans: Map<String, MemberPlan>,
+)
 
 /**
  * Game content changes rarely, so the whole catalog is fetched once (a few dozen GETs from
@@ -93,7 +102,21 @@ fun Route.contentAndSimRoutes(b: ApiBackend) {
     post("/sim/coop") {
         val e = b.engine ?: return@post call.respond(HttpStatusCode.ServiceUnavailable, ApiError("engine not running"))
         val req = call.receive<CoopRequest>()
-        val plans: Map<String, MemberPlan> = LegacyRaidPlanner(e.coop).plan(req.members, req.monsterCode, req.tankOverride)
-        call.respond(plans)
+        val result = e.coop.optimizeForBossFight(req.members, req.monsterCode, req.tankOverride)
+        call.respond(CoopResponse(
+            tank = result.tankName,
+            baselineWinRate = result.baselineWinRate,
+            winRate = result.optimizedWinRate,
+            avgWinTurns = result.avgWinTurns,
+            winnable = result.winnable,
+            plans = result.participants.associate { p ->
+                p.characterName to MemberPlan(
+                    equip = p.equipActions.map { EquipPlan(it.slot, it.itemCode, it.source) },
+                    utilities = p.utilityActions.map { UtilityPlan(it.slot, it.itemCode, it.quantity, it.source) },
+                    reservePotions = p.reservePotions, foodCode = p.foodCode, foodQuantity = p.foodQuantity,
+                    transitionCosts = p.transitionCosts, spareKeys = p.spareKeys,
+                )
+            },
+        ))
     }
 }

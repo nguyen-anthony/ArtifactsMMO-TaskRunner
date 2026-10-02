@@ -34,10 +34,14 @@ internal object TeamLoadoutAllocator {
             if (index == participantOrder.size) {
                 val tankThreat = selected[tankName]?.threat ?: Int.MIN_VALUE
                 val highestSupport = selected.filterKeys { it != tankName }.values.maxOfOrNull { it.threat }
+                // Only a support with STRICTLY MORE threat than the tank breaks the fight's
+                // targeting assumption — equal threat is fine (ties favor whichever the game
+                // considers the tank; lowest-HP tiebreak still applies, which the tank's higher
+                // HP pool should usually win anyway).
                 val violation = if (highestSupport == null) {
                     0
                 } else {
-                    (highestSupport.toLong() - tankThreat.toLong() + 1L)
+                    (highestSupport.toLong() - tankThreat.toLong())
                         .coerceAtLeast(0L)
                         .coerceAtMost(Int.MAX_VALUE.toLong())
                         .toInt()

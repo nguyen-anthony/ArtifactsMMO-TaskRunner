@@ -7,6 +7,7 @@ import com.artifactsmmo.core.task.DropStrategy
 import com.artifactsmmo.core.task.EventExecutor
 import com.artifactsmmo.core.task.FightingExecutor
 import com.artifactsmmo.core.task.GatheringExecutor
+import com.artifactsmmo.core.task.StatGearOptimizer
 import com.artifactsmmo.core.task.StepResult
 import com.artifactsmmo.core.task.TaskMasterExecutor
 import com.artifactsmmo.core.task.TaskType
@@ -46,6 +47,7 @@ class LegacyExecutors(
             // Runs on every claim, including resumes after preemption.
             depositForTaskStart(ctx)
             ensureGatheringTool(ctx)
+            ensureStatGear(ctx)
             if (ctx.state.prepared) return
             when (val task = legacy(ctx)) {
                 is TaskType.Fight -> {
@@ -98,6 +100,32 @@ class LegacyExecutors(
             }
             runCatching { gathering.ensureBestTool(ctx.character, skill, ctx.status) }
                 .onFailure { rethrowCancellation(it); ctx.status("Tool check error: ${it.message}") }
+        }
+
+        /**
+         * Non-combat stat gear (prospecting for gathering, wisdom for crafting) — see
+         * [StatGearOptimizer]. Best-effort, and cheap when nothing needs to change: it only
+         * costs a bank trip when a better item is actually found.
+         */
+        private suspend fun ensureStatGear(ctx: ExecContext) {
+            val priority = when (legacy(ctx)) {
+                is TaskType.Gather, is TaskType.EventGather -> StatGearOptimizer.Priority.GATHERING
+                is TaskType.Craft -> StatGearOptimizer.Priority.CRAFTING
+                else -> return
+            }
+            runCatching {
+                val char = helper.refreshCharacter(ctx.character)
+                val actions = StatGearOptimizer.planFor(char, helper, helper.completedAchievements, priority)
+                if (actions.isEmpty()) return@runCatching
+                ctx.status("Optimizing gear for ${priority.name.lowercase()}...")
+                var updated = helper.retrieveAndEquipItems(ctx.character, actions)
+                // A competing character may have taken an item first (FCFS); re-plan once
+                // against the refreshed bank rather than settling for a half-applied swap.
+                if (actions.any { helper.getEquippedInSlot(updated, it.slot) != it.itemCode }) {
+                    val retry = StatGearOptimizer.planFor(updated, helper, helper.completedAchievements, priority)
+                    if (retry.isNotEmpty()) updated = helper.retrieveAndEquipItems(ctx.character, retry)
+                }
+            }.onFailure { rethrowCancellation(it); ctx.status("Stat gear error: ${it.message}") }
         }
 
         private suspend fun useFoodCodes(task: TaskType): Set<String> {

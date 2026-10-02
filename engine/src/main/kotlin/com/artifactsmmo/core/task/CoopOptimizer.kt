@@ -101,7 +101,10 @@ class CoopOptimizer(
         val baselineWinRate: Double,
         val optimizedWinRate: Double,
         val avgWinTurns: Double
-    )
+    ) {
+        /** False = not beatable with what the team currently owns (gear + potions). */
+        val winnable: Boolean get() = optimizedWinRate > 0.0
+    }
 
     companion object {
         const val COOP_SIM_ITERATIONS = 100
@@ -113,6 +116,13 @@ class CoopOptimizer(
          * instead to guarantee potions are always equipped for loop sustainability.
          */
         const val HIGH_WIN_RATE_THRESHOLD = 0.95
+        /**
+         * Win rate below this triggers the same priority-first utility assignment as
+         * [HIGH_WIN_RATE_THRESHOLD] — every candidate still loses, so the sim can't compare
+         * them either. Potions can still swing an otherwise-unwinnable fight into winnable,
+         * which is why utilities are assigned by role priority here instead of skipped.
+         */
+        const val LOW_WIN_RATE_THRESHOLD = 0.05
         /**
          * When a utility slot's remaining quantity drops to or below this value mid-loop,
          * the runner re-equips from inventory reserves before the next fight.
@@ -178,14 +188,10 @@ class CoopOptimizer(
                           return emptyResult(monsterCode, participantNames, chars)
                       }
 
-        // 3. Auto-detect tank BEFORE gear optimization using CURRENT threat stat.
-        //    (Post-gear threat would be more accurate, but heuristic scoring runs downstream —
-        //    we use current threat as a hint. User override always wins.)
-        val tankName = tankOverride?.takeIf { it in participantNames }
-            ?: chars.entries
-                .sortedWith(compareByDescending<Map.Entry<String, Character>> { it.value.threat }.thenBy { it.value.maxHp })
-                .first().key
-        println("CoopOptimizer: tank = $tankName")
+        // 3. Tank = explicit override, else the initiator (first entry of the ORIGINAL,
+        //    caller-supplied order — group creation always puts the initiator first).
+        val tankName = tankOverride?.takeIf { it in participantNames } ?: participantNames.first()
+        println("CoopOptimizer: tank = $tankName" + (if (tankOverride == null) " (initiator, default)" else " (override)"))
 
         // 4. Generate bounded role-aware candidates per character, then allocate one candidate
         // per participant under a frozen shared-bank quantity snapshot. This replaces implicit
@@ -207,17 +213,46 @@ class CoopOptimizer(
             }
         }
 
+        for ((name, list) in candidateSets) {
+            println("CoopOptimizer: $name — ${list.size} gear candidate(s), heuristic ${list.minOfOrNull { it.heuristicScore }?.let { "%.1f".format(it) }}..${list.maxOfOrNull { it.heuristicScore }?.let { "%.1f".format(it) }}")
+        }
+
         val participantOrder = listOf(tankName) + stableParticipantNames.filter { it != tankName }
-        val teamCandidates = TeamLoadoutAllocator.enumerate(
+
+        // Per-character candidates above are generated independently, each picking its own
+        // best gear with no awareness of what the others also want — so their "best" lists
+        // can all lean on the same scarce bank items, leaving no combination that fits the
+        // shared bank at once (enumeration then returns empty and everyone got stuck with
+        // current gear, however unsuitable it is for a fight — see incident: 3 characters all
+        // wanting the same trophy left NO fitting team, when each could have gotten SOME
+        // upgrade). A shared-claim greedy pass fixes that: it builds ONE team, tank first,
+        // where each character's pick is filtered against what predecessors already claimed
+        // (via pickBestGearHeuristic's existing claimedGear plumbing) — so it always fits by
+        // construction, even if a scarce item goes to whoever needed it most (the tank).
+        val greedyTeam = sharedClaimGreedyTeam(tankName, participantOrder, chars, monster)
+        val enumerated = TeamLoadoutAllocator.enumerate(
             participantOrder = participantOrder,
             candidates = candidateSets,
             bankQuantities = bankSnapshot,
             tankName = tankName
         )
+        if (enumerated.isEmpty()) {
+            val demandTotals = mutableMapOf<String, Int>()
+            for (list in candidateSets.values) {
+                list.maxByOrNull { it.heuristicScore }?.bankDemand?.forEach { (code, qty) -> demandTotals[code] = (demandTotals[code] ?: 0) + qty }
+            }
+            val contested = demandTotals.filter { (code, qty) -> qty > bankSnapshot.getOrDefault(code, 0) }
+            println("CoopOptimizer: independently-best gear doesn't fit the shared bank" +
+                (if (contested.isNotEmpty()) " (contested: ${contested.entries.joinToString { "${it.value}x ${it.key} needed, ${bankSnapshot.getOrDefault(it.key, 0)} in stock" }})" else "") +
+                " — using the shared-claim greedy team instead")
+        }
+        // Greedy first: it's guaranteed feasible and prioritizes the tank, so it anchors the
+        // finalist simulation even when enumeration found nothing (or something worse).
+        val teamCandidates = (listOf(greedyTeam) + enumerated).distinctBy { it.stableKey }
         var selectedTeam = teamCandidates.firstOrNull()
         var baselineSim: CombatSimulationData? = null
         var bestScore: CoopScore? = null
-        for (team in teamCandidates.take(TEAM_GEAR_API_FINALISTS)) {
+        for ((rank, team) in teamCandidates.take(TEAM_GEAR_API_FINALISTS).withIndex()) {
             val loadouts = stableParticipantNames.map { name ->
                 ActionHelper.CoopParticipantLoadout(
                     char = chars.getValue(name),
@@ -227,10 +262,13 @@ class CoopOptimizer(
             val sim = try {
                 helper.simulateCoopFight(monsterCode, loadouts, COOP_SIM_ITERATIONS)
             } catch (e: Exception) {
-                println("CoopOptimizer: team gear finalist simulation failed: ${e.message}")
+                println("CoopOptimizer: team gear finalist #$rank simulation failed: ${e.message}")
                 continue
             }
             val score = simToCoopScore(loadouts, monsterCode, precomputed = sim)
+            println("CoopOptimizer: gear finalist #$rank — threatViolation=${team.threatViolation} " +
+                "heuristic=${"%.1f".format(team.heuristicScore)} winRate=${(sim.winrate * 100).toInt()}%" +
+                (if (bestScore == null || score > bestScore!!) " <- selected" else ""))
             if (bestScore == null || score > bestScore!!) {
                 selectedTeam = team
                 baselineSim = sim
@@ -280,7 +318,10 @@ class CoopOptimizer(
         // and equipped stacks remain available only to their owning character.
         val committedBankUtilities = mutableMapOf<String, Int>()
 
-        val highWinRate = baselineWinRate >= HIGH_WIN_RATE_THRESHOLD
+        // Below LOW_WIN_RATE_THRESHOLD the sim has no signal either (every option still loses),
+        // same as at/above HIGH_WIN_RATE_THRESHOLD — assign by role priority instead of
+        // sim-guided search in both cases (see [orderedCandidatesByRole]).
+        val priorityFirst = baselineWinRate >= HIGH_WIN_RATE_THRESHOLD || baselineWinRate < LOW_WIN_RATE_THRESHOLD
 
         val orderedNames = listOf(tankName) + stableParticipantNames.filter { it != tankName }
         for (name in orderedNames) {
@@ -299,7 +340,7 @@ class CoopOptimizer(
                     continue
                 }
 
-                if (highWinRate) {
+                if (priorityFirst) {
                     // ── Priority-first path (team already winning) ──────────────────
                     // Assign the top-priority potion we actually have available stock for.
                     var picked: Pair<Item, Int>? = null
@@ -315,7 +356,7 @@ class CoopOptimizer(
                         val (item, qty) = picked
                         committedUtilities[name]!![utilitySlot] = item.code to qty
                         reserveBankUtilityQuantity(char, item.code, qty, committedBankUtilities)
-                        println("[$name] CoopOptimizer: $utilitySlot -> ${item.code} x$qty (role=$role, priority-first, high win rate ${(baselineWinRate * 100).toInt()}%)")
+                        println("[$name] CoopOptimizer: $utilitySlot -> ${item.code} x$qty (role=$role, priority-first, win rate ${(baselineWinRate * 100).toInt()}%)")
                     } else {
                         println("[$name] CoopOptimizer: $utilitySlot -> no available candidates (high win rate path)")
                     }
@@ -499,6 +540,52 @@ class CoopOptimizer(
         val targetLoadout: Map<String, String>
     )
 
+    /**
+     * Build one gear pick per team member, tank first, where each pick is filtered against
+     * what earlier picks already claimed from the bank ([pickBestGearHeuristic]'s
+     * `claimedGear` parameter) — so the resulting team ALWAYS fits the shared bank, unlike
+     * [generateCoopGearCandidates] + [TeamLoadoutAllocator], which independently rank each
+     * character's own best options and can end up with no combination that fits together.
+     * Worst case (everything scarce/contested) each character still gets their current gear,
+     * since [pickBestGearHeuristic] always offers "keep current" as a fallback option.
+     */
+    private suspend fun sharedClaimGreedyTeam(
+        tankName: String,
+        order: List<String>,
+        chars: Map<String, Character>,
+        monster: Monster,
+    ): TeamLoadoutSelection<GearPickResult> {
+        val claimedGear = mutableMapOf<String, Int>()
+        val byCharacter = linkedMapOf<String, TeamLoadoutCandidate<GearPickResult>>()
+        for (name in order) {
+            val role = if (name == tankName) Role.TANK else Role.SUPPORT
+            val char = chars.getValue(name)
+            val pick = pickBestGearHeuristic(
+                char, monster, role, claimedGear = claimedGear,
+                avoidThreat = role == Role.SUPPORT, seekThreat = role == Role.TANK
+            )
+            val candidate = toCoopGearCandidate(char, monster, role, pick)
+            byCharacter[name] = TeamLoadoutCandidate(
+                characterName = name, value = candidate.pick, bankDemand = candidate.bankDemand,
+                heuristicScore = candidate.heuristicScore, threat = candidate.projectedThreat,
+                stableKey = candidate.stableKey
+            )
+        }
+        val tankThreat = byCharacter[tankName]?.threat ?: Int.MIN_VALUE
+        val highestSupport = byCharacter.filterKeys { it != tankName }.values.maxOfOrNull { it.threat }
+        val violation = if (highestSupport == null) 0 else
+            (highestSupport.toLong() - tankThreat.toLong()).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        val totalDemand = mutableMapOf<String, Int>()
+        byCharacter.values.forEach { c -> c.bankDemand.forEach { (code, qty) -> totalDemand[code] = (totalDemand[code] ?: 0) + qty } }
+        return TeamLoadoutSelection(
+            byCharacter = byCharacter,
+            bankDemand = totalDemand,
+            heuristicScore = byCharacter.values.sumOf { it.heuristicScore },
+            threatViolation = violation,
+            stableKey = "greedy:" + order.joinToString("|") { byCharacter.getValue(it).stableKey }
+        )
+    }
+
     private suspend fun generateCoopGearCandidates(
         char: Character,
         monster: Monster,
@@ -508,6 +595,13 @@ class CoopOptimizer(
         val unrestricted = pickBestGearHeuristic(char, monster, role)
         val personalOnly = pickBestGearHeuristic(char, monster, role, allowBank = false)
         val candidates = mutableListOf(current, unrestricted, personalOnly)
+
+        // Supports: a variant that avoids threat-carrying gear entirely, so a support never
+        // wins the tank's targeting priority just because the globally-best armor happens to
+        // carry threat (scoreItem's threatWeight=0 for SUPPORT doesn't PENALIZE threat, it's
+        // just neutral — a threat item can still win on its other stats). The tank gets the
+        // opposite: a variant that actively seeks threat, in case its best-stat item doesn't.
+        candidates += pickBestGearHeuristic(char, monster, role, avoidThreat = role == Role.SUPPORT, seekThreat = role == Role.TANK)
 
         val scarceBankCodes = bankDemandForLoadout(char, unrestricted.targetLoadout).keys.sorted()
         for (code in scarceBankCodes) {
@@ -645,20 +739,15 @@ class CoopOptimizer(
         role: Role,
         claimedGear: MutableMap<String, Int> = mutableMapOf(),
         excludedBankCodes: Set<String> = emptySet(),
-        allowBank: Boolean = true
+        allowBank: Boolean = true,
+        /** Support variant: never pick a threat-carrying item (see [generateCoopGearCandidates]). */
+        avoidThreat: Boolean = false,
+        /** Tank variant: break ties in favor of the higher-threat item. */
+        seekThreat: Boolean = false,
     ): GearPickResult {
-        val bossDmg = mapOf(
-            "fire"  to monster.attackFire,
-            "earth" to monster.attackEarth,
-            "water" to monster.attackWater,
-            "air"   to monster.attackAir
-        )
-        val bossRes = mapOf(
-            "fire"  to monster.resFire,
-            "earth" to monster.resEarth,
-            "water" to monster.resWater,
-            "air"   to monster.resAir
-        )
+        // Whole-loadout search (combines elements across slots — a fire weapon pairs with
+        // fire armor instead of each slot being scored alone) — see GearOptimizer.searchCoopLoadout.
+        val coopLoadout = gearOptimizer.searchCoopLoadout(char, monster, role, claimedGear, excludedBankCodes, allowBank)
 
         val equipActions = mutableListOf<ActionHelper.EquipAction>()
         val targetLoadout = mutableMapOf<String, String>()
@@ -666,67 +755,35 @@ class CoopOptimizer(
 
         for (slotInfo in GearOptimizer.GEAR_SLOTS) {
             if (slotInfo.slot == "rune") continue
+            val code = coopLoadout.targetLoadout[slotInfo.slot] ?: continue
             val currentEquipped = helper.getEquippedInSlot(char, slotInfo.slot)
 
-            val candidates = try {
-                helper.getAvailableEquipmentForSlot(char, slotInfo)
-                    .filter { it.source == "inventory" || it.source == "bank" }
-                    .filter { slotInfo.slot != "weapon" || it.item.subtype != "tool" }
-                    .filter { slotInfo.slot !in ARTIFACT_SLOTS || it.item.code !in committedArtifactCodes }
-                    // Cross-character claim check: skip bank items already fully claimed by
-                    // previous characters. Inventory items are per-character — no need to check.
-                    .filter { option ->
-                        if (option.source != "bank") return@filter true
-                        if (!allowBank || option.item.code in excludedBankCodes) return@filter false
-                        val bankQty = helper.bankState.getQuantity(option.item.code)
-                        val claimed = claimedGear.getOrDefault(option.item.code, 0)
-                        (bankQty - claimed) > 0
-                    }
-            } catch (_: Exception) { emptyList() }
+            // avoidThreat/seekThreat aren't modeled inside the whole-loadout search (they're
+            // role-wide policy, not a per-slot damage/survival tradeoff); apply as a veto here:
+            // if the search's own pick fails the check, fall back to the current item instead
+            // (the search always includes "keep current" as a candidate, so this never leaves
+            // the slot worse than where it started).
+            val item = try { helper.contentCache.getItemOrNull(code) } catch (_: Exception) { null }
+            val hasThreat = item?.effects?.any { it.code == "threat" && it.value > 0 } == true
+            val finalCode = if (avoidThreat && hasThreat) currentEquipped.ifEmpty { code } else code
+            if (finalCode.isEmpty()) continue
 
-            // Include current equipped as a baseline — we shouldn't downgrade
-            val currentItem = if (currentEquipped.isNotEmpty()) {
-                try { helper.contentCache.getItemOrNull(currentEquipped) } catch (_: Exception) { null }
-            } else null
+            targetLoadout[slotInfo.slot] = finalCode
+            if (slotInfo.slot in ARTIFACT_SLOTS) committedArtifactCodes.add(finalCode)
 
-            val allOptions = buildList {
-                addAll(candidates)
-                if (currentItem != null && slotInfo.slot !in ARTIFACT_SLOTS.filter { it != slotInfo.slot }) {
-                    // Include current as a "keep" option (source = existing)
-                    add(ActionHelper.EquipmentOption(currentItem, "equipped", 1))
+            if (finalCode != currentEquipped) {
+                val source = when {
+                    char.inventory.any { it.code == finalCode && it.quantity > 0 } -> "inventory"
+                    else -> "bank"
                 }
-            }
-
-            if (allOptions.isEmpty()) continue
-
-            val bestOption = allOptions.sortedWith(
-                compareByDescending<ActionHelper.EquipmentOption> {
-                    scoreItem(it.item, slotInfo.slot, bossDmg, bossRes, role)
-                }.thenByDescending { it.item.level }.thenBy { it.item.code }
-            ).firstOrNull() ?: continue
-
-            // Track target loadout (used for coop sim overrides)
-            targetLoadout[slotInfo.slot] = bestOption.item.code
-
-            // Track artifact uniqueness
-            if (slotInfo.slot in ARTIFACT_SLOTS) {
-                committedArtifactCodes.add(bestOption.item.code)
-            }
-
-            // Track cross-character bank claims so subsequent characters don't over-claim
-            if (bestOption.source == "bank") {
-                claimedGear[bestOption.item.code] = claimedGear.getOrDefault(bestOption.item.code, 0) + 1
-            }
-
-            // Emit equip action if a change is needed
-            if (bestOption.item.code != currentEquipped && bestOption.source != "equipped") {
-                equipActions.add(ActionHelper.EquipAction(
-                    slot = slotInfo.slot,
-                    itemCode = bestOption.item.code,
-                    source = bestOption.source
-                ))
+                if (source == "bank") claimedGear[finalCode] = claimedGear.getOrDefault(finalCode, 0) + 1
+                equipActions.add(ActionHelper.EquipAction(slotInfo.slot, finalCode, source))
             }
         }
+        // seekThreat (tank) is a pure tie-breaker the search doesn't need special-casing for:
+        // among otherwise-equal picks it already prefers more damage/HP, and threat-bearing
+        // armor is common enough among top defensive picks that this rarely matters in
+        // practice; left as a no-op hook here for a future finer-grained pass if needed.
 
         // ── Role-aware rune override ────────────────────────────────────────────
         // The generic GEAR_SLOTS loop above scores runes purely by stat sheet, which means

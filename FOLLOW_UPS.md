@@ -207,3 +207,14 @@ Record the possible spawn tiles for event monsters/resources so routes can be pl
 
 ### Refresh achievements while running
 Achievements are read once at `Engine.start()`. Tiles/gates/potions unlocked mid-session (e.g. `secure_the_island` → Sandwhisper Isle bank) aren't used until a restart. Periodically (e.g. every 30 min, or after each task-master hand-in) re-fetch achievements and, if the set changed, re-run `contentCache.preWarmMaps` and update `helper.completedAchievements`.
+
+### Cooking-speed gear priority
+Next season is expected to add gear that reduces cooking cooldowns. When it does, add a `StatGearOptimizer.Priority.COOKING` (that stat first, wisdom as tie-breaker) and route cooking tasks to it instead of the shared `CRAFTING` priority — see the comment on `StatGearOptimizer.Priority`. Also worth checking then whether the same kind of gear exists for other gathering skills.
+
+### Combat prospecting (deferred)
+`GearOptimizer.GearScore`'s tie-break is currently `prospecting + wisdom` combined; for task-master monster / fight tasks we deferred doing anything more here. Two options if revisited:
+- (a) cheap: change the tie-break to prospecting only (helps only when candidates already tie on win rate and fight length);
+- (b) real: after combat optimization, try swapping each slot to its highest-prospecting item and keep the swap only if a fight simulation still clears the win-rate threshold (costs extra simulation calls, cached per monster).
+
+### Boss/raid gear: consider all characters' equipped items
+`CoopOptimizer` only considers a participant's own equipped gear, inventory, and the shared bank when planning boss/raid loadouts. It doesn't consider gear currently equipped on OTHER (non-participating) characters, since using it would require unequipping that character first — out of scope for this fix. If pursued: detect "best item is equipped elsewhere" candidates, then queue an unequip + bank-deposit task for that character before the group's provisioning step runs.

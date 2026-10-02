@@ -144,6 +144,25 @@ class RoutePlannerTest {
     }
 
     @Test
+    fun brokeCharacterUsesMainlandBankAndSandwhisperPotion() {
+        // No gold on hand: the isle's gold gate is unusable, so the bank trip (to fetch gold)
+        // must not route through it — the regression that recursed until rate-limited.
+        val broke: (List<com.artifactsmmo.client.models.Condition>) -> Boolean =
+            { cs -> cs.none { it.code == "gold" } }
+        val banks = content("bank")
+        val bankTrip = assertNotNull(planner().planBest(start, banks, broke))
+        assertTrue(bankTrip.target.name != "Sandwhisper Isle")
+        assertTrue(bankTrip.transitions.isEmpty())
+
+        // Getting onto the isle without gold: only via the sandwhisper potion (lands at the isle bank).
+        val isleBank = tile(-2, 19, "overworld")
+        assertNull(planner().plan(start, tile(-3, 20, "overworld"), broke))
+        val potion = PotionOption("sandwhisper_potion", isleBank.pos, fromBank = true, extraCost = bankTrip.cost)
+        val route = assertNotNull(planner().plan(start, tile(-3, 20, "overworld"), broke, listOf(potion)))
+        assertEquals(RouteStep.Potion("sandwhisper_potion", isleBank.pos, true), route.steps.single())
+    }
+
+    @Test
     fun returnFromDeepUndergroundToBank() {
         val banks = content("bank")
         val route = assertNotNull(planner().planBest(TilePos(7, 1, "underground"), banks))
