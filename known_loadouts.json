@@ -1,377 +1,49 @@
 {
     "loadouts": [
         {
-            "characterName": "Shuckle",
-            "exactLevel": 50,
-            "monsterCode": "corrupted_owlbear",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "sanguine_edge_of_rosen",
-                "shield": "gold_shield",
-                "helmet": "desert_wrap",
-                "body_armor": "cultist_cloak",
-                "leg_armor": "conjurer_skirt",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "perfect_pearl",
-                "artifact2": "lich_race_trophy",
-                "artifact3": "lich_race_medal",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "health_splash_potion",
-                    "quantity": 6
-                }
-            },
-            "requiredItems": {
-                "sanguine_edge_of_rosen": 1,
-                "gold_shield": 1,
-                "desert_wrap": 1,
-                "cultist_cloak": 1,
-                "conjurer_skirt": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "perfect_pearl": 1,
-                "lich_race_trophy": 1,
-                "lich_race_medal": 1,
-                "burn_rune": 1,
-                "health_splash_potion": 6
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 13.47,
-            "validatedAtEpochMs": 1790874087718
-        },
-        {
-            "characterName": "Ront",
-            "exactLevel": 50,
-            "monsterCode": "cultist_alchemist",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "sanguine_edge_of_rosen",
-                "shield": "gold_shield",
-                "helmet": "desert_wrap",
-                "body_armor": "cultist_cloak",
-                "leg_armor": "conjurer_skirt",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "lich_race_trophy",
-                "artifact2": "life_crystal",
-                "artifact3": "lich_race_medal",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 89
-                }
-            },
-            "requiredItems": {
-                "sanguine_edge_of_rosen": 1,
-                "gold_shield": 1,
-                "desert_wrap": 1,
-                "cultist_cloak": 1,
-                "conjurer_skirt": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "lich_race_trophy": 1,
-                "life_crystal": 1,
-                "lich_race_medal": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 89
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 19.28,
-            "validatedAtEpochMs": 1790879091144
-        },
-        {
-            "characterName": "Ront",
-            "exactLevel": 50,
-            "monsterCode": "corrupted_ogre",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "dreadful_shield",
-                "helmet": "desert_wrap",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "lich_race_trophy",
-                "artifact2": "malefic_crystal",
-                "artifact3": "lich_race_medal",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "dreadful_shield": 1,
-                "desert_wrap": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "lich_race_trophy": 1,
-                "malefic_crystal": 1,
-                "lich_race_medal": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 100
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 7.94,
-            "validatedAtEpochMs": 1790913548499
-        },
-        {
-            "characterName": "Shella",
-            "exactLevel": 50,
-            "monsterCode": "corrupted_ogre",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "dreadful_shield",
-                "helmet": "jester_hat",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "lich_race_medal",
-                "artifact2": "lich_race_trophy",
-                "artifact3": "life_crystal",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "dreadful_shield": 1,
-                "jester_hat": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "lich_race_medal": 1,
-                "lich_race_trophy": 1,
-                "life_crystal": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 100
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 8.06,
-            "validatedAtEpochMs": 1790913559015
-        },
-        {
-            "characterName": "Reila",
-            "exactLevel": 46,
-            "monsterCode": "corrupted_ogre",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "dreadful_shield",
-                "helmet": "jester_hat",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "ruby_amulet",
-                "artifact1": "novice_guide",
-                "artifact2": "lich_race_medal",
-                "artifact3": "lich_race_trophy",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                },
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "dreadful_shield": 1,
-                "jester_hat": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "ruby_amulet": 1,
-                "novice_guide": 1,
-                "lich_race_medal": 1,
-                "lich_race_trophy": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 200
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 8.94,
-            "validatedAtEpochMs": 1790913569641
-        },
-        {
-            "characterName": "Olivia",
-            "exactLevel": 46,
-            "monsterCode": "corrupted_ogre",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "dreadful_shield",
-                "helmet": "jester_hat",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "ruby_amulet",
-                "artifact1": "lich_race_medal",
-                "artifact2": "lich_race_trophy",
-                "artifact3": "novice_guide",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 97
-                },
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "dreadful_shield": 1,
-                "jester_hat": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "ruby_amulet": 1,
-                "lich_race_medal": 1,
-                "lich_race_trophy": 1,
-                "novice_guide": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 197
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 8.92,
-            "validatedAtEpochMs": 1790913580180
-        },
-        {
-            "characterName": "Shuckle",
-            "exactLevel": 50,
-            "monsterCode": "corrupted_ogre",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "dreadful_shield",
-                "helmet": "desert_wrap",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "novice_guide",
-                "artifact2": "lich_race_trophy",
-                "artifact3": "lich_race_medal",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "health_splash_potion",
-                    "quantity": 27
-                },
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 86
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "dreadful_shield": 1,
-                "desert_wrap": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "novice_guide": 1,
-                "lich_race_trophy": 1,
-                "lich_race_medal": 1,
-                "burn_rune": 1,
-                "health_splash_potion": 27,
-                "greater_health_potion": 86
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 8.15,
-            "validatedAtEpochMs": 1790913590677
-        },
-        {
             "characterName": "Ront",
             "exactLevel": 50,
             "monsterCode": "bandit_lizard",
             "optimizerVersion": "loadout-beam-v1",
             "gear": {
-                "weapon": "bloodblade",
-                "shield": "dreadful_shield",
+                "weapon": "hell_reaper",
+                "shield": "water_shield",
                 "helmet": "desert_wrap",
                 "body_armor": "mithril_platebody",
                 "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
+                "boots": "darkforged_boots",
                 "ring1": "mithril_ring",
                 "ring2": "mithril_ring",
                 "amulet": "amulet_of_the_grand_master",
-                "artifact1": "lich_race_trophy",
-                "artifact2": "malefic_crystal",
-                "artifact3": "lich_race_medal",
+                "artifact1": "lich_race_medal",
+                "artifact2": "lich_race_trophy",
+                "artifact3": "malefic_crystal",
                 "rune": "burn_rune"
             },
             "utilities": {
                 "utility1": {
                     "code": "greater_health_potion",
-                    "quantity": 100
+                    "quantity": 22
                 }
             },
             "requiredItems": {
-                "bloodblade": 1,
-                "dreadful_shield": 1,
+                "hell_reaper": 1,
+                "water_shield": 1,
                 "desert_wrap": 1,
                 "mithril_platebody": 1,
                 "mithril_platelegs": 1,
-                "mithril_boots": 1,
+                "darkforged_boots": 1,
                 "mithril_ring": 2,
                 "amulet_of_the_grand_master": 1,
+                "lich_race_medal": 1,
                 "lich_race_trophy": 1,
                 "malefic_crystal": 1,
-                "lich_race_medal": 1,
                 "burn_rune": 1,
-                "greater_health_potion": 100
+                "greater_health_potion": 22
             },
             "validatedWinRate": 1.0,
-            "averageWinTurns": 4.9,
-            "validatedAtEpochMs": 1790914506137
+            "averageWinTurns": 3.0,
+            "validatedAtEpochMs": 1791509256635
         },
         {
             "characterName": "Shella",
@@ -380,18 +52,18 @@
             "optimizerVersion": "loadout-beam-v1",
             "gear": {
                 "weapon": "mithril_sword",
-                "shield": "mithril_shield",
-                "helmet": "darkforged_helmet",
-                "body_armor": "white_knight_armor",
-                "leg_armor": "conjurer_skirt",
+                "shield": "fire_shield",
+                "helmet": "desert_wrap",
+                "body_armor": "mithril_platebody",
+                "leg_armor": "mithril_platelegs",
                 "boots": "mithril_boots",
                 "ring1": "mithril_ring",
                 "ring2": "mithril_ring",
-                "amulet": "prospecting_amulet",
-                "artifact1": "perfect_pearl",
+                "amulet": "amulet_of_the_grand_master",
+                "artifact1": "lich_race_medal",
                 "artifact2": "lich_race_trophy",
                 "artifact3": "life_crystal",
-                "rune": "healing_aura_rune"
+                "rune": "burn_rune"
             },
             "utilities": {
                 "utility1": {
@@ -401,117 +73,112 @@
             },
             "requiredItems": {
                 "mithril_sword": 1,
-                "mithril_shield": 1,
-                "darkforged_helmet": 1,
-                "white_knight_armor": 1,
-                "conjurer_skirt": 1,
+                "fire_shield": 1,
+                "desert_wrap": 1,
+                "mithril_platebody": 1,
+                "mithril_platelegs": 1,
                 "mithril_boots": 1,
                 "mithril_ring": 2,
-                "prospecting_amulet": 1,
-                "perfect_pearl": 1,
+                "amulet_of_the_grand_master": 1,
+                "lich_race_medal": 1,
                 "lich_race_trophy": 1,
                 "life_crystal": 1,
-                "healing_aura_rune": 1,
+                "burn_rune": 1,
                 "greater_health_potion": 85
             },
             "validatedWinRate": 1.0,
-            "averageWinTurns": 5.86,
-            "validatedAtEpochMs": 1790914516788
+            "averageWinTurns": 4.53,
+            "validatedAtEpochMs": 1791509267330
         },
         {
             "characterName": "Reila",
-            "exactLevel": 46,
-            "monsterCode": "bandit_lizard",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "mithril_shield",
-                "helmet": "darkforged_helmet",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "ruby_amulet",
-                "artifact1": "novice_guide",
-                "artifact2": "lich_race_medal",
-                "artifact3": "lich_race_trophy",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "health_splash_potion",
-                    "quantity": 51
-                },
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "mithril_shield": 1,
-                "darkforged_helmet": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "ruby_amulet": 1,
-                "novice_guide": 1,
-                "lich_race_medal": 1,
-                "lich_race_trophy": 1,
-                "burn_rune": 1,
-                "health_splash_potion": 51,
-                "greater_health_potion": 100
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 5.55,
-            "validatedAtEpochMs": 1790914527333
-        },
-        {
-            "characterName": "Olivia",
-            "exactLevel": 46,
+            "exactLevel": 50,
             "monsterCode": "bandit_lizard",
             "optimizerVersion": "loadout-beam-v1",
             "gear": {
                 "weapon": "mithril_sword",
-                "shield": "gold_shield",
-                "helmet": "mithril_helm",
+                "shield": "water_shield",
+                "helmet": "desert_wrap",
                 "body_armor": "mithril_platebody",
                 "leg_armor": "mithril_platelegs",
                 "boots": "mithril_boots",
                 "ring1": "mithril_ring",
                 "ring2": "mithril_ring",
-                "amulet": "greater_sapphire_amulet",
-                "artifact1": "lich_race_medal",
-                "artifact2": "lich_race_trophy",
-                "artifact3": "novice_guide",
-                "rune": "burn_rune"
+                "amulet": "amulet_of_the_grand_master",
+                "artifact1": "novice_guide",
+                "artifact2": "lich_race_medal",
+                "artifact3": "lich_race_trophy",
+                "rune": "healing_rune"
             },
             "utilities": {
-                "utility2": {
+                "utility1": {
                     "code": "greater_health_potion",
-                    "quantity": 97
+                    "quantity": 92
                 }
             },
             "requiredItems": {
                 "mithril_sword": 1,
-                "gold_shield": 1,
-                "mithril_helm": 1,
+                "water_shield": 1,
+                "desert_wrap": 1,
                 "mithril_platebody": 1,
                 "mithril_platelegs": 1,
                 "mithril_boots": 1,
                 "mithril_ring": 2,
-                "greater_sapphire_amulet": 1,
+                "amulet_of_the_grand_master": 1,
+                "novice_guide": 1,
                 "lich_race_medal": 1,
                 "lich_race_trophy": 1,
+                "healing_rune": 1,
+                "greater_health_potion": 92
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 4.86,
+            "validatedAtEpochMs": 1791509277930
+        },
+        {
+            "characterName": "Olivia",
+            "exactLevel": 50,
+            "monsterCode": "bandit_lizard",
+            "optimizerVersion": "loadout-beam-v1",
+            "gear": {
+                "weapon": "mithril_sword",
+                "shield": "water_shield",
+                "helmet": "desert_wrap",
+                "body_armor": "mithril_platebody",
+                "leg_armor": "mithril_platelegs",
+                "boots": "mithril_boots",
+                "ring1": "mithril_ring",
+                "ring2": "mithril_ring",
+                "amulet": "amulet_of_the_grand_master",
+                "artifact1": "novice_guide",
+                "artifact2": "lich_race_trophy",
+                "artifact3": "lich_race_medal",
+                "rune": "healing_rune"
+            },
+            "utilities": {
+                "utility1": {
+                    "code": "greater_health_potion",
+                    "quantity": 10
+                }
+            },
+            "requiredItems": {
+                "mithril_sword": 1,
+                "water_shield": 1,
+                "desert_wrap": 1,
+                "mithril_platebody": 1,
+                "mithril_platelegs": 1,
+                "mithril_boots": 1,
+                "mithril_ring": 2,
+                "amulet_of_the_grand_master": 1,
                 "novice_guide": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 97
+                "lich_race_trophy": 1,
+                "lich_race_medal": 1,
+                "healing_rune": 1,
+                "greater_health_potion": 10
             },
             "validatedWinRate": 1.0,
             "averageWinTurns": 4.9,
-            "validatedAtEpochMs": 1790914537879
+            "validatedAtEpochMs": 1791509288569
         },
         {
             "characterName": "Shuckle",
@@ -520,7 +187,7 @@
             "optimizerVersion": "loadout-beam-v1",
             "gear": {
                 "weapon": "mithril_sword",
-                "shield": "gold_shield",
+                "shield": "water_shield",
                 "helmet": "desert_wrap",
                 "body_armor": "mithril_platebody",
                 "leg_armor": "mithril_platelegs",
@@ -528,289 +195,46 @@
                 "ring1": "mithril_ring",
                 "ring2": "mithril_ring",
                 "amulet": "amulet_of_the_grand_master",
-                "artifact1": "perfect_pearl",
+                "artifact1": "novice_guide",
                 "artifact2": "lich_race_trophy",
                 "artifact3": "lich_race_medal",
                 "rune": "healing_rune"
             },
             "utilities": {
                 "utility1": {
-                    "code": "health_splash_potion",
-                    "quantity": 27
-                },
-                "utility2": {
                     "code": "greater_health_potion",
-                    "quantity": 86
+                    "quantity": 90
                 }
             },
             "requiredItems": {
                 "mithril_sword": 1,
-                "gold_shield": 1,
+                "water_shield": 1,
                 "desert_wrap": 1,
                 "mithril_platebody": 1,
                 "mithril_platelegs": 1,
                 "mithril_boots": 1,
                 "mithril_ring": 2,
                 "amulet_of_the_grand_master": 1,
-                "perfect_pearl": 1,
+                "novice_guide": 1,
                 "lich_race_trophy": 1,
                 "lich_race_medal": 1,
                 "healing_rune": 1,
-                "health_splash_potion": 27,
-                "greater_health_potion": 86
+                "greater_health_potion": 90
             },
             "validatedWinRate": 1.0,
-            "averageWinTurns": 4.82,
-            "validatedAtEpochMs": 1790914548479
-        },
-        {
-            "characterName": "Reila",
-            "exactLevel": 46,
-            "monsterCode": "echoless_bat",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "mithril_sword",
-                "shield": "gold_shield",
-                "helmet": "jester_hat",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "greater_sapphire_amulet",
-                "artifact1": "novice_guide",
-                "artifact2": "lich_race_medal",
-                "artifact3": "lich_race_trophy",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                },
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "mithril_sword": 1,
-                "gold_shield": 1,
-                "jester_hat": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "greater_sapphire_amulet": 1,
-                "novice_guide": 1,
-                "lich_race_medal": 1,
-                "lich_race_trophy": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 200
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 12.89,
-            "validatedAtEpochMs": 1790955065335
+            "averageWinTurns": 4.84,
+            "validatedAtEpochMs": 1791509299183
         },
         {
             "characterName": "Olivia",
-            "exactLevel": 46,
-            "monsterCode": "echoless_bat",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "mithril_sword",
-                "shield": "gold_shield",
-                "helmet": "mithril_helm",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "greater_sapphire_amulet",
-                "artifact1": "lich_race_medal",
-                "artifact2": "lich_race_trophy",
-                "artifact3": "novice_guide",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 97
-                },
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "mithril_sword": 1,
-                "gold_shield": 1,
-                "mithril_helm": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "greater_sapphire_amulet": 1,
-                "lich_race_medal": 1,
-                "lich_race_trophy": 1,
-                "novice_guide": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 197
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 14.1,
-            "validatedAtEpochMs": 1790955076446
-        },
-        {
-            "characterName": "Shuckle",
             "exactLevel": 50,
-            "monsterCode": "echoless_bat",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "gold_shield",
-                "helmet": "desert_wrap",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "novice_guide",
-                "artifact2": "lich_race_trophy",
-                "artifact3": "lich_race_medal",
-                "rune": "healing_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "health_splash_potion",
-                    "quantity": 27
-                },
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 86
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "gold_shield": 1,
-                "desert_wrap": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "novice_guide": 1,
-                "lich_race_trophy": 1,
-                "lich_race_medal": 1,
-                "healing_rune": 1,
-                "health_splash_potion": 27,
-                "greater_health_potion": 86
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 13.64,
-            "validatedAtEpochMs": 1790955088465
-        },
-        {
-            "characterName": "Ront",
-            "exactLevel": 50,
-            "monsterCode": "echoless_bat",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "bloodblade",
-                "shield": "dreadful_shield",
-                "helmet": "desert_wrap",
-                "body_armor": "mithril_platebody",
-                "leg_armor": "mithril_platelegs",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "lich_race_trophy",
-                "artifact2": "malefic_crystal",
-                "artifact3": "lich_race_medal",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
-            "requiredItems": {
-                "bloodblade": 1,
-                "dreadful_shield": 1,
-                "desert_wrap": 1,
-                "mithril_platebody": 1,
-                "mithril_platelegs": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "lich_race_trophy": 1,
-                "malefic_crystal": 1,
-                "lich_race_medal": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 100
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 11.94,
-            "validatedAtEpochMs": 1790955100156
-        },
-        {
-            "characterName": "Ront",
-            "exactLevel": 50,
-            "monsterCode": "corrupted_owlbear",
-            "optimizerVersion": "loadout-beam-v1",
+            "monsterCode": "goblin_wolfrider",
+            "optimizerVersion": "loadout-beam-v2",
             "gear": {
                 "weapon": "sanguine_edge_of_rosen",
-                "shield": "dreadful_shield",
+                "shield": "earth_shield",
                 "helmet": "desert_wrap",
-                "body_armor": "bandit_armor",
-                "leg_armor": "conjurer_skirt",
-                "boots": "mithril_boots",
-                "ring1": "mithril_ring",
-                "ring2": "mithril_ring",
-                "amulet": "amulet_of_the_grand_master",
-                "artifact1": "lich_race_trophy",
-                "artifact2": "malefic_crystal",
-                "artifact3": "lich_race_medal",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 81
-                }
-            },
-            "requiredItems": {
-                "sanguine_edge_of_rosen": 1,
-                "dreadful_shield": 1,
-                "desert_wrap": 1,
-                "bandit_armor": 1,
-                "conjurer_skirt": 1,
-                "mithril_boots": 1,
-                "mithril_ring": 2,
-                "amulet_of_the_grand_master": 1,
-                "lich_race_trophy": 1,
-                "malefic_crystal": 1,
-                "lich_race_medal": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 81
-            },
-            "validatedWinRate": 1.0,
-            "averageWinTurns": 12.42,
-            "validatedAtEpochMs": 1790956194889
-        },
-        {
-            "characterName": "Shella",
-            "exactLevel": 50,
-            "monsterCode": "corrupted_owlbear",
-            "optimizerVersion": "loadout-beam-v1",
-            "gear": {
-                "weapon": "sanguine_edge_of_rosen",
-                "shield": "gold_shield",
-                "helmet": "lich_crown",
-                "body_armor": "bandit_armor",
+                "body_armor": "white_knight_armor",
                 "leg_armor": "conjurer_skirt",
                 "boots": "mithril_boots",
                 "ring1": "mithril_ring",
@@ -821,17 +245,11 @@
                 "artifact3": "life_crystal",
                 "rune": "burn_rune"
             },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                }
-            },
             "requiredItems": {
                 "sanguine_edge_of_rosen": 1,
-                "gold_shield": 1,
-                "lich_crown": 1,
-                "bandit_armor": 1,
+                "earth_shield": 1,
+                "desert_wrap": 1,
+                "white_knight_armor": 1,
                 "conjurer_skirt": 1,
                 "mithril_boots": 1,
                 "mithril_ring": 2,
@@ -839,106 +257,201 @@
                 "lich_race_medal": 1,
                 "lich_race_trophy": 1,
                 "life_crystal": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 100
+                "burn_rune": 1
             },
             "validatedWinRate": 1.0,
-            "averageWinTurns": 13.25,
-            "validatedAtEpochMs": 1790956209142
+            "averageWinTurns": 14.42,
+            "validatedAtEpochMs": 1791521409344
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 50,
+            "monsterCode": "bandit_lizard",
+            "optimizerVersion": "loadout-beam-v2",
+            "gear": {
+                "weapon": "hell_reaper",
+                "shield": "water_shield",
+                "helmet": "desert_wrap",
+                "body_armor": "mithril_platebody",
+                "leg_armor": "mithril_platelegs",
+                "boots": "darkforged_boots",
+                "ring1": "mithril_ring",
+                "ring2": "mithril_ring",
+                "amulet": "amulet_of_the_grand_master",
+                "artifact1": "lich_race_medal",
+                "artifact2": "lich_race_trophy",
+                "artifact3": "malefic_crystal",
+                "rune": "burn_rune"
+            },
+            "requiredItems": {
+                "hell_reaper": 1,
+                "water_shield": 1,
+                "desert_wrap": 1,
+                "mithril_platebody": 1,
+                "mithril_platelegs": 1,
+                "darkforged_boots": 1,
+                "mithril_ring": 2,
+                "amulet_of_the_grand_master": 1,
+                "lich_race_medal": 1,
+                "lich_race_trophy": 1,
+                "malefic_crystal": 1,
+                "burn_rune": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 3.0,
+            "validatedAtEpochMs": 1791531014013
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 50,
+            "monsterCode": "bandit_lizard",
+            "optimizerVersion": "loadout-beam-v2",
+            "gear": {
+                "weapon": "mithril_sword",
+                "shield": "fire_shield",
+                "helmet": "desert_wrap",
+                "body_armor": "mithril_platebody",
+                "leg_armor": "mithril_platelegs",
+                "boots": "mithril_boots",
+                "ring1": "mithril_ring",
+                "ring2": "mithril_ring",
+                "amulet": "amulet_of_the_grand_master",
+                "artifact1": "lich_race_trophy",
+                "artifact2": "novice_guide",
+                "artifact3": "lich_race_medal",
+                "rune": "healing_aura_rune"
+            },
+            "requiredItems": {
+                "mithril_sword": 1,
+                "fire_shield": 1,
+                "desert_wrap": 1,
+                "mithril_platebody": 1,
+                "mithril_platelegs": 1,
+                "mithril_boots": 1,
+                "mithril_ring": 2,
+                "amulet_of_the_grand_master": 1,
+                "lich_race_trophy": 1,
+                "novice_guide": 1,
+                "lich_race_medal": 1,
+                "healing_aura_rune": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 4.84,
+            "validatedAtEpochMs": 1791531019341
         },
         {
             "characterName": "Reila",
-            "exactLevel": 46,
-            "monsterCode": "corrupted_owlbear",
-            "optimizerVersion": "loadout-beam-v1",
+            "exactLevel": 50,
+            "monsterCode": "bandit_lizard",
+            "optimizerVersion": "loadout-beam-v2",
             "gear": {
-                "weapon": "sanguine_edge_of_rosen",
-                "shield": "gold_shield",
-                "helmet": "jester_hat",
-                "body_armor": "bandit_armor",
-                "leg_armor": "conjurer_skirt",
+                "weapon": "mithril_sword",
+                "shield": "water_shield",
+                "helmet": "desert_wrap",
+                "body_armor": "mithril_platebody",
+                "leg_armor": "mithril_platelegs",
                 "boots": "mithril_boots",
                 "ring1": "mithril_ring",
                 "ring2": "mithril_ring",
-                "amulet": "masterful_necklace",
-                "artifact1": "novice_guide",
+                "amulet": "amulet_of_the_grand_master",
+                "artifact1": "perfect_pearl",
                 "artifact2": "lich_race_medal",
                 "artifact3": "lich_race_trophy",
-                "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility1": {
-                    "code": "greater_health_potion",
-                    "quantity": 100
-                },
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 54
-                }
+                "rune": "healing_rune"
             },
             "requiredItems": {
-                "sanguine_edge_of_rosen": 1,
-                "gold_shield": 1,
-                "jester_hat": 1,
-                "bandit_armor": 1,
-                "conjurer_skirt": 1,
+                "mithril_sword": 1,
+                "water_shield": 1,
+                "desert_wrap": 1,
+                "mithril_platebody": 1,
+                "mithril_platelegs": 1,
                 "mithril_boots": 1,
                 "mithril_ring": 2,
-                "masterful_necklace": 1,
-                "novice_guide": 1,
+                "amulet_of_the_grand_master": 1,
+                "perfect_pearl": 1,
                 "lich_race_medal": 1,
                 "lich_race_trophy": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 154
+                "healing_rune": 1
             },
             "validatedWinRate": 1.0,
-            "averageWinTurns": 14.22,
-            "validatedAtEpochMs": 1790956219952
+            "averageWinTurns": 4.92,
+            "validatedAtEpochMs": 1791531023555
         },
         {
             "characterName": "Olivia",
-            "exactLevel": 46,
-            "monsterCode": "corrupted_owlbear",
-            "optimizerVersion": "loadout-beam-v1",
+            "exactLevel": 50,
+            "monsterCode": "bandit_lizard",
+            "optimizerVersion": "loadout-beam-v2",
             "gear": {
                 "weapon": "sanguine_edge_of_rosen",
-                "shield": "gold_shield",
-                "helmet": "lich_crown",
-                "body_armor": "bandit_armor",
+                "shield": "earth_shield",
+                "helmet": "desert_wrap",
+                "body_armor": "white_knight_armor",
                 "leg_armor": "conjurer_skirt",
                 "boots": "mithril_boots",
                 "ring1": "mithril_ring",
                 "ring2": "mithril_ring",
-                "amulet": "masterful_necklace",
+                "amulet": "amulet_of_the_grand_master",
                 "artifact1": "lich_race_medal",
                 "artifact2": "lich_race_trophy",
-                "artifact3": "novice_guide",
+                "artifact3": "life_crystal",
                 "rune": "burn_rune"
-            },
-            "utilities": {
-                "utility2": {
-                    "code": "greater_health_potion",
-                    "quantity": 52
-                }
             },
             "requiredItems": {
                 "sanguine_edge_of_rosen": 1,
-                "gold_shield": 1,
-                "lich_crown": 1,
-                "bandit_armor": 1,
+                "earth_shield": 1,
+                "desert_wrap": 1,
+                "white_knight_armor": 1,
                 "conjurer_skirt": 1,
                 "mithril_boots": 1,
                 "mithril_ring": 2,
-                "masterful_necklace": 1,
+                "amulet_of_the_grand_master": 1,
+                "lich_race_medal": 1,
+                "lich_race_trophy": 1,
+                "life_crystal": 1,
+                "burn_rune": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 5.29,
+            "validatedAtEpochMs": 1791531027785
+        },
+        {
+            "characterName": "Shuckle",
+            "exactLevel": 50,
+            "monsterCode": "bandit_lizard",
+            "optimizerVersion": "loadout-beam-v2",
+            "gear": {
+                "weapon": "mithril_sword",
+                "shield": "water_shield",
+                "helmet": "desert_wrap",
+                "body_armor": "mithril_platebody",
+                "leg_armor": "mithril_platelegs",
+                "boots": "mithril_boots",
+                "ring1": "mithril_ring",
+                "ring2": "mithril_ring",
+                "amulet": "amulet_of_the_grand_master",
+                "artifact1": "lich_race_medal",
+                "artifact2": "lich_race_trophy",
+                "artifact3": "novice_guide",
+                "rune": "healing_rune"
+            },
+            "requiredItems": {
+                "mithril_sword": 1,
+                "water_shield": 1,
+                "desert_wrap": 1,
+                "mithril_platebody": 1,
+                "mithril_platelegs": 1,
+                "mithril_boots": 1,
+                "mithril_ring": 2,
+                "amulet_of_the_grand_master": 1,
                 "lich_race_medal": 1,
                 "lich_race_trophy": 1,
                 "novice_guide": 1,
-                "burn_rune": 1,
-                "greater_health_potion": 52
+                "healing_rune": 1
             },
             "validatedWinRate": 1.0,
-            "averageWinTurns": 14.25,
-            "validatedAtEpochMs": 1790956233147
+            "averageWinTurns": 4.9,
+            "validatedAtEpochMs": 1791531033159
         }
     ]
 }

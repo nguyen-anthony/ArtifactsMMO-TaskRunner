@@ -2183,6 +2183,8 @@ class ActionHelper(
      *  2. Only go to the bank for potions the character has ZERO of in inventory.
      *  3. [action.quantity] is an ideal target (100), not a hard requirement — equip
      *     whatever is available.
+     *  4. An action with quantity 0 means "clear this slot": the equipped potion is
+     *     unequipped so it is not consumed in fights.
      */
     suspend fun retrieveAndEquipUtilities(
         characterName: String,
@@ -2192,11 +2194,22 @@ class ActionHelper(
 
         var char = refreshCharacter(characterName)
 
+        for (action in actions.filter { it.quantity <= 0 }) {
+            val equippedQty = getEquippedUtilityQuantity(char, action.slot)
+            if (getEquippedInSlot(char, action.slot).isEmpty() || equippedQty <= 0) continue
+            char = try {
+                unequip(characterName, action.slot, equippedQty)
+            } catch (e: Exception) {
+                println("[$characterName] retrieveAndEquipUtilities: failed to unequip ${action.slot}: ${e.message}")
+                char
+            }
+        }
+
         // Split actions: those we can satisfy from inventory right now vs those needing bank
         val inventoryActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
         val bankNeededActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
 
-        for (action in actions) {
+        for (action in actions.filter { it.quantity > 0 }) {
             val currentEquipped = getEquippedInSlot(char, action.slot)
             val equippedQty = if (currentEquipped == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
             val inInv = getItemQuantity(char, action.itemCode)

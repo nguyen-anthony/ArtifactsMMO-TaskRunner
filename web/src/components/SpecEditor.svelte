@@ -260,7 +260,7 @@
 {#if kind === 'fight' && (equip.length || utilities.length)}
   <div class="muted small">
     Loadout: {equip.map((e) => `${e.slot}=${e.itemCode}`).join(', ')}
-    {utilities.map((u) => `${u.slot}=${u.quantity}×${u.itemCode}`).join(', ')}
+    {utilities.map((u) => u.quantity > 0 ? `${u.slot}=${u.quantity}×${u.itemCode}` : `${u.slot}=unequip ${u.itemCode}`).join(', ')}
     <button onclick={() => { equip = []; utilities = [] }}>clear</button>
   </div>
 {/if}

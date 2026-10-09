@@ -369,8 +369,9 @@ class TaskMasterExecutor(
 
         // New in-game task = fresh start: bank the previous monster's drops, food and any
         // loose gear before swapping. Keep what the new plan equips from inventory.
+        val plannedUtilityCodes = result.utilityActions.filter { it.quantity > 0 }.map { it.itemCode }.toSet()
         val keep = result.equipActions.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
-            result.utilityActions.map { it.itemCode }
+            plannedUtilityCodes
         try {
             onStatus("Depositing inventory before $monsterCode task...")
             helper.depositInventoryExcept(characterName, keep, char)
@@ -401,7 +402,7 @@ class TaskMasterExecutor(
         // Gear swapped out from inventory lands back in inventory; bank it. The character is
         // normally still at the bank from the deposit above, so this costs no walk.
         try {
-            helper.depositInventoryExcept(characterName, result.utilityActions.map { it.itemCode }.toSet())
+            helper.depositInventoryExcept(characterName, plannedUtilityCodes)
         } catch (e: Exception) {
             onStatus("Post-swap deposit failed: ${e.message}")
         }

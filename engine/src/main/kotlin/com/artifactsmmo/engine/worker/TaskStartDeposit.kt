@@ -24,10 +24,10 @@ object TaskStartDeposit {
     fun keepFor(task: TaskType, char: Character, useFoodCodes: Set<String> = emptySet()): Set<String>? = when (task) {
         is TaskType.Fight ->
             task.equipActions.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
-                task.utilityActions.map { it.itemCode } + useFoodCodes
+                task.utilityActions.filter { it.quantity > 0 }.map { it.itemCode } + useFoodCodes
         is TaskType.EventFight ->
             task.equipActions.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
-                task.utilityActions.map { it.itemCode } + useFoodCodes
+                task.utilityActions.filter { it.quantity > 0 }.map { it.itemCode } + useFoodCodes
         // An in-progress task-master items task: the collected items are the progress.
         is TaskType.TaskMaster ->
             if (char.taskType == "items" && char.task.isNotEmpty()) setOf(char.task) else emptySet()

@@ -19,7 +19,9 @@ import com.artifactsmmo.client.models.Monster
  *    simulator's fidelity for the decision that matters most (which item to equip).
  *  - Weapon is optimized as part of the greedy pass (no separate weapon logic)
  *  - Artifact slots enforce uniqueness (game constraint: no duplicate artifacts)
- *  - Utility slot pass runs only for monsters with effects — tries owned potions
+ *  - Gear is evaluated with both utility slots empty. The utility pass runs only when the
+ *    best gear-only loadout is below [NO_UTILITY_MIN_WINRATE], and stops adding potions as
+ *    soon as that threshold is met. Potions that are not needed are unequipped.
  *  - Cache-and-verify: if a same-level character recently optimized against this monster,
  *    the cached loadout is verified with a single API sim before being reused
  *
@@ -68,7 +70,16 @@ class GearOptimizer(
         const val API_GEAR_FINALISTS = 3
         const val CACHE_VERIFY_MIN_WINRATE = 0.85
         const val UTILITY_MAX_QUANTITY = 100
-        const val OPTIMIZER_VERSION = "loadout-beam-v1"
+        /**
+         * Win rate at which a loadout is considered good enough WITHOUT utility potions.
+         * Potions are consumed every fight, so they are only planned when gear alone falls
+         * below this threshold, and are added only until the threshold is reached.
+         */
+        const val NO_UTILITY_MIN_WINRATE = 0.95
+        const val OPTIMIZER_VERSION = "loadout-beam-v2"
+
+        /** Utility overrides that simulate both utility slots as empty. */
+        val NO_UTILITIES: Map<String, String> = UTILITY_SLOT_NAMES.associateWith { "" }
 
         /**
          * Effect codes that identify a consumable as a valid UTILITY potion (utility1/utility2).
@@ -201,18 +212,14 @@ class GearOptimizer(
         if (cached != null && requiredItemsAvailable(char, cached.requiredItems)) {
             val plan = buildActionsForTarget(char, cached.gear, cached.utilities)
             val verifySim = try {
-                if (cached.utilities.isEmpty()) {
-                    helper.simulateFightWithSlotOverrides(char, monsterCode, cached.gear, API_SIM_ITERATIONS)
-                } else {
-                    helper.simulateFightWithSlotAndUtilityOverrides(
-                        char,
-                        monsterCode,
-                        cached.gear,
-                        cached.utilities.mapValues { it.value.code },
-                        cached.utilities.mapValues { it.value.quantity },
-                        API_SIM_ITERATIONS
-                    )
-                }
+                helper.simulateFightWithSlotAndUtilityOverrides(
+                    char,
+                    monsterCode,
+                    cached.gear,
+                    NO_UTILITIES + cached.utilities.mapValues { it.value.code },
+                    cached.utilities.mapValues { it.value.quantity },
+                    API_SIM_ITERATIONS
+                )
             } catch (e: Exception) {
                 println("[${char.name}] GearOptimizer: known-loadout verification failed: ${e.message}")
                 null
@@ -262,9 +269,8 @@ class GearOptimizer(
         val monster = try { helper.contentCache.getMonster(monsterCode) }
                       catch (_: Exception) { return emptyResult(char) }
 
-        val hasEffects = monster.effects.isNotEmpty()
-
-        // Baseline — always API sim for an accurate starting score
+        // Baseline — always API sim for an accurate starting score (as currently equipped,
+        // including any utility potions)
         val baseSim = try {
             helper.simulateFightWithSlotOverrides(char, monsterCode, emptyMap(), API_SIM_ITERATIONS)
         } catch (e: Exception) {
@@ -272,6 +278,16 @@ class GearOptimizer(
             return emptyResult(char)
         }
         val baselineScore = simToScore(baseSim, char)
+
+        // Gear is compared with utility slots empty so equipped potions never mask a
+        // loadout that can win on its own.
+        val hasEquippedUtilities = char.utility1Slot.isNotEmpty() || char.utility2Slot.isNotEmpty()
+        val gearOnlyBaselineScore = if (!hasEquippedUtilities) baselineScore else try {
+            simToScore(simulateGearOnly(char, monsterCode, emptyMap(), API_SIM_ITERATIONS), char)
+        } catch (e: Exception) {
+            println("[${char.name}] GearOptimizer: gear-only baseline sim failed: ${e.message}")
+            return currentLoadoutResult(char, baselineScore)
+        }
 
         // ── Bounded whole-loadout beam search ──
         // Search uses complete aggregate character stats so weapon attack, elemental damage,
@@ -281,7 +297,7 @@ class GearOptimizer(
         val currentTarget = currentGearTarget(char)
         var selectedTarget = currentTarget
         var selectedStats = char
-        var postGearScore = baselineScore
+        var postGearScore = gearOnlyBaselineScore
 
         val finalists = searchGearLoadouts(char, monster)
             .filter { state -> state.loadout.any { (slot, item) -> currentTarget[slot] != item.code } }
@@ -290,7 +306,7 @@ class GearOptimizer(
         for (finalist in finalists) {
             val target = finalist.loadout.mapValues { it.value.code }
             val simulated = try {
-                helper.simulateFightWithSlotOverrides(char, monsterCode, target, API_SIM_ITERATIONS)
+                simulateGearOnly(char, monsterCode, target, API_SIM_ITERATIONS)
             } catch (e: Exception) {
                 println("[${char.name}] GearOptimizer: beam finalist validation failed: ${e.message}")
                 continue
@@ -306,21 +322,19 @@ class GearOptimizer(
         val accumulatedOverrides = selectedTarget.toMutableMap()
         var validationSucceeded = true
 
-        // ── Utility slot pass — only for monsters with effects ──
-        val utilityActions = if (hasEffects) {
+        // ── Utility slot pass — only when gear alone can't win reliably ──
+        val utilityActions = if (postGearScore.winRate < NO_UTILITY_MIN_WINRATE) {
             optimizeUtilitySlots(char, monsterCode, accumulatedOverrides, postGearScore)
         } else {
             emptyList()
         }
 
         // ── Final API sim validation with the full loadout ──
-        val optimizedScore = if (accumulatedOverrides.all { (slot, code) -> helper.getEquippedInSlot(char, slot) == code } && utilityActions.isEmpty()) {
-            baselineScore
-        } else if (utilityActions.isEmpty()) {
+        val optimizedScore = if (utilityActions.isEmpty()) {
             postGearScore
         } else {
             try {
-                val utilityOverrides = utilityActions.associate { it.slot to it.itemCode }
+                val utilityOverrides = NO_UTILITIES + utilityActions.associate { it.slot to it.itemCode }
                 val utilityQuantities = utilityActions.associate { it.slot to it.quantity }
                 val finalSim = helper.simulateFightWithSlotAndUtilityOverrides(
                     char, monsterCode, accumulatedOverrides, utilityOverrides, utilityQuantities, API_SIM_ITERATIONS
@@ -340,9 +354,12 @@ class GearOptimizer(
             val target = accumulatedOverrides[slotInfo.slot] ?: helper.getEquippedInSlot(char, slotInfo.slot)
             if (target.isEmpty()) null else slotInfo.slot to target
         }.toMap()
-        val targetUtilities = absoluteUtilityTarget(char, utilityActions)
+        val targetUtilities = utilityActions.associate { it.slot to (it.itemCode to it.quantity) }
 
-        if (!validationSucceeded || optimizedScore < baselineScore) {
+        // A loadout that meets the win-rate floor is accepted even if the current loadout
+        // (e.g. with potions) scores slightly better — saving potions is the point.
+        val acceptable = optimizedScore >= baselineScore || optimizedScore.winRate >= NO_UTILITY_MIN_WINRATE
+        if (!validationSucceeded || !acceptable) {
             println("[${char.name}] GearOptimizer: proposed loadout did not validate above baseline — keeping current loadout")
             return currentLoadoutResult(char, baselineScore)
         }
@@ -352,6 +369,9 @@ class GearOptimizer(
             targetLoadout,
             targetUtilities.mapValues { KnownUtilityLoadout(it.value.first, it.value.second) }
         )
+        if (utilityActions.isEmpty()) {
+            println("[${char.name}] GearOptimizer: no utility potions needed for $monsterCode (${(optimizedScore.winRate * 100).toInt()}% without)")
+        }
 
         return OptimizationResult(
             equipActions = actions.first,
@@ -720,8 +740,9 @@ class GearOptimizer(
     // ── Utility optimization ──────────────────────────────────────
 
     /**
-     * For monsters with effects, try adding owned potions to utility1 and utility2.
-     * Only accepts a candidate if it strictly improves the score.
+     * Try adding owned potions to utility1 and utility2, starting from empty utility slots.
+     * Only accepts a candidate if it strictly improves the score, and stops once the
+     * [NO_UTILITY_MIN_WINRATE] floor is reached so no surplus potion is consumed.
      */
     private suspend fun optimizeUtilitySlots(
         char: Character,
@@ -737,6 +758,7 @@ class GearOptimizer(
         val filledSlots = mutableMapOf<String, String>()
 
         for (slot in UTILITY_SLOT_NAMES) {
+            if (runningScore.winRate >= NO_UTILITY_MIN_WINRATE) break
             val excludeCodes = filledSlots.values.toSet()
             var bestForSlot: Pair<Item, Int>? = null  // (item, quantity)
             var bestScoreForSlot = runningScore
@@ -745,8 +767,8 @@ class GearOptimizer(
                 val quantity = getOwnedQuantity(char, candidate.code).coerceAtMost(UTILITY_MAX_QUANTITY)
                 if (quantity <= 0) continue
 
-                val utilityOverrides = filledSlots + (slot to candidate.code)
-                val utilityQuantities = utilityOverrides.mapValues { (_, code) ->
+                val utilityOverrides = NO_UTILITIES + filledSlots + (slot to candidate.code)
+                val utilityQuantities = utilityOverrides.filterValues { it.isNotEmpty() }.mapValues { (_, code) ->
                     getOwnedQuantity(char, code).coerceAtMost(UTILITY_MAX_QUANTITY)
                 }
 
@@ -773,6 +795,15 @@ class GearOptimizer(
         }
         return results
     }
+
+    private suspend fun simulateGearOnly(
+        char: Character,
+        monsterCode: String,
+        gearOverrides: Map<String, String>,
+        iterations: Int
+    ): CombatSimulationData = helper.simulateFightWithSlotAndUtilityOverrides(
+        char, monsterCode, gearOverrides, NO_UTILITIES, emptyMap(), iterations
+    )
 
     /**
      * Owned utility-slot-eligible potions usable by this character.
@@ -907,7 +938,12 @@ class GearOptimizer(
             val source = if (inventoryQuantity + currentQuantity >= utility.quantity) "inventory" else "bank"
             UtilityEquipAction(slot, utility.code, utility.quantity, source)
         }
-        return Triple(gearActions, utilityActions, changes)
+        // Unneeded potions would still be consumed in fights — unequip them (quantity 0).
+        val clearActions = UTILITY_SLOT_NAMES.filter { it !in utilities }.mapNotNull { slot ->
+            val currentCode = helper.getEquippedInSlot(char, slot)
+            if (currentCode.isEmpty()) null else UtilityEquipAction(slot, currentCode, 0, "equipped")
+        }
+        return Triple(gearActions, clearActions + utilityActions, changes)
     }
 
     private fun currentLoadoutResult(char: Character, score: GearScore): OptimizationResult {
