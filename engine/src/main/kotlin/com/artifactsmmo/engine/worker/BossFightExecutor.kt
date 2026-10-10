@@ -155,6 +155,12 @@ class BossFightExecutor(
             coordinator.clear(gid)
             val have = group.slots.count { it.claimedBy != null && !it.status.isTerminal }
             ctx.status("Waiting for group: $have/${group.slots.size} members")
+            if (spec.raidCode != null) {
+                ctx.status("[raid ${spec.raidCode}] group $gid slots: " + group.slots.joinToString {
+                    "${it.assignedCharacter ?: "?"}(${it.groupRole.name})=${it.status.dbValue}" +
+                        (it.claimedBy?.let { c -> " claimedBy=$c" } ?: "")
+                })
+            }
             return StepOutcome.Continue(5_000)
         }
 
@@ -184,7 +190,11 @@ class BossFightExecutor(
             is StepResult.Rested -> StepOutcome.Continue()
             // Participants already waited out the fight cooldown; the initiator's Waiting means
             // "encounter cleared" or "raid staged but not open yet" — back off a little.
-            is StepResult.Waiting -> StepOutcome.Continue(if (isInitiator) 3_000 else 0)
+            // A staged raid also backs participants off so they don't spin before opening.
+            is StepResult.Waiting -> {
+                val staged = spec.scheduledStartAtMillis?.let { System.currentTimeMillis() < it } == true
+                StepOutcome.Continue(if (isInitiator || (spec.raidCode != null && staged)) 3_000 else 0)
+            }
             is StepResult.Error -> { ctx.status("Error: ${r.message}"); StepOutcome.Continue(10_000) }
             else -> StepOutcome.Continue(3_000)
         }

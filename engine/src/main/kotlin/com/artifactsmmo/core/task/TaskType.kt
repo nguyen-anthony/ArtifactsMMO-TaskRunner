@@ -102,6 +102,11 @@ sealed class TaskType {
         val scheduledStartAtMillis: Long? = null,
         /** UTC epoch milliseconds at which the raid window closes. */
         val scheduledEndAtMillis: Long? = null,
+        /** Set for an event-spawned boss: fight at this tile instead of a map-cache lookup. */
+        val eventCode: String? = null,
+        val eventMapX: Int? = null,
+        val eventMapY: Int? = null,
+        val eventMapLayer: String? = null,
         val dropStrategies: Map<String, DropStrategy> = emptyMap(),
         val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW
     ) : TaskType()

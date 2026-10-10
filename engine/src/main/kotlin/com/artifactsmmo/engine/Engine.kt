@@ -78,7 +78,7 @@ class Engine(
 
         val log: (String) -> Unit = { logger.log(it) }
         events = EventTaskProducer(webSocket.messages, queue, configs,
-            LegacyEventPlanner(helper, fighting.gearOptimizer, { characters }, log), log)
+            LegacyEventPlanner(helper, fighting.gearOptimizer, coop, { characters }, log), log)
 
         val registry = LegacyExecutors(
             helper, gathering = GatheringExecutor(helper), fighting = fighting,

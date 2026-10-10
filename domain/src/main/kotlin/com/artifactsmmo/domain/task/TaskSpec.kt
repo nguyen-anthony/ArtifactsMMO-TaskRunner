@@ -93,6 +93,10 @@ sealed class TaskSpec {
         val scheduledEndAtMillis: Long? = null,
         val dropStrategies: Map<String, DropStrategy> = emptyMap(),
         val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW,
+        /** Non-null for a boss spawned by an event (cancelled when the event ends). */
+        val eventCode: String? = null,
+        /** The event tile; the map cache doesn't know event overlays, so members walk here. */
+        val eventMap: EventMap? = null,
     ) : TaskSpec()
 
     @Serializable @SerialName("event_gather")
@@ -131,6 +135,7 @@ sealed class TaskSpec {
         is EventGather -> eventCode
         is EventNpc -> eventCode
         is EventFight -> eventCode
+        is BossFight -> eventCode
         else -> null
     }
 

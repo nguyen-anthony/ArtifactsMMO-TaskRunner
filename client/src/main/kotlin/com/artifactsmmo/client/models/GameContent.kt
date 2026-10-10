@@ -146,8 +146,13 @@ data class EventDefinition(
 data class ActiveEvent(
     val name: String,
     val code: String,
-    val map: EventSpawnMap
+    val map: EventSpawnMap,
+    /** REST `/events/active` puts expiration at the top level; WebSocket nests it in [map]. */
+    val expiration: String? = null
 ) {
+    /** Event expiry regardless of which shape (REST or WebSocket) delivered it. */
+    val expiresAt: String? get() = map.expiration ?: expiration
+
     // content, duration, expiration, created_at are nested inside map on the wire
     val content: EventContent get() {
         val mc = map.interactions?.content

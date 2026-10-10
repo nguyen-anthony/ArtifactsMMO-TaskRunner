@@ -18,8 +18,14 @@ import kotlinx.serialization.Serializable
 @Serializable data class MonsterDto(val code: String, val name: String, val level: Int, val type: String, val reachable: Boolean = true)
 @Serializable data class ResourceDto(val code: String, val name: String, val skill: String, val level: Int, val reachable: Boolean = true)
 @Serializable data class ItemDto(val code: String, val name: String, val level: Int, val type: String, val craftSkill: String?)
+/** [contentType]/[contentCode]: what the event spawns ("monster"/"resource"/"npc"). */
+@Serializable data class EventDto(val code: String, val name: String, val contentType: String, val contentCode: String)
+@Serializable data class RaidDto(val code: String, val name: String, val monster: String)
 
-@Serializable data class Catalog(val monsters: List<MonsterDto>, val resources: List<ResourceDto>, val items: List<ItemDto>)
+@Serializable data class Catalog(
+    val monsters: List<MonsterDto>, val resources: List<ResourceDto>, val items: List<ItemDto>,
+    val events: List<EventDto> = emptyList(), val raids: List<RaidDto> = emptyList(),
+)
 
 @Serializable data class LoadoutRequest(val character: String, val monsterCode: String)
 @Serializable
@@ -72,6 +78,14 @@ fun Route.contentAndSimRoutes(b: ApiBackend) {
                         .map { ResourceDto(it.code, it.name, it.skill, it.level) }.sortedBy { it.level },
                     items = allPages { content.getItems(page = it, size = 100) }
                         .map { ItemDto(it.code, it.name, it.level, it.type, it.craft?.skill) }.sortedBy { it.level },
+                    events = runCatching {
+                        allPages { e.client.events.getEvents(page = it, size = 100) }
+                            .map { EventDto(it.code, it.name, it.content.type, it.content.code) }.sortedBy { it.name }
+                    }.getOrDefault(emptyList()),
+                    raids = runCatching {
+                        allPages { e.client.raids.getRaids(page = it, size = 50) }
+                            .map { RaidDto(it.code, it.name, it.monster) }.sortedBy { it.name }
+                    }.getOrDefault(emptyList()),
                 ).also { catalog = it }
             }
         }

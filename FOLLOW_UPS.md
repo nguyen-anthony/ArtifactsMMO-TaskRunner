@@ -4,18 +4,6 @@ These are features, polish and technical improvements that fell outside the 9 mi
 
 ## UI / UX
 
-### Event and raid config editor
-Currently, configs are edited as raw JSON in the web app. This is error-prone and unfriendly.
-
-**Proposal:** build a form-based editor in the web UI that validates and generates the JSON, so users don't touch it directly. The backend already has the data model in `domain/TaskSpec.kt`; mirror that into Svelte components.
-
-**Files to touch:**
-- `web/src/pages/Configs.svelte` – replace the textarea with a structured form.
-- `web/src/lib/types.ts` – ensure the TypeScript shapes match the backend's JSON schema.
-- `server/.../TaskSpec.kt` – document the valid ranges and constraints.
-
----
-
 ### Fight task form: per-drop cooking strategy
 The fight task form lets you pick a monster and set the gear, but it doesn't let you set cooking strategies per drop (e.g. "always cook HP potions, skip MP potions").
 

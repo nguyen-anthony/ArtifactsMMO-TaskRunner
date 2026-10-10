@@ -37,7 +37,7 @@ export type TaskSpec =
   | { kind: 'inventory_recycle'; itemCode: string; quantity: number; craftSkill: string }
   | { kind: 'bulk_bank_withdraw'; items: ItemQty[] }
   | { kind: 'bulk_inventory_deposit'; items: ItemQty[] }
-  | { kind: 'boss_fight'; monsterCode: string; monsterName?: string; plans?: Record<string, MemberPlan>; raidCode?: string }
+  | { kind: 'boss_fight'; monsterCode: string; monsterName?: string; plans?: Record<string, MemberPlan>; raidCode?: string; eventCode?: string; eventMap?: EventMap }
   | { kind: 'event_gather'; eventCode: string; resourceCode: string; skill: string; map: EventMap }
   | { kind: 'event_npc'; eventCode: string; npcCode: string; map: EventMap; sell?: ItemQty[]; buy?: ItemQty[] }
   | { kind: 'event_fight'; eventCode: string; monsterCode: string; map: EventMap }
@@ -81,6 +81,22 @@ export interface Catalog {
   monsters: { code: string; name: string; level: number; type: string; reachable: boolean }[]
   resources: { code: string; name: string; skill: string; level: number; reachable: boolean }[]
   items: { code: string; name: string; level: number; type: string; craftSkill?: string }[]
+  /** `contentType`: what the event spawns ('monster' | 'resource' | 'npc'). */
+  events: { code: string; name: string; contentType: string; contentCode: string }[]
+  raids: { code: string; name: string; monster: string }[]
+}
+
+/** Mirrors engine `EventConfig` / `EventGroupConfig` (stored under /configs/event). */
+export interface EventGroupConfig { initiatorName: string; participantNames: string[]; tankOverride: string | null }
+export interface EventConfig {
+  eventCode: string; enabled: boolean; eligibleCharacters: string[]
+  itemsToSell: ItemQty[]; itemsToBuy: ItemQty[]; designatedTrader: string | null
+  minWinRate: number; group: EventGroupConfig | null
+}
+/** Mirrors engine `RaidConfig` (stored under /configs/raid). */
+export interface RaidConfig {
+  raidCode: string; enabled: boolean; initiatorName: string | null; participantNames: string[]
+  tankOverride: string | null; leadTimeMinutes: number
 }
 
 export interface CraftableIngredient { code: string; perCraft: number; have: number; missing: number }

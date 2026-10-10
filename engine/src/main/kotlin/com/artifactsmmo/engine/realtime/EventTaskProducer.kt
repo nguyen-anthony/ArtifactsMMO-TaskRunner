@@ -3,6 +3,8 @@ package com.artifactsmmo.engine.realtime
 import com.artifactsmmo.client.RealtimeMessage
 import com.artifactsmmo.client.models.ActiveEvent
 import com.artifactsmmo.core.task.EventConfig
+import com.artifactsmmo.domain.queue.GroupRole
+import com.artifactsmmo.domain.queue.GroupSlot
 import com.artifactsmmo.domain.queue.NewTask
 import com.artifactsmmo.domain.queue.TaskFilter
 import com.artifactsmmo.domain.queue.TaskSource
@@ -21,9 +23,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 
+/** What an event spawn turns into: per-character solo tasks, or one co-op boss group. */
+sealed interface EventPlan {
+    data class Solo(val character: String, val spec: TaskSpec) : EventPlan
+    /** [members] are initiator first; every slot row carries [spec]. */
+    data class Group(val members: List<String>, val spec: TaskSpec.BossFight) : EventPlan
+}
+
 /** Decides which characters respond to an event and with what spec (game logic lives here). */
 fun interface EventPlanner {
-    suspend fun plan(event: ActiveEvent, config: EventConfig): List<Pair<String, TaskSpec>>
+    suspend fun plan(event: ActiveEvent, config: EventConfig): List<EventPlan>
 }
 
 /** Live-event statuses shared with the executors (`eventActive`) and the UI. */
@@ -33,9 +42,10 @@ val LIVE_STATUSES = setOf(TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.RUN
  * Turns realtime event messages into queue tasks.
  *
  *  - spawn:   if an enabled config exists, enqueue one EVENT-priority task per chosen
- *             character (assigned to it, expiring with the event). The dedupe key makes
+ *             character (assigned to it, expiring with the event), or — for a boss monster
+ *             with a configured `group` — one co-op boss group. The dedupe key makes
  *             WebSocket reconnect replays harmless.
- *  - removed: cancel every live task for that event. (expires_at also covers a missed message.)
+ *  - removed: cancel every live task/group for that event. (expires_at also covers a missed message.)
  *
  * Preemption does the rest: a busy character suspends its current task, runs the event
  * task, and the suspended task resumes afterwards.
@@ -71,23 +81,46 @@ class EventTaskProducer(
     suspend fun onSpawn(event: ActiveEvent) {
         _active.update { it + (event.code to event) }
         val config = configs.events().firstOrNull { it.eventCode == event.code && it.enabled } ?: return
-        val expires = event.map.expiration?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
-        for ((character, spec) in planner.plan(event, config)) {
-            val t = queue.enqueue(
-                NewTask(
-                    type = spec.typeName, spec = spec.toJson(), source = TaskSource.EVENT,
-                    assignedCharacter = character, expiresAtMillis = expires,
-                    dedupeKey = "event:${event.code}:$character:${event.map.expiration ?: "open"}",
-                )
-            )
-            if (t != null) log("Event ${event.code}: queued ${spec.typeName} for $character (task ${t.id})")
+        val expiration = event.expiresAt
+        val expires = expiration?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+        val instance = expiration ?: "open"
+        // Planning a group runs co-op simulations, so skip it when this instance is already queued
+        // (WebSocket spawn + reconnect/startup replay both deliver the same event).
+        if (config.group != null && groupQueued("event:${event.code}:group:$instance")) return
+        for (plan in planner.plan(event, config)) {
+            when (plan) {
+                is EventPlan.Solo -> {
+                    val t = queue.enqueue(
+                        NewTask(
+                            type = plan.spec.typeName, spec = plan.spec.toJson(), source = TaskSource.EVENT,
+                            assignedCharacter = plan.character, expiresAtMillis = expires,
+                            dedupeKey = "event:${event.code}:${plan.character}:$instance",
+                        )
+                    )
+                    if (t != null) log("Event ${event.code}: queued ${plan.spec.typeName} for ${plan.character} (task ${t.id})")
+                }
+                is EventPlan.Group -> {
+                    val group = queue.enqueueGroup(
+                        NewTask(
+                            type = plan.spec.typeName, spec = plan.spec.toJson(), source = TaskSource.EVENT,
+                            dedupeKey = "event:${event.code}:group:$instance", expiresAtMillis = expires,
+                        ),
+                        plan.members.map { GroupSlot(assignedCharacter = it) },
+                    )
+                    if (group != null) log("Event ${event.code}: queued boss group ${group.parent.id} for ${plan.members.joinToString()}")
+                }
+            }
         }
     }
+
+    private suspend fun groupQueued(dedupe: String): Boolean =
+        queue.list(TaskFilter(statuses = LIVE_STATUSES, source = TaskSource.EVENT, limit = 500)).any { it.dedupeKey == dedupe }
 
     suspend fun onRemoved(eventCode: String) {
         _active.update { it - eventCode }
         val live = queue.list(TaskFilter(statuses = LIVE_STATUSES, source = TaskSource.EVENT, limit = 500))
-        for (t in live) {
+        // Group slots are cancelled with their parent.
+        for (t in live.filter { it.groupRole == GroupRole.SOLO || it.groupRole == GroupRole.GROUP }) {
             val code = runCatching { TaskSpec.fromJson(t.spec).eventCodeOrNull() }.getOrNull()
             if (code == eventCode) queue.cancel(t.id, "event $eventCode ended")
         }

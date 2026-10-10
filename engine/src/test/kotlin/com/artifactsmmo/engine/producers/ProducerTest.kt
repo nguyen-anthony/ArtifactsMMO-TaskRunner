@@ -7,6 +7,7 @@ import com.artifactsmmo.client.models.MapInteraction
 import com.artifactsmmo.client.models.Raid
 import com.artifactsmmo.client.models.RaidSchedule
 import com.artifactsmmo.core.task.EventConfig
+import com.artifactsmmo.core.task.EventGroupConfig
 import com.artifactsmmo.core.task.RaidConfig
 import com.artifactsmmo.domain.queue.GroupRole
 import com.artifactsmmo.domain.queue.NewTask
@@ -17,6 +18,7 @@ import com.artifactsmmo.domain.task.MemberPlan
 import com.artifactsmmo.domain.task.TaskSpec
 import com.artifactsmmo.engine.config.ConfigStore
 import com.artifactsmmo.engine.config.TypedConfigs
+import com.artifactsmmo.engine.realtime.EventPlan
 import com.artifactsmmo.engine.realtime.EventTaskProducer
 import com.artifactsmmo.engine.scheduler.RaidTaskProducer
 import com.artifactsmmo.engine.scheduler.Schedule
@@ -54,7 +56,7 @@ class ProducerTest {
         val queue = FakeTaskQueue { now }
         val configs = TypedConfigs(MemConfigs()).also { it.putEvent(EventConfig("magic_tree", enabled = true)) }
         val producer = EventTaskProducer(emptyFlow(), queue, configs, planner = { e, _ ->
-            listOf("alice", "bob").map { it to TaskSpec.EventGather(e.code, "magic_tree", "woodcutting", EventMap(3, 4)) }
+            listOf("alice", "bob").map { EventPlan.Solo(it, TaskSpec.EventGather(e.code, "magic_tree", "woodcutting", EventMap(3, 4))) }
         })
 
         producer.onSpawn(event("magic_tree"))
@@ -70,6 +72,42 @@ class ProducerTest {
         producer.onRemoved("magic_tree")
         assertTrue(queue.list().all { it.status == TaskStatus.CANCELLED })
         assertTrue(!producer.isActive("magic_tree"))
+    }
+
+    @Test
+    fun `boss event queues one group, replays plan once, removal cancels the whole group`() = runTest {
+        var now = 0L
+        val queue = FakeTaskQueue { now }
+        val configs = TypedConfigs(MemConfigs()).also {
+            it.putEvent(EventConfig("out_of_the_ground", enabled = true,
+                group = EventGroupConfig("alice", listOf("bob", "carol"))))
+        }
+        var planned = 0
+        val producer = EventTaskProducer(emptyFlow(), queue, configs, planner = { e, c ->
+            planned++
+            val members = c.group!!.members
+            listOf(EventPlan.Group(members, TaskSpec.BossFight(
+                "duskworm", plans = members.associateWith { MemberPlan() }, eventCode = e.code, eventMap = EventMap(-1, 19, "underground"),
+            )))
+        })
+        // REST replay shape: expiration at the top level rather than inside map.
+        val restEvent = ActiveEvent("Out Of The Ground", "out_of_the_ground",
+            EventSpawnMap(mapId = 1, x = -1, y = 19, layer = "underground",
+                interactions = MapInteraction(MapContent("monster", "duskworm"))),
+            expiration = "2030-01-01T00:00:00Z")
+
+        producer.onSpawn(restEvent)
+        producer.onSpawn(restEvent)
+        assertEquals(1, planned, "co-op planning is skipped once the instance is queued")
+        val rows = queue.list()
+        val parent = rows.single { it.groupRole == GroupRole.GROUP }
+        assertEquals("event:out_of_the_ground:group:2030-01-01T00:00:00Z", parent.dedupeKey)
+        assertEquals(Instant.parse("2030-01-01T00:00:00Z").toEpochMilliseconds(), parent.expiresAtMillis)
+        assertEquals(listOf("alice", "bob", "carol"), rows.filter { it.groupRole != GroupRole.GROUP }.map { it.assignedCharacter })
+        assertEquals("out_of_the_ground", TaskSpec.fromJson(parent.spec).eventCodeOrNull())
+
+        producer.onRemoved("out_of_the_ground")
+        assertTrue(queue.list().all { it.status == TaskStatus.CANCELLED })
     }
 
     @Test

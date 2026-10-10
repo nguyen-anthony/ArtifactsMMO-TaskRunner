@@ -13,7 +13,7 @@ export function describeSpec(s: TaskSpec): string {
     case 'inventory_recycle': return `Recycle ${s.quantity}× ${s.itemCode}`
     case 'bulk_bank_withdraw': return `Withdraw ${s.items.length} items`
     case 'bulk_inventory_deposit': return `Deposit ${s.items.length} items`
-    case 'boss_fight': return `${s.raidCode ? 'Raid' : 'Boss'} ${s.monsterCode}`
+    case 'boss_fight': return `${s.raidCode ? 'Raid' : s.eventCode ? 'Event boss' : 'Boss'} ${s.monsterCode}`
     case 'event_gather': return `Event gather ${s.resourceCode}`
     case 'event_npc': return `Event NPC ${s.npcCode}`
     case 'event_fight': return `Event fight ${s.monsterCode}`

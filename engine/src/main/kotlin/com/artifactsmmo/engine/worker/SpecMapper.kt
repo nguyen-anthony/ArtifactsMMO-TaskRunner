@@ -81,6 +81,8 @@ object SpecMapper {
             transitionCosts = plan?.transitionCosts.orEmpty(), spareKeys = plan?.spareKeys.orEmpty(),
             raidCode = spec.raidCode, scheduledStartAtMillis = spec.scheduledStartAtMillis,
             scheduledEndAtMillis = spec.scheduledEndAtMillis,
+            eventCode = spec.eventCode, eventMapX = spec.eventMap?.x, eventMapY = spec.eventMap?.y,
+            eventMapLayer = spec.eventMap?.layer,
             dropStrategies = spec.dropStrategies.mapValues { LegacyDropStrategy.valueOf(it.value.name) },
             defaultDropStrategy = LegacyDropStrategy.valueOf(spec.defaultDropStrategy.name),
         )

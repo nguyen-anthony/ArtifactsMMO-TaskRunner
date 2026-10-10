@@ -486,13 +486,31 @@ class FightingExecutor(private val helper: ActionHelper) {
 
         val noFood = helper.findBestFoodInInventory(char) == null
         val hpTooLow = !CharacterUtils.hasEnoughHP(char, 0.75)
+        // A bank trip only helps low HP if it can actually bring planned food back.
+        // Without restockable food the trip heals nothing, and the next step would
+        // send the character straight back to the bank again (infinite bank/teleport loop).
+        val bankFoodQty = task.foodCode?.let { helper.getBankItemQuantity(it) } ?: 0
+        val foodRestockable = task.foodCode != null && task.foodQuantity > 0 && bankFoodQty > 0
+        val needsFoodRestock = noFood && hpTooLow && foodRestockable
 
-        if (inventoryFull || potionsExhausted || (noFood && hpTooLow)) {
+        raidTrace(task, onStatus) {
+            "step role=${if (task.isInitiator) "initiator" else "participant"} " +
+                "pos=(${char.x},${char.y},${char.layer}) hp=${char.hp}/${char.maxHp} cooldown=${char.cooldown}s " +
+                "inv=$totalUsed/${char.inventoryMaxItems} nonProtected=$nonProtectedUsed " +
+                "food=${task.foodCode ?: "none"} invFood=${!noFood} bankFood=$bankFoodQty " +
+                "utilities=${task.utilityActions.joinToString { "${it.slot}=${it.itemCode}:" +
+                    "${helper.getEquippedInSlot(char, it.slot)}x${helper.getEquippedUtilityQuantity(char, it.slot)}" }.ifEmpty { "none" }} " +
+                "flags[inventoryFull=$inventoryFull potionsExhausted=$potionsExhausted noFood=$noFood " +
+                "hpTooLow=$hpTooLow foodRestockable=$foodRestockable]"
+        }
+
+        if (inventoryFull || potionsExhausted || needsFoodRestock) {
             val reason = when {
                 inventoryFull -> "inventory full of loot"
                 potionsExhausted -> "utility potions exhausted"
                 else -> "no food and HP too low"
             }
+            raidTrace(task, onStatus) { "restock decision: $reason" }
             onStatus("Restock needed ($reason) — heading to bank...")
             return StepResult.NeedsRestock
         }
@@ -539,15 +557,14 @@ class FightingExecutor(private val helper: ActionHelper) {
         }
 
         // Navigate to boss tile
-        val monsterMap = if (task.raidCode != null) {
-            helper.findNearest(char, "raid", task.raidCode)
-        } else {
-            helper.findNearest(char, "monster", task.monsterCode)
-        } ?: return StepResult.Error("No ${task.raidCode ?: task.monsterCode} locations found on map")
+        val monsterMap = bossTile(char, task)
+            ?: return StepResult.Error("No ${task.raidCode ?: task.monsterCode} locations found on map")
 
         if (!helper.isAt(char, monsterMap.x, monsterMap.y) || char.layer != monsterMap.layer) {
             onStatus("Moving to ${task.monsterName}...")
+            raidTrace(task, onStatus) { "navigating to raid tile (${monsterMap.x},${monsterMap.y},${monsterMap.layer})" }
             char = helper.navigateWithTeleport(characterName, char, monsterMap)
+            raidTrace(task, onStatus) { "arrived at (${char.x},${char.y},${char.layer})" }
         }
 
         // Raid teams travel and provision ahead of the UTC opening, but must not engage
@@ -555,7 +572,8 @@ class FightingExecutor(private val helper: ActionHelper) {
         // AFTER navigation so early dispatch genuinely stages the team at the raid tile.
         if (task.raidCode != null && task.scheduledStartAtMillis != null &&
             Clock.System.now().toEpochMilliseconds() < task.scheduledStartAtMillis) {
-            onStatus("Raid ${task.monsterName} is staged; waiting for scheduled start...")
+            val remainingSec = (task.scheduledStartAtMillis - Clock.System.now().toEpochMilliseconds()) / 1000
+            onStatus("Raid ${task.monsterName} is staged; waiting for scheduled start (${remainingSec}s)...")
             return StepResult.Waiting
         }
 
@@ -563,20 +581,30 @@ class FightingExecutor(private val helper: ActionHelper) {
             // ── Initiator path ──────────────────────────────────────────────────
             if (task.participantNames.isNotEmpty()) {
                 onStatus("Waiting for participants: ${task.participantNames.joinToString(", ")}...")
+                val waitStart = Clock.System.now().toEpochMilliseconds()
                 try {
                     coordinator.awaitParticipants(characterName)
                 } catch (_: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
                     // Encounter was cleared (stop/cancel); bail out
+                    raidTrace(task, onStatus) { "encounter cleared while awaiting participants" }
                     return StepResult.Waiting
+                }
+                raidTrace(task, onStatus) {
+                    "all participants signalled after ${Clock.System.now().toEpochMilliseconds() - waitStart}ms"
                 }
             }
 
             onStatus("Fighting ${task.monsterName} (boss)... (HP: ${char.hp}/${char.maxHp})")
+            raidTrace(task, onStatus) { "calling fight(initiator=$characterName, participants=${task.participantNames})" }
             return try {
                 val result = helper.fight(characterName, participants = task.participantNames)
                 val fight = result.fight
                 val charResult = fight.characters.find { it.characterName == characterName }
                 val updatedChar = result.characters.find { it.name == characterName }
+                raidTrace(task, onStatus) {
+                    "fight returned result=${fight.result} turns=${fight.turns} " +
+                        result.characters.joinToString { "${it.name} hp=${it.hp}/${it.maxHp}" }
+                }
 
                 if (fight.result == "win") {
                     val drops = charResult?.drops?.joinToString(", ") { "${it.quantity}x ${it.code}" } ?: ""
@@ -589,6 +617,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                     StepResult.FightLost("Lost to ${task.monsterName}")
                 }
             } catch (e: com.artifactsmmo.client.ArtifactsApiException) {
+                raidTrace(task, onStatus) { "fight call failed: code=${e.errorCode} message=${e.message}" }
                 // 567 means the raid phase is not active yet (or has just ended). The
                 // scheduler owns final cleanup; wait so it can receive raid_ended or its
                 // 60-second fallback poll can restore the interrupted tasks.
@@ -599,10 +628,15 @@ class FightingExecutor(private val helper: ActionHelper) {
         } else {
             // ── Participant path ─────────────────────────────────────────────────
             onStatus("Ready for boss fight vs ${task.monsterName}, signalling initiator...")
+            val registeredInitiator = coordinator.encounterFor(characterName)
+            raidTrace(task, onStatus) {
+                "signalling ready (expected initiator=${task.initiatorName}, registered encounter=${registeredInitiator ?: "NONE — signal is a no-op"})"
+            }
             try {
                 coordinator.signalReady(characterName)
             } catch (_: kotlinx.coroutines.channels.ClosedSendChannelException) {
                 // Encounter was cleared; bail out
+                raidTrace(task, onStatus) { "encounter cleared while signalling" }
                 return StepResult.Waiting
             }
 
@@ -624,6 +658,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 }
             }
 
+            if (!cooldownSeen) raidTrace(task, onStatus) { "no fight cooldown observed within ~15s (initiator has not fought yet)" }
             onStatus("Ready for next boss fight round...")
             return StepResult.Waiting
         }
@@ -639,7 +674,8 @@ class FightingExecutor(private val helper: ActionHelper) {
      *  3. Re-equips utility slots to 100
      *  4. Withdraws food up to [CoopOptimizer.FOOD_BUFFER]
      *  5. Withdraws transition costs + spare keys for re-entry
-     *  6. Navigates back to the boss tile (consuming keys at the transition)
+     *  6. Heals (food, then rest) if HP is still below 75%
+     *  7. Navigates back to the boss tile (consuming keys at the transition)
      */
     suspend fun restockForBossFight(
         characterName: String,
@@ -749,16 +785,55 @@ class FightingExecutor(private val helper: ActionHelper) {
             }
         }
 
-        // 6. Navigate back to boss tile (transition consumes keys automatically)
-        onStatus("Restock complete — returning to ${task.monsterName}...")
-        val encounterMap = if (task.raidCode != null) {
-            helper.findNearest(char, "raid", task.raidCode)
-        } else {
-            helper.findNearest(char, "monster", task.monsterCode)
+        // 6. Heal before returning. A restock triggered by low HP must not hand the character
+        // back to the encounter still wounded, or the next step would trigger it again.
+        char = helper.refreshCharacter(characterName)
+        if (!CharacterUtils.hasEnoughHP(char, 0.75)) {
+            val bestFood = helper.findBestFoodInInventory(char)
+            if (bestFood != null) {
+                val (foodCode, healAmount, available) = bestFood
+                val qty = minOf(available, maxOf(1, (char.maxHp - char.hp) / healAmount))
+                onStatus("Eating ${qty}x $foodCode before returning (HP: ${char.hp}/${char.maxHp})...")
+                char = helper.useItem(characterName, foodCode, qty).character
+            }
+            if (!CharacterUtils.hasEnoughHP(char, 0.75)) {
+                onStatus("Resting before returning (HP: ${char.hp}/${char.maxHp})...")
+                char = helper.rest(characterName)
+            }
         }
+        raidTrace(task, onStatus) {
+            "restock done hp=${char.hp}/${char.maxHp} inv=${char.inventory.sumOf { it.quantity }}/${char.inventoryMaxItems} " +
+                "food=${task.foodCode?.let { "$it x${helper.getItemQuantity(char, it)}" } ?: "none"}"
+        }
+
+        // 7. Navigate back to boss tile (transition consumes keys automatically)
+        onStatus("Restock complete — returning to ${task.monsterName}...")
+        val encounterMap = bossTile(char, task)
         if (encounterMap != null) {
             helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), encounterMap)
         }
         return true
+    }
+
+    /**
+     * Where the boss is fought: the stored event tile for event-spawned bosses (the map cache
+     * doesn't know event overlays), the raid tile for raids, else the nearest monster tile.
+     */
+    private suspend fun bossTile(char: com.artifactsmmo.client.models.Character, task: TaskType.BossFight): com.artifactsmmo.client.models.MapInfo? {
+        if (task.eventMapX != null && task.eventMapY != null) {
+            return com.artifactsmmo.client.models.MapInfo(
+                mapId = 0, name = "", skin = "",
+                x = task.eventMapX, y = task.eventMapY, layer = task.eventMapLayer ?: "overworld",
+                access = com.artifactsmmo.client.models.MapAccess(type = "standard"),
+                interactions = com.artifactsmmo.client.models.MapInteraction()
+            )
+        }
+        return if (task.raidCode != null) helper.findNearest(char, "raid", task.raidCode)
+        else helper.findNearest(char, "monster", task.monsterCode)
+    }
+
+    /** Verbose diagnostics for scheduled raids only (normal boss loops stay quiet). */
+    private inline fun raidTrace(task: TaskType.BossFight, onStatus: (String) -> Unit, message: () -> String) {
+        if (task.raidCode != null) onStatus("[raid ${task.raidCode}] ${message()}")
     }
 }

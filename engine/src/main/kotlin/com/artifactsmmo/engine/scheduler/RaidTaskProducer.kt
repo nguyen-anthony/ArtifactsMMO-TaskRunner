@@ -74,6 +74,8 @@ class RaidTaskProducer(
 
             val start = raid.activeInstance?.startsAt?.toEpochMilliseconds() ?: raid.nextStartAt?.toEpochMilliseconds() ?: continue
             val isActive = raid.status == "active" || raid.activeInstance != null
+            log("Raid ${raid.code}: status=${raid.status} active=$isActive start=$start (in ${(start - now) / 1000}s) " +
+                "leadTime=${config.leadTimeMinutes}m initiator=${config.initiatorName} participants=${config.participantNames}")
             if (!isActive && start - now > config.leadTimeMinutes * 60_000L) continue
             val end = raid.activeInstance?.endsAt?.toEpochMilliseconds() ?: (start + raid.schedule.durationHours * 3_600_000L)
             if (end <= now) continue
@@ -90,6 +92,12 @@ class RaidTaskProducer(
         val initiator = config.initiatorName ?: return
         val members = (listOf(initiator) + config.participantNames.filter { it != initiator }).distinct().take(3)
         val plans = planner.plan(members, raid.monster, config.tankOverride)
+        for ((name, p) in plans) {
+            log("Raid ${raid.code}: plan $name equip=${p.equip.size} " +
+                "utilities=${p.utilities.joinToString { "${it.slot}=${it.itemCode}x${it.quantity}" }.ifEmpty { "none" }} " +
+                "reserves=${p.reservePotions} food=${p.foodCode ?: "none"}x${p.foodQuantity} keys=${p.transitionCosts + p.spareKeys}")
+        }
+        if (members.any { it !in plans }) log("Raid ${raid.code}: WARNING no plan for ${members.filter { it !in plans }}")
         val spec = TaskSpec.BossFight(
             monsterCode = raid.monster, monsterName = raid.name, plans = plans, raidCode = raid.code,
             scheduledStartAtMillis = start, scheduledEndAtMillis = end,
@@ -100,6 +108,7 @@ class RaidTaskProducer(
             members.map { GroupSlot(assignedCharacter = it) },
         )
         if (group != null) log("Raid ${raid.code}: queued group ${group.parent.id} for ${members.joinToString()}")
+        else log("Raid ${raid.code}: enqueueGroup returned null (dedupe=$dedupe)")
     }
 
     suspend fun cancelRaid(raidCode: String, reason: String) {
