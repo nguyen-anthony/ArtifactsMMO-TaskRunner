@@ -6,12 +6,14 @@ import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.CoopOptimizer
 import com.artifactsmmo.core.task.EventConfig
 import com.artifactsmmo.core.task.GearOptimizer
+import com.artifactsmmo.core.task.disjointParties
 import com.artifactsmmo.domain.task.EquipPlan
 import com.artifactsmmo.domain.task.EventMap
 import com.artifactsmmo.domain.task.ItemQty
 import com.artifactsmmo.domain.task.MemberPlan
 import com.artifactsmmo.domain.task.TaskSpec
 import com.artifactsmmo.domain.task.UtilityPlan
+import com.artifactsmmo.engine.scheduler.PartyPlan
 import com.artifactsmmo.engine.scheduler.RaidPlanner
 
 /**
@@ -20,8 +22,8 @@ import com.artifactsmmo.engine.scheduler.RaidPlanner
  *  - resource: every candidate with the required skill level gathers,
  *  - npc: only the designated trader, if items are configured,
  *  - monster: each candidate is gear-optimized; only those above minWinRate fight.
- *  - boss monster: the configured `group` is co-op optimized and fights together as one
- *    BossFight group at the event tile; skipped when no group is configured.
+ *  - boss monster: each configured party is co-op optimized and fights as its own
+ *    BossFight group at the event tile; skipped when no party is configured.
  */
 class LegacyEventPlanner(
     private val helper: ActionHelper,
@@ -78,34 +80,44 @@ class LegacyEventPlanner(
             ))
         }
 
-    /** Boss monsters can't be soloed: fight them as the configured co-op group, or not at all. */
+    /**
+     * Boss monsters can't be soloed: each configured party fights as its own co-op group, or
+     * not at all. Parties are planned in order; each later party plans around the bank stock
+     * the earlier ones will withdraw, and any party below minWinRate is skipped.
+     */
     private suspend fun planBossGroup(event: ActiveEvent, config: EventConfig, map: EventMap, monsterName: String): List<EventPlan> {
-        val group = config.group
-        if (group == null) {
-            log("Event ${event.code}: ${event.content.code} is a boss — skipped (configure a group for this event)")
+        val parties = disjointParties(config.parties) { log("Event ${event.code}: skipped $it") }
+        if (parties.isEmpty()) {
+            log("Event ${event.code}: ${event.content.code} is a boss — skipped (configure a party for this event)")
             return emptyList()
         }
-        val members = group.members
-        val result = runCatching { coop.optimizeForBossFight(members, event.content.code, group.tankOverride) }
-            .onFailure { log("Event ${event.code}: co-op planning failed: ${it.message}") }
-            .getOrNull() ?: return emptyList()
-        val win = result.optimizedWinRate
-        if (win < config.minWinRate) {
-            log("Event ${event.code}: group ${members.joinToString()} win rate ${(win * 100).toInt()}% < ${(config.minWinRate * 100).toInt()}% — skipped")
-            return emptyList()
+        val reserved = mutableMapOf<String, Int>()
+        return parties.mapNotNull { party ->
+            val members = party.members
+            val result = runCatching { coop.optimizeForBossFight(members, event.content.code, party.tankOverride, reserved.toMap()) }
+                .onFailure { log("Event ${event.code}: co-op planning for ${members.joinToString()} failed: ${it.message}") }
+                .getOrNull() ?: return@mapNotNull null
+            val win = result.optimizedWinRate
+            if (win < config.minWinRate) {
+                log("Event ${event.code}: party ${members.joinToString()} win rate ${(win * 100).toInt()}% < ${(config.minWinRate * 100).toInt()}% — skipped")
+                return@mapNotNull null
+            }
+            result.bankDemand.forEach { (code, qty) -> reserved[code] = (reserved[code] ?: 0) + qty }
+            log("Event ${event.code}: party ${members.joinToString()} win rate ${(win * 100).toInt()}% (tank ${result.tankName})")
+            EventPlan.Group(members, TaskSpec.BossFight(
+                monsterCode = event.content.code, monsterName = monsterName,
+                plans = result.toMemberPlans(), eventCode = event.code, eventMap = map,
+            ))
         }
-        log("Event ${event.code}: group ${members.joinToString()} win rate ${(win * 100).toInt()}% (tank ${result.tankName})")
-        return listOf(EventPlan.Group(members, TaskSpec.BossFight(
-            monsterCode = event.content.code, monsterName = monsterName,
-            plans = result.toMemberPlans(), eventCode = event.code, eventMap = map,
-        )))
     }
 }
 
-/** Raid team provisioning via the existing CoopOptimizer. */
+/** Raid party provisioning via the existing CoopOptimizer. */
 class LegacyRaidPlanner(private val coop: CoopOptimizer) : RaidPlanner {
-    override suspend fun plan(members: List<String>, monsterCode: String, tankOverride: String?): Map<String, MemberPlan> =
-        coop.optimizeForBossFight(members, monsterCode, tankOverride).toMemberPlans()
+    override suspend fun plan(members: List<String>, monsterCode: String, tankOverride: String?, bankReserved: Map<String, Int>): PartyPlan {
+        val result = coop.optimizeForBossFight(members, monsterCode, tankOverride, bankReserved)
+        return PartyPlan(result.toMemberPlans(), result.optimizedWinRate, result.bankDemand)
+    }
 }
 
 private fun CoopOptimizer.CoopOptimizationResult.toMemberPlans(): Map<String, MemberPlan> =

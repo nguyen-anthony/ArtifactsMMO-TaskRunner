@@ -1011,12 +1011,14 @@ class ActionHelper(
      * Find the best food item in the bank that the character can use.
      * Returns (itemCode, healAmount, bankQuantity) or null if no usable food found.
      */
-    suspend fun findBestFoodInBank(char: Character): Triple<String, Int, Int>? {
+    /** Best healing food in the bank, net of [reserved] quantities (third = available quantity). */
+    suspend fun findBestFoodInBank(char: Character, reserved: Map<String, Int> = emptyMap()): Triple<String, Int, Int>? {
         var bestFood: Triple<String, Int, Int>? = null
 
         // Read from shared BankState snapshot.
         val bankItems = bankState.snapshot.value
-        for ((code, quantity) in bankItems) {
+        for ((code, bankQuantity) in bankItems) {
+            val quantity = bankQuantity - reserved.getOrDefault(code, 0)
             if (quantity <= 0) continue
             if (code in FOOD_EXCLUDED_FROM_COMBAT) continue
             val item = try {

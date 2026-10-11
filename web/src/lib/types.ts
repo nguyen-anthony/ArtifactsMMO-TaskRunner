@@ -86,17 +86,29 @@ export interface Catalog {
   raids: { code: string; name: string; monster: string }[]
 }
 
+/** What an NPC trades: `buyPrice` = we can buy it, `sellPrice` = we can sell it to them. */
+export interface NpcItem { code: string; currency: string; buyPrice: number | null; sellPrice: number | null }
+
 /** Mirrors engine `EventConfig` / `EventGroupConfig` (stored under /configs/event). */
 export interface EventGroupConfig { initiatorName: string; participantNames: string[]; tankOverride: string | null }
 export interface EventConfig {
   eventCode: string; enabled: boolean; eligibleCharacters: string[]
   itemsToSell: ItemQty[]; itemsToBuy: ItemQty[]; designatedTrader: string | null
-  minWinRate: number; group: EventGroupConfig | null
+  minWinRate: number
+  /** Boss events: one co-op group per party (earlier parties get first pick of the bank). */
+  groups: EventGroupConfig[]
+  /** Legacy single party; superseded by `groups`. */
+  group: EventGroupConfig | null
 }
 /** Mirrors engine `RaidConfig` (stored under /configs/raid). */
 export interface RaidConfig {
-  raidCode: string; enabled: boolean; initiatorName: string | null; participantNames: string[]
-  tankOverride: string | null; leadTimeMinutes: number
+  raidCode: string; enabled: boolean; leadTimeMinutes: number
+  /** One co-op group per party (earlier parties get first pick of the bank). */
+  parties: EventGroupConfig[]
+  /** Parties simulating below this win rate are skipped; 0 = never skip. */
+  minWinRate: number
+  /** Legacy single-party fields; superseded by `parties`. */
+  initiatorName: string | null; participantNames: string[]; tankOverride: string | null
 }
 
 export interface CraftableIngredient { code: string; perCraft: number; have: number; missing: number }

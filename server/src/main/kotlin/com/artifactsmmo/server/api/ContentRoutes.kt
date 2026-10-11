@@ -21,6 +21,7 @@ import kotlinx.serialization.Serializable
 /** [contentType]/[contentCode]: what the event spawns ("monster"/"resource"/"npc"). */
 @Serializable data class EventDto(val code: String, val name: String, val contentType: String, val contentCode: String)
 @Serializable data class RaidDto(val code: String, val name: String, val monster: String)
+@Serializable data class NpcItemDto(val code: String, val currency: String, val buyPrice: Int?, val sellPrice: Int?)
 
 @Serializable data class Catalog(
     val monsters: List<MonsterDto>, val resources: List<ResourceDto>, val items: List<ItemDto>,
@@ -97,6 +98,15 @@ fun Route.contentAndSimRoutes(b: ApiBackend) {
             monsters = c.monsters.map { it.copy(reachable = it.code in monsters) },
             resources = c.resources.map { it.copy(reachable = it.code in resources) },
         ))
+    }
+
+    // What an NPC trades: buyPrice = we can buy it, sellPrice = we can sell it (null = not traded that way).
+    get("/content/npcs/{code}/items") {
+        val e = b.engine ?: return@get call.respond(HttpStatusCode.ServiceUnavailable, ApiError("engine not running"))
+        val code = call.parameters["code"]!!
+        val items = runCatching { e.contentCache.getNpcCatalog(code) }
+            .getOrElse { return@get call.respond(HttpStatusCode.BadGateway, ApiError("could not load NPC items: ${it.message}")) }
+        call.respond(items.map { NpcItemDto(it.code, it.currency, it.buyPrice, it.sellPrice) }.sortedBy { it.code })
     }
 
     // Best gear + utilities for one character vs a monster (uses the fight simulator, ~seconds).

@@ -2,7 +2,6 @@ package com.artifactsmmo.engine.worker
 
 import com.artifactsmmo.client.models.SimpleItem
 import com.artifactsmmo.core.task.ActionHelper
-import com.artifactsmmo.core.task.BossEncounterCoordinator
 import com.artifactsmmo.core.task.FightingExecutor
 import com.artifactsmmo.core.task.StepResult
 import com.artifactsmmo.core.task.TaskType
@@ -17,38 +16,19 @@ import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * In-process rendezvous for group fights, keyed by the group (parent task) id.
+ * Per-group, in-process state for group fights, keyed by the group (parent task) id.
  * Safe because only one backend instance runs workers (advisory instance lock).
  *
- * Wraps the legacy [BossEncounterCoordinator]: participants `signalReady` when positioned,
- * the initiator `awaitParticipants` then fires the fight with their names.
+ * Only serializes bank access: there is no fight handshake. The initiator checks the
+ * participants' real game state before each fight (see FightingExecutor.executeBossStep).
  */
 class GroupCoordinator {
-    val encounters = BossEncounterCoordinator()
-    /** groupId -> initiator name currently registered with [encounters]. */
-    private val registered = ConcurrentHashMap<Long, String>()
     private val provisionLocks = ConcurrentHashMap<Long, Mutex>()
 
     /** Members provision one at a time so they don't race for the same bank stacks. */
     fun provisionLock(groupId: Long): Mutex = provisionLocks.computeIfAbsent(groupId) { Mutex() }
 
-    /** Registers the encounter once per formation (idempotent). */
-    fun ensureRegistered(groupId: Long, initiator: String, participants: List<String>, monsterCode: String) {
-        if (registered.putIfAbsent(groupId, initiator) == null) {
-            encounters.registerEncounter(initiator, participants, monsterCode)
-        }
-    }
-
-    /**
-     * Tears down the encounter so anyone blocked in await/signal is released (they get a
-     * closed-channel error, which the legacy step treats as "wait and retry").
-     */
-    fun clear(groupId: Long) {
-        registered.remove(groupId)?.let { encounters.clearEncounter(it) }
-    }
-
     fun forget(groupId: Long) {
-        clear(groupId)
         provisionLocks.remove(groupId)
     }
 }
@@ -60,8 +40,8 @@ class GroupCoordinator {
  *  1. start: provision (gear, utilities, reserve potions, food, dungeon keys) — serialized
  *     per group. Happens as soon as the slot is claimed, before the group is formed.
  *  2. step: wait until every slot is claimed ("formed"); then the legacy boss step runs —
- *     initiator waits for participants' ready signals and calls fight(participants = …),
- *     participants move to the tile, signal, and wait out the shared fight cooldown.
+ *     every member heals/restocks on its own and stands on the tile; the initiator calls
+ *     fight(participants = …) once the API shows all of them there and ready.
  *  3. If any member leaves for good (failed/cancelled) the rest of the group is cancelled;
  *     if the initiator completes (e.g. its stop condition), the whole group completes.
  *     A preempted (suspended) member just un-forms the group; the others wait for it.
@@ -69,7 +49,7 @@ class GroupCoordinator {
 /** The game actions a boss member performs; separated so group orchestration is testable. */
 interface BossOps {
     suspend fun provision(character: String, plan: MemberPlan, status: (String) -> Unit)
-    suspend fun step(character: String, task: TaskType.BossFight, encounters: BossEncounterCoordinator,
+    suspend fun step(character: String, task: TaskType.BossFight,
                      status: (String) -> Unit, previous: com.artifactsmmo.client.models.Character?): StepResult
     suspend fun restock(character: String, task: TaskType.BossFight, status: (String) -> Unit): Boolean
 }
@@ -115,9 +95,9 @@ class LegacyBossOps(private val helper: ActionHelper, private val fighting: Figh
         if (plan.reservePotions.isNotEmpty()) helper.withdrawReservePotions(character, plan.reservePotions)
     }
 
-    override suspend fun step(character: String, task: TaskType.BossFight, encounters: BossEncounterCoordinator,
+    override suspend fun step(character: String, task: TaskType.BossFight,
                               status: (String) -> Unit, previous: com.artifactsmmo.client.models.Character?) =
-        fighting.executeBossStep(character, task, encounters, status, previous)
+        fighting.executeBossStep(character, task, status, previous)
 
     override suspend fun restock(character: String, task: TaskType.BossFight, status: (String) -> Unit) =
         fighting.restockForBossFight(character, task, status)
@@ -151,8 +131,7 @@ class BossFightExecutor(
         leftGroup(group, ctx)?.let { return it }
 
         if (!group.isFormed) {
-            // Someone is missing (not yet claimed, or preempted). Release anyone blocked.
-            coordinator.clear(gid)
+            // Someone is missing (not yet claimed, or preempted).
             val have = group.slots.count { it.claimedBy != null && !it.status.isTerminal }
             ctx.status("Waiting for group: $have/${group.slots.size} members")
             if (spec.raidCode != null) {
@@ -167,13 +146,12 @@ class BossFightExecutor(
         val isInitiator = ctx.task.groupRole == GroupRole.INITIATOR
         val initiator = group.initiator!!.claimedBy!!
         val participants = group.participantNames
-        if (isInitiator) coordinator.ensureRegistered(gid, initiator, participants, spec.monsterCode)
 
         val legacy = SpecMapper.bossFight(spec, ctx.character, initiator, isInitiator, participants)
         val prev = ctx.previousChar
         ctx.previousChar = null
         val s = ctx.state
-        return when (val r = ops.step(ctx.character, legacy, coordinator.encounters, ctx.status, prev)) {
+        return when (val r = ops.step(ctx.character, legacy, ctx.status, prev)) {
             is StepResult.FightWon -> {
                 ctx.previousChar = r.character; s.fightsWon++; s.consecutiveDeaths = 0; StepOutcome.Continue()
             }
@@ -188,13 +166,9 @@ class BossFightExecutor(
                 else StepOutcome.Fail("Restock failed — utility loadout could not be restored")
             }
             is StepResult.Rested -> StepOutcome.Continue()
-            // Participants already waited out the fight cooldown; the initiator's Waiting means
-            // "encounter cleared" or "raid staged but not open yet" — back off a little.
-            // A staged raid also backs participants off so they don't spin before opening.
-            is StepResult.Waiting -> {
-                val staged = spec.scheduledStartAtMillis?.let { System.currentTimeMillis() < it } == true
-                StepOutcome.Continue(if (isInitiator || (spec.raidCode != null && staged)) 3_000 else 0)
-            }
+            // Waiting = participants not ready yet (initiator), idle on the tile (participant),
+            // or raid staged but not open yet. Re-check the game state shortly.
+            is StepResult.Waiting -> StepOutcome.Continue(3_000)
             is StepResult.Error -> { ctx.status("Error: ${r.message}"); StepOutcome.Continue(10_000) }
             else -> StepOutcome.Continue(3_000)
         }
@@ -238,9 +212,6 @@ class BossFightExecutor(
         coordinator.forget(gid)
         // Boss loot is banked per loop by the legacy code; nothing else to clean up.
     }
-
-    /** Suspend/stop: release anyone blocked on this member's signal. */
-    override fun onStop(ctx: ExecContext) = coordinator.clear(groupId(ctx))
 
     private fun groupId(ctx: ExecContext): Long =
         requireNotNull(ctx.task.groupId) { "boss_fight task ${ctx.taskId} is not part of a group" }

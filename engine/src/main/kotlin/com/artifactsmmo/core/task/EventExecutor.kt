@@ -1,6 +1,7 @@
 package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.ArtifactsApiException
+import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.MapAccess
 import com.artifactsmmo.client.models.MapInfo
 import com.artifactsmmo.client.models.MapInteraction
@@ -12,7 +13,7 @@ import com.artifactsmmo.client.models.SimpleItem
  * EventGather: continuously gathers resources from an ephemeral event tile until the
  * event expires or the character's inventory is full (at which point it banks and returns).
  *
- * EventNpc: one-shot sell/buy sequence at an ephemeral NPC event tile, then reverts.
+ * EventNpc: sell/buy at an ephemeral NPC event tile in bank ⇄ NPC trips, then reverts.
  */
 @OptIn(kotlin.time.ExperimentalTime::class)
 class EventExecutor(
@@ -81,81 +82,172 @@ class EventExecutor(
     }
 
     /**
-     * Execute the one-shot NPC event task:
-     * 1. Withdraw ALL available quantity of each sell item from the bank.
-     * 2. Navigate to the NPC event tile.
-     * 3. Sell everything in inventory for each configured sell item.
-     * 4. Buy items (quantity from config).
-     * 5. Bank purchased items.
-     * 6. Return [StepResult.QuickTaskComplete].
-     *
-     * Sell quantities in the task are ignored — the design intent is "sell everything
-     * available". Bank is drained first so the full stack is present at the NPC.
+     * Execute the NPC event task as bank ⇄ NPC trips (inventory space is the limit):
+     * 1. Bank the whole inventory (except non-gold buy currencies) to maximize space.
+     * 2. Sell: each item's sell quantity is a "sell down to" floor — everything owned
+     *    (bank + inventory) above it is sold; 0 sells all. Each trip withdraws as much as
+     *    fits, walks to the NPC and sells it.
+     * 3. Buy: each item's quantity is bought in inventory-sized chunks (capped by what's
+     *    affordable), banking purchases between trips.
+     * 4. Bank everything and return [StepResult.QuickTaskComplete], or
+     *    [StepResult.EventExpired] if the NPC leaves mid-way.
      */
     suspend fun executeNpcStep(
         characterName: String,
         task: TaskType.EventNpc,
+        isEventActive: () -> Boolean,
         onStatus: (String) -> Unit
     ): StepResult {
-        var char = helper.refreshCharacter(characterName)
+        if (!isEventActive()) return StepResult.EventExpired
+        val npcItems = runCatching { helper.contentCache.getNpcCatalog(task.npcCode) }.getOrDefault(emptyList())
+        val buyCurrencies = task.itemsToBuy.mapNotNull { b -> npcItems.firstOrNull { it.code == b.code }?.currency }
+            .filter { it != "gold" }.toSet()
 
-        // Withdraw all available bank stock for each sell item
-        val itemsToWithdraw = mutableListOf<SimpleItem>()
-        for (sell in task.itemsToSell) {
-            val inBank = helper.getBankItemQuantity(sell.code)
-            if (inBank > 0) {
-                itemsToWithdraw.add(SimpleItem(sell.code, inBank))
-            }
-        }
-        if (itemsToWithdraw.isNotEmpty()) {
-            onStatus("Withdrawing sell items from bank for NPC event...")
-            helper.bankWithdrawItems(characterName, itemsToWithdraw)
-            char = helper.refreshCharacter(characterName)
-        }
-
-        // Navigate to NPC event tile
         val npcTarget = MapInfo(
-            mapId = 0,
-            name = "",
-            skin = "",
-            x = task.eventMapX,
-            y = task.eventMapY,
-            layer = task.eventMapLayer,
-            access = MapAccess(type = "standard"),
-            interactions = MapInteraction()
+            mapId = 0, name = "", skin = "",
+            x = task.eventMapX, y = task.eventMapY, layer = task.eventMapLayer,
+            access = MapAccess(type = "standard"), interactions = MapInteraction()
         )
-        if (!helper.isAt(char, task.eventMapX, task.eventMapY) || char.layer != task.eventMapLayer) {
-            onStatus("Moving to NPC event: ${task.npcName}...")
-            helper.navigateWithTeleport(characterName, char, npcTarget)
-            char = helper.refreshCharacter(characterName)
-        }
-
-        // Sell — sell everything currently in inventory for each configured item
-        for (sell in task.itemsToSell) {
-            val qty = helper.getItemQuantity(char, sell.code)
-            if (qty > 0) {
-                onStatus("Selling ${qty}x ${sell.code} to ${task.npcName}...")
-                char = helper.npcSell(characterName, sell.code, qty)
-            }
-        }
-
-        // Buy items (quantity is the configured per-event buy amount)
-        for (buy in task.itemsToBuy) {
-            if (buy.quantity > 0) {
-                onStatus("Buying ${buy.quantity}x ${buy.code} from ${task.npcName}...")
-                char = helper.npcBuyDirect(characterName, buy.code, buy.quantity)
-            }
-        }
-
-        // Bank any purchased items or leftover inventory
-        val refreshed = helper.refreshCharacter(characterName)
-        val totalItems = refreshed.inventory.sumOf { it.quantity }
-        if (totalItems > 0) {
+        suspend fun goToNpc(c: Character): Character =
+            if (helper.isAt(c, task.eventMapX, task.eventMapY) && c.layer == task.eventMapLayer) c
+            else { onStatus("Moving to NPC event: ${task.npcName}..."); helper.navigateWithTeleport(characterName, c, npcTarget) }
+        suspend fun finish(result: StepResult): StepResult {
             onStatus("Banking items after NPC event...")
-            helper.bankDepositAll(characterName)
+            runCatching { helper.depositInventoryExcept(characterName, emptySet()) }
+            return result
         }
 
-        return StepResult.QuickTaskComplete
+        var char = helper.depositInventoryExcept(characterName, buyCurrencies)
+
+        // ── Sell ──
+        runCatching { helper.bankState.refresh() }
+        val toSell = task.itemsToSell.associate { sell ->
+            val owned = helper.getBankItemQuantity(sell.code) + helper.getItemQuantity(char, sell.code)
+            sell.code to sellDownTo(owned, sell.quantity)
+        }.filterValues { it > 0 }.toMutableMap()
+        var failedTrips = 0
+        while (toSell.isNotEmpty()) {
+            if (!isEventActive()) return finish(StepResult.EventExpired)
+            char = helper.refreshCharacter(characterName)
+            // Stock already carried (e.g. a previous trip's unsold leftovers) counts toward the batch.
+            val carried = toSell.mapValues { (code, qty) -> minOf(qty, helper.getItemQuantity(char, code)) }
+            val batch = packBatch(toSell.mapValues { (code, qty) -> qty - carried.getValue(code) }, freeQuantity(char), freeSlots(char))
+            if (batch.isEmpty() && carried.values.all { it == 0 }) {
+                if (++failedTrips > 2) break
+                char = helper.depositInventoryExcept(characterName, buyCurrencies, char)
+                continue
+            }
+            if (batch.isNotEmpty()) {
+                onStatus("Withdrawing ${batch.joinToString { "${it.quantity}x ${it.code}" }} to sell...")
+                val withdrawn = runCatching { helper.bankWithdrawItems(characterName, batch) }
+                if (withdrawn.isFailure) {
+                    // Bank snapshot was stale: re-read it and clamp what's left to sell.
+                    onStatus("Withdraw failed (${withdrawn.exceptionOrNull()?.message}); re-checking bank...")
+                    runCatching { helper.bankState.refresh() }
+                    for (code in toSell.keys.toList()) {
+                        toSell[code] = minOf(toSell.getValue(code), helper.getBankItemQuantity(code) + carried.getValue(code))
+                    }
+                    toSell.values.removeAll { it <= 0 }
+                    if (++failedTrips > 2) break
+                    continue
+                }
+            }
+            char = goToNpc(helper.refreshCharacter(characterName))
+            var soldAny = false
+            for (code in toSell.keys.toList()) {
+                val qty = minOf(toSell.getValue(code), helper.getItemQuantity(char, code))
+                if (qty <= 0) continue
+                onStatus("Selling ${qty}x $code to ${task.npcName} (${toSell.getValue(code) - qty} left after this)...")
+                try {
+                    char = helper.npcSell(characterName, code, qty)
+                    soldAny = true
+                    toSell[code] = toSell.getValue(code) - qty
+                    if (toSell.getValue(code) <= 0) toSell.remove(code)
+                } catch (e: ArtifactsApiException) {
+                    if (e.errorCode == 598) return finish(StepResult.EventExpired)
+                    onStatus("Could not sell $code: ${e.message} — skipping it")
+                    toSell.remove(code)
+                }
+            }
+            if (!soldAny && ++failedTrips > 2) break
+            if (toSell.isNotEmpty()) char = helper.depositInventoryExcept(characterName, buyCurrencies, char)
+        }
+
+        // ── Buy ──
+        for (buy in task.itemsToBuy) {
+            val entry = npcItems.firstOrNull { it.code == buy.code && it.buyPrice != null }
+            val price = entry?.buyPrice
+            val currency = entry?.currency ?: "gold"
+            var remaining = buy.quantity
+            var stalls = 0
+            while (remaining > 0) {
+                if (!isEventActive()) return finish(StepResult.EventExpired)
+                char = helper.refreshCharacter(characterName)
+                val currencyHeld = if (currency == "gold") 0 else helper.getItemQuantity(char, currency)
+                val hasSlot = freeSlots(char) > 0 || helper.getItemQuantity(char, buy.code) > 0
+                // Non-gold currency occupies inventory until spent, so leave room for it.
+                val space = if (!hasSlot) 0
+                    else if (currency == "gold" || price == null) freeQuantity(char)
+                    else (freeQuantity(char) + currencyHeld) / (price + 1)
+                val affordable = when {
+                    price == null || price <= 0 -> remaining
+                    currency == "gold" -> char.gold / price
+                    else -> (currencyHeld + helper.getBankItemQuantity(currency)) / price
+                }
+                val chunk = minOf(remaining, space, affordable)
+                if (affordable <= 0) { onStatus("Can't afford more ${buy.code} ($remaining not bought)"); break }
+                if (chunk <= 0) {
+                    if (++stalls > 2) { onStatus("No inventory space to buy ${buy.code}"); break }
+                    char = helper.depositInventoryExcept(characterName, buyCurrencies, char)
+                    continue
+                }
+                if (currency != "gold" && price != null &&
+                    !helper.ensureNpcCurrencyInInventory(characterName, currency, chunk * price)) {
+                    onStatus("Not enough $currency to buy ${buy.code}"); break
+                }
+                char = goToNpc(helper.refreshCharacter(characterName))
+                onStatus("Buying ${chunk}x ${buy.code} from ${task.npcName} (${remaining - chunk} left after this)...")
+                try {
+                    char = helper.npcBuyDirect(characterName, buy.code, chunk)
+                    remaining -= chunk
+                    stalls = 0
+                } catch (e: ArtifactsApiException) {
+                    if (e.errorCode == 598) return finish(StepResult.EventExpired)
+                    onStatus("Could not buy ${buy.code}: ${e.message} — skipping it")
+                    break
+                }
+                if (remaining > 0) char = helper.depositInventoryExcept(characterName, buyCurrencies, char)
+            }
+        }
+
+        return finish(StepResult.QuickTaskComplete)
+    }
+
+    private fun freeQuantity(char: Character): Int = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity }).coerceAtLeast(0)
+    private fun freeSlots(char: Character): Int = char.inventory.count { it.code.isEmpty() || it.quantity == 0 }
+
+    companion object {
+        /** How many to sell so that [keep] remain; a keep of 0 (or less) sells everything. */
+        fun sellDownTo(owned: Int, keep: Int): Int = (owned - keep.coerceAtLeast(0)).coerceAtLeast(0)
+
+        /**
+         * Fill one inventory load from [wanted] (code → quantity still to move), in order,
+         * bounded by [freeQuantity] items and [freeSlots] distinct codes.
+         */
+        fun packBatch(wanted: Map<String, Int>, freeQuantity: Int, freeSlots: Int): List<SimpleItem> {
+            var room = freeQuantity
+            var slots = freeSlots
+            val out = mutableListOf<SimpleItem>()
+            for ((code, qty) in wanted) {
+                if (room <= 0 || slots <= 0) break
+                if (qty <= 0) continue
+                val take = minOf(qty, room)
+                out += SimpleItem(code, take)
+                room -= take
+                slots--
+            }
+            return out
+        }
     }
 
     /**

@@ -20,6 +20,7 @@ import com.artifactsmmo.engine.config.ConfigStore
 import com.artifactsmmo.engine.config.TypedConfigs
 import com.artifactsmmo.engine.realtime.EventPlan
 import com.artifactsmmo.engine.realtime.EventTaskProducer
+import com.artifactsmmo.engine.scheduler.PartyPlan
 import com.artifactsmmo.engine.scheduler.RaidTaskProducer
 import com.artifactsmmo.engine.scheduler.Schedule
 import com.artifactsmmo.engine.scheduler.ScheduleRunner
@@ -85,7 +86,7 @@ class ProducerTest {
         var planned = 0
         val producer = EventTaskProducer(emptyFlow(), queue, configs, planner = { e, c ->
             planned++
-            val members = c.group!!.members
+            val members = c.parties.first().members
             listOf(EventPlan.Group(members, TaskSpec.BossFight(
                 "duskworm", plans = members.associateWith { MemberPlan() }, eventCode = e.code, eventMap = EventMap(-1, 19, "underground"),
             )))
@@ -101,7 +102,7 @@ class ProducerTest {
         assertEquals(1, planned, "co-op planning is skipped once the instance is queued")
         val rows = queue.list()
         val parent = rows.single { it.groupRole == GroupRole.GROUP }
-        assertEquals("event:out_of_the_ground:group:2030-01-01T00:00:00Z", parent.dedupeKey)
+        assertEquals("event:out_of_the_ground:group:alice:2030-01-01T00:00:00Z", parent.dedupeKey)
         assertEquals(Instant.parse("2030-01-01T00:00:00Z").toEpochMilliseconds(), parent.expiresAtMillis)
         assertEquals(listOf("alice", "bob", "carol"), rows.filter { it.groupRole != GroupRole.GROUP }.map { it.assignedCharacter })
         assertEquals("out_of_the_ground", TaskSpec.fromJson(parent.spec).eventCodeOrNull())
@@ -122,7 +123,7 @@ class ProducerTest {
         val raid = Raid("lich_raid", "Lich", "", "lich", RaidSchedule(startHourUtc = 1, startMinuteUtc = 0, durationHours = 2),
             status = "scheduled", nextStartAt = Instant.fromEpochMilliseconds(start))
         val producer = RaidTaskProducer(queue, configs, { listOf(raid) },
-            planner = { members, _, _ -> planned++; members.associateWith { MemberPlan() } }, clock = { now })
+            planner = { members, _, _, _ -> planned++; PartyPlan(members.associateWith { MemberPlan() }) }, clock = { now })
 
         now = start - 10 * 60_000 // too early
         producer.tick()
@@ -133,7 +134,7 @@ class ProducerTest {
         assertEquals(1, planned, "planning is skipped once the instance is queued")
         val rows = queue.list()
         val parent = rows.single { it.groupRole == GroupRole.GROUP }
-        assertEquals("raid:lich_raid:$start", parent.dedupeKey)
+        assertEquals("raid:lich_raid:$start:alice", parent.dedupeKey)
         assertEquals(start + 2 * 3_600_000, parent.expiresAtMillis)
         val slots = rows.filter { it.groupRole != GroupRole.GROUP }
         assertEquals(listOf("alice", "bob", "carol"), slots.map { it.assignedCharacter })
@@ -143,6 +144,71 @@ class ProducerTest {
 
         producer.cancelRaid("lich_raid", "raid_ended")
         assertTrue(queue.list().all { it.status == TaskStatus.CANCELLED })
+    }
+
+    @Test
+    fun `boss event queues one group per disjoint party and honours the legacy dedupe key`() = runTest {
+        val queue = FakeTaskQueue { 0L }
+        val configs = TypedConfigs(MemConfigs()).also {
+            it.putEvent(EventConfig("out_of_the_ground", enabled = true, groups = listOf(
+                EventGroupConfig("alice", listOf("bob")),
+                EventGroupConfig("dave", listOf("erin")),
+                EventGroupConfig("frank", listOf("bob")), // reuses bob -> dropped
+            )))
+        }
+        val plannedParties = mutableListOf<List<String>>()
+        val producer = EventTaskProducer(emptyFlow(), queue, configs, planner = { e, c ->
+            c.parties.map { p ->
+                plannedParties += p.members
+                EventPlan.Group(p.members, TaskSpec.BossFight(
+                    "duskworm", plans = p.members.associateWith { MemberPlan() }, eventCode = e.code, eventMap = EventMap(-1, 19, "underground"),
+                ))
+            }
+        })
+        val instance = "2030-01-01T00:00:00Z"
+        // A group queued by the pre-multi-party build counts as the first party.
+        queue.enqueue(NewTask("boss_fight", TaskSpec.Gather("mining", "copper_rocks").toJson(), source = TaskSource.EVENT, dedupeKey = "event:out_of_the_ground:group:$instance"))
+        val event = ActiveEvent("Out Of The Ground", "out_of_the_ground",
+            EventSpawnMap(mapId = 1, x = -1, y = 19, layer = "underground",
+                interactions = MapInteraction(MapContent("monster", "duskworm"))),
+            expiration = instance)
+
+        producer.onSpawn(event)
+        producer.onSpawn(event)
+        assertEquals(listOf(listOf("dave", "erin")), plannedParties, "only the unqueued, disjoint party is planned, once")
+        val parents = queue.list().filter { it.groupRole == GroupRole.GROUP }
+        assertEquals(listOf("event:out_of_the_ground:group:dave:$instance"), parents.map { it.dedupeKey })
+    }
+
+    @Test
+    fun `raid queues each party with bank reservations from earlier parties and skips low win rates`() = runTest {
+        var now = 0L
+        val queue = FakeTaskQueue { now }
+        val configs = TypedConfigs(MemConfigs()).also {
+            it.putRaid(RaidConfig("lich_raid", enabled = true, leadTimeMinutes = 5, minWinRate = 0.5, parties = listOf(
+                EventGroupConfig("alice", listOf("bob")),
+                EventGroupConfig("carol", listOf("dave")),
+                EventGroupConfig("erin", listOf("frank")),
+            )))
+        }
+        val start = 60 * 60_000L
+        val raid = Raid("lich_raid", "Lich", "", "lich", RaidSchedule(startHourUtc = 1, startMinuteUtc = 0, durationHours = 2),
+            status = "scheduled", nextStartAt = Instant.fromEpochMilliseconds(start))
+        val reservedSeen = mutableMapOf<String, Map<String, Int>>()
+        val producer = RaidTaskProducer(queue, configs, { listOf(raid) },
+            planner = { members, _, _, reserved ->
+                reservedSeen[members.first()] = reserved
+                PartyPlan(members.associateWith { MemberPlan() }, winRate = if (members.first() == "carol") 0.2 else 0.9,
+                    bankDemand = mapOf("potion" to 5))
+            }, clock = { now })
+
+        now = start - 4 * 60_000
+        producer.tick()
+        assertEquals(emptyMap(), reservedSeen["alice"])
+        assertEquals(mapOf("potion" to 5), reservedSeen["carol"])
+        assertEquals(mapOf("potion" to 5), reservedSeen["erin"], "a skipped party's demand is not reserved")
+        val keys = queue.list().filter { it.groupRole == GroupRole.GROUP }.map { it.dedupeKey }
+        assertEquals(listOf("raid:lich_raid:$start:alice", "raid:lich_raid:$start:erin"), keys)
     }
 
     @Test

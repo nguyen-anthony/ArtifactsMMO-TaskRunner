@@ -1,0 +1,927 @@
+{
+  "data": [
+    {
+      "name": "Small Health Potion",
+      "code": "small_health_potion",
+      "level": 5,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A compact potion that restores a bit of health when most needed. Fits in any pocket.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 4
+        }
+      ],
+      "effects": [
+        {
+          "code": "restore",
+          "value": 30,
+          "description": "Restores 30 HP at the start of the turn if the player has lost more than 50% of their health points."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 5,
+        "items": [
+          {
+            "code": "sunflower",
+            "quantity": 3
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Air Boost Potion",
+      "code": "air_boost_potion",
+      "level": 10,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A bubbling potion that tingles on your tongue. Increases air damage when battle begins.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_dmg_air",
+          "value": 12,
+          "description": "Add 12% air damage at the start of the fight and for the rest of the fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 10,
+        "items": [
+          {
+            "code": "green_slimeball",
+            "quantity": 1
+          },
+          {
+            "code": "sunflower",
+            "quantity": 1
+          },
+          {
+            "code": "algae",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Fire Boost Potion",
+      "code": "fire_boost_potion",
+      "level": 10,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "Fiery red and warm to the touch. Drink to ignite your attacks with extra fire damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_dmg_fire",
+          "value": 12,
+          "description": "Add 12% fire damage at the start of the fight and for the rest of the fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 10,
+        "items": [
+          {
+            "code": "red_slimeball",
+            "quantity": 1
+          },
+          {
+            "code": "sunflower",
+            "quantity": 1
+          },
+          {
+            "code": "algae",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Water Boost Potion",
+      "code": "water_boost_potion",
+      "level": 10,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A cool, refreshing brew that grants a surge of water damage at the start of battle.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_dmg_water",
+          "value": 12,
+          "description": "Add 12% water damage at the start of the fight and for the rest of the fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 10,
+        "items": [
+          {
+            "code": "blue_slimeball",
+            "quantity": 1
+          },
+          {
+            "code": "sunflower",
+            "quantity": 1
+          },
+          {
+            "code": "algae",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Earth Boost Potion",
+      "code": "earth_boost_potion",
+      "level": 10,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A potion that surges with earthen energy. Grants bonus earth damage at the start of a fight.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_dmg_earth",
+          "value": 12,
+          "description": "Add 12% earth damage at the start of the fight and for the rest of the fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 10,
+        "items": [
+          {
+            "code": "yellow_slimeball",
+            "quantity": 1
+          },
+          {
+            "code": "sunflower",
+            "quantity": 1
+          },
+          {
+            "code": "algae",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Minor Health Potion",
+      "code": "minor_health_potion",
+      "level": 20,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A small but effective potion. Restores a fair amount of health in a pinch.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "restore",
+          "value": 70,
+          "description": "Restores 70 HP at the start of the turn if the player has lost more than 50% of their health points."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 20,
+        "items": [
+          {
+            "code": "nettle_leaf",
+            "quantity": 2
+          },
+          {
+            "code": "algae",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Small Antidote",
+      "code": "small_antidote",
+      "level": 20,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A basic remedy for poison. Not as powerful as a full antidote, but better than nothing.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "antipoison",
+          "value": 20,
+          "description": "At the beginning of the turn, if the character has at least one poison on him, removes 20 poison damage."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 20,
+        "items": [
+          {
+            "code": "milk_bucket",
+            "quantity": 1
+          },
+          {
+            "code": "sap",
+            "quantity": 1
+          },
+          {
+            "code": "nettle_leaf",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Antidote",
+      "code": "antidote",
+      "level": 30,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A potent medicine that neutralizes poison. The bitter taste is worth the relief it brings.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "antipoison",
+          "value": 50,
+          "description": "At the beginning of the turn, if the character has at least one poison on him, removes 50 poison damage."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 30,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 2
+          },
+          {
+            "code": "maple_sap",
+            "quantity": 1
+          },
+          {
+            "code": "glowstem_leaf",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Health Splash Potion",
+      "code": "health_splash_potion",
+      "level": 30,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A vibrant red potion in a breakable flask. When thrown, it shatters and releases a healing mist that rapidly mends wounds of those caught in its cloud.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "splash_restore",
+          "value": 150,
+          "description": "Restores 150 HP at the start of the turn to another character who has lost the most health if that character has less than 50% of their health points remaining."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 30,
+        "items": [
+          {
+            "code": "nettle_leaf",
+            "quantity": 2
+          },
+          {
+            "code": "sunflower",
+            "quantity": 1
+          },
+          {
+            "code": "algae",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Health Potion",
+      "code": "health_potion",
+      "level": 30,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "Restores a significant amount of health when your wounds are deep.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "restore",
+          "value": 100,
+          "description": "Restores 100 HP at the start of the turn if the player has lost more than 50% of their health points."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 30,
+        "items": [
+          {
+            "code": "nettle_leaf",
+            "quantity": 2
+          },
+          {
+            "code": "egg",
+            "quantity": 1
+          },
+          {
+            "code": "sap",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Greater Health Potion",
+      "code": "greater_health_potion",
+      "level": 40,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A powerful potion that heals even the most grievous wounds.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "restore",
+          "value": 200,
+          "description": "Restores 200 HP at the start of the turn if the player has lost more than 50% of their health points."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "glowstem_leaf",
+            "quantity": 2
+          },
+          {
+            "code": "egg",
+            "quantity": 1
+          },
+          {
+            "code": "algae",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Health Boost Potion",
+      "code": "health_boost_potion",
+      "level": 40,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "Grants a massive boost of health at the start of any fight. Drink up and feel unstoppable!",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_hp",
+          "value": 250,
+          "description": "Add 250 HP at the start of the fight and for the rest of the fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "milk_bucket",
+            "quantity": 1
+          },
+          {
+            "code": "sap",
+            "quantity": 1
+          },
+          {
+            "code": "nettle_leaf",
+            "quantity": 2
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Earth Res Potion",
+      "code": "earth_res_potion",
+      "level": 40,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A potion that hardens skin like stone. Grants additional resistance to earth-based attacks.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_res_earth",
+          "value": 10,
+          "description": "Gives 10% earth resistance at the start of fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "yellow_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "maple_sap",
+            "quantity": 1
+          },
+          {
+            "code": "glowstem_leaf",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Fire Res Potion",
+      "code": "fire_res_potion",
+      "level": 40,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A cool, red liquid that creates a protective barrier against flames when consumed.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_res_fire",
+          "value": 10,
+          "description": "Gives 10% fire resistance at the start of fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "red_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "maple_sap",
+            "quantity": 1
+          },
+          {
+            "code": "glowstem_leaf",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Water Res Potion",
+      "code": "water_res_potion",
+      "level": 40,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A bubbling blue potion that grants protection against water damage when drunk.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_res_water",
+          "value": 10,
+          "description": "Gives 10% water resistance at the start of fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "blue_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "maple_sap",
+            "quantity": 1
+          },
+          {
+            "code": "glowstem_leaf",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Air Res Potion",
+      "code": "air_res_potion",
+      "level": 40,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A swirling green potion that provides resistance against air-based attacks when consumed.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_res_air",
+          "value": 10,
+          "description": "Gives 10% air resistance at the start of fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "green_slimeball",
+            "quantity": 2
+          },
+          {
+            "code": "maple_sap",
+            "quantity": 1
+          },
+          {
+            "code": "glowstem_leaf",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Enhanced Boost Potion",
+      "code": "enhanced_boost_potion",
+      "level": 40,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A rare potion that invigorates your attacks with the power of all the elements at once.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_dmg_water",
+          "value": 20,
+          "description": "Add 20% water damage at the start of the fight and for the rest of the fight."
+        },
+        {
+          "code": "boost_dmg_fire",
+          "value": 20,
+          "description": "Add 20% fire damage at the start of the fight and for the rest of the fight."
+        },
+        {
+          "code": "boost_dmg_earth",
+          "value": 20,
+          "description": "Add 20% earth damage at the start of the fight and for the rest of the fight."
+        },
+        {
+          "code": "boost_dmg_air",
+          "value": 20,
+          "description": "Add 20% air damage at the start of the fight and for the rest of the fight."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 40,
+        "items": [
+          {
+            "code": "glowstem_leaf",
+            "quantity": 2
+          },
+          {
+            "code": "bat_wing",
+            "quantity": 1
+          },
+          {
+            "code": "magic_sap",
+            "quantity": 1
+          },
+          {
+            "code": "enchanted_mushroom",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Enhanced Antidote",
+      "code": "enhanced_antidote",
+      "level": 45,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A shimmering blue liquid that neutralizes even the deadliest poisons. Distilled from rare desert plants and infused with magical properties to purify the bloodstream.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "antipoison",
+          "value": 200,
+          "description": "At the beginning of the turn, if the character has at least one poison on him, removes 200 poison damage."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 45,
+        "items": [
+          {
+            "code": "strangold_bar",
+            "quantity": 2
+          },
+          {
+            "code": "magic_sap",
+            "quantity": 1
+          },
+          {
+            "code": "torch_cactus_flower",
+            "quantity": 1
+          },
+          {
+            "code": "sand_snake_poison",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Enhanced Health Potion",
+      "code": "enhanced_health_potion",
+      "level": 45,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A sparkling potion that restores a tremendous amount of health in critical moments.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "restore",
+          "value": 300,
+          "description": "Restores 300 HP at the start of the turn if the player has lost more than 50% of their health points."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 45,
+        "items": [
+          {
+            "code": "glowstem_leaf",
+            "quantity": 2
+          },
+          {
+            "code": "egg",
+            "quantity": 1
+          },
+          {
+            "code": "magic_sap",
+            "quantity": 1
+          },
+          {
+            "code": "enchanted_mushroom",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Diabolic Elixir",
+      "code": "diabolic_elixir",
+      "level": 45,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "A powerful concoction that boils and hisses in its vial. Grants protection against all elemental damage types.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 44
+        }
+      ],
+      "effects": [
+        {
+          "code": "boost_res_water",
+          "value": 12,
+          "description": "Gives 12% water resistance at the start of fight."
+        },
+        {
+          "code": "boost_res_fire",
+          "value": 12,
+          "description": "Gives 12% fire resistance at the start of fight."
+        },
+        {
+          "code": "boost_res_air",
+          "value": 12,
+          "description": "Gives 12% air resistance at the start of fight."
+        },
+        {
+          "code": "boost_res_earth",
+          "value": 12,
+          "description": "Gives 12% earth resistance at the start of fight."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Enhanced Health Splash Potion",
+      "code": "enhanced_health_splash_potion",
+      "level": 50,
+      "type": "utility",
+      "subtype": "potion",
+      "description": "An intensely glowing crimson potion with swirling golden particles. When shattered, it releases powerful healing energy that can save even the most gravely wounded.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "splash_restore",
+          "value": 400,
+          "description": "Restores 400 HP at the start of the turn to another character who has lost the most health if that character has less than 50% of their health points remaining."
+        }
+      ],
+      "craft": {
+        "skill": "alchemy",
+        "level": 50,
+        "items": [
+          {
+            "code": "torch_cactus_flower",
+            "quantity": 1
+          },
+          {
+            "code": "coconut",
+            "quantity": 1
+          },
+          {
+            "code": "magic_sap",
+            "quantity": 1
+          },
+          {
+            "code": "lava_fish",
+            "quantity": 1
+          }
+        ],
+        "quantity": 2
+      },
+      "tradeable": true,
+      "recyclable": false
+    }
+  ],
+  "total": 21,
+  "page": 1,
+  "size": 50,
+  "pages": 1
+}

@@ -4,7 +4,7 @@
  */
 import type {
   Catalog, CharacterDto, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
-  StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult,
+  StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult, NpcItem,
 } from './types'
 
 export class ApiError extends Error {
@@ -62,6 +62,7 @@ export const api = {
   resume: () => request<void>('POST', '/control/resume'),
 
   content: () => request<Catalog>('GET', '/content'),
+  npcItems: (npcCode: string) => request<NpcItem[]>('GET', `/content/npcs/${encodeURIComponent(npcCode)}/items`),
   /** Recipes + max craftable. No character = bank only. `all` = include above-level recipes. */
   craftable: (character: string, all = false) =>
     request<Craftable[]>('GET', `/craftable?skill=all&all=${all}${character ? `&character=${encodeURIComponent(character)}` : ''}`),

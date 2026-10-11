@@ -100,7 +100,9 @@ class CoopOptimizer(
         val tankName: String,
         val baselineWinRate: Double,
         val optimizedWinRate: Double,
-        val avgWinTurns: Double
+        val avgWinTurns: Double,
+        /** Bank quantities this team's plans will withdraw (gear, utilities, reserves, food, keys). */
+        val bankDemand: Map<String, Int> = emptyMap()
     ) {
         /** False = not beatable with what the team currently owns (gear + potions). */
         val winnable: Boolean get() = optimizedWinRate > 0.0
@@ -158,10 +160,16 @@ class CoopOptimizer(
 
     // ── Public API ─────────────────────────────────────────────────────
 
+    /**
+     * [bankReserved] = bank quantities already promised to other parties planned before this
+     * one (e.g. a second party for the same boss event). They are treated as unavailable for
+     * gear, utilities, reserve potions, food and keys, so the parties' plans fit the bank together.
+     */
     suspend fun optimizeForBossFight(
         participantNames: List<String>,
         monsterCode: String,
-        tankOverride: String? = null
+        tankOverride: String? = null,
+        bankReserved: Map<String, Int> = emptyMap()
     ): CoopOptimizationResult {
         require(participantNames.isNotEmpty()) { "Must have at least one participant" }
         require(participantNames.size <= 3) { "Coop fight supports at most 3 characters" }
@@ -197,6 +205,7 @@ class CoopOptimizer(
         // per participant under a frozen shared-bank quantity snapshot. This replaces implicit
         // tank-first claiming with explicit team-level feasibility and deterministic ranking.
         val bankSnapshot = helper.bankState.snapshot.value
+            .mapValues { (code, qty) -> (qty - bankReserved.getOrDefault(code, 0)).coerceAtLeast(0) }
         val candidateSets = mutableMapOf<String, List<TeamLoadoutCandidate<GearPickResult>>>()
         for (name in stableParticipantNames) {
             val role = if (name == tankName) Role.TANK else Role.SUPPORT
@@ -229,7 +238,7 @@ class CoopOptimizer(
         // where each character's pick is filtered against what predecessors already claimed
         // (via pickBestGearHeuristic's existing claimedGear plumbing) — so it always fits by
         // construction, even if a scarce item goes to whoever needed it most (the tank).
-        val greedyTeam = sharedClaimGreedyTeam(tankName, participantOrder, chars, monster)
+        val greedyTeam = sharedClaimGreedyTeam(tankName, participantOrder, chars, monster, bankReserved)
         val enumerated = TeamLoadoutAllocator.enumerate(
             participantOrder = participantOrder,
             candidates = candidateSets,
@@ -314,9 +323,10 @@ class CoopOptimizer(
         val monsterEffects = monster.effects.map { it.code }.toSet()
         val committedUtilities = mutableMapOf<String, MutableMap<String, Pair<String, Int>>>()
             .apply { stableParticipantNames.forEach { put(it, mutableMapOf()) } }
-        // Shared-bank utility quantities reserved by previous characters. Personal inventory
-        // and equipped stacks remain available only to their owning character.
-        val committedBankUtilities = mutableMapOf<String, Int>()
+        // Shared-bank quantities reserved by previous characters (and by earlier parties via
+        // [bankReserved]). Personal inventory and equipped stacks remain available only to
+        // their owning character. Reserve potions, food and keys are committed here too.
+        val committedBankUtilities = bankReserved.toMutableMap()
 
         // Below LOW_WIN_RATE_THRESHOLD the sim has no signal either (every option still loses),
         // same as at/above HIGH_WIN_RATE_THRESHOLD — assign by role priority instead of
@@ -482,6 +492,7 @@ class CoopOptimizer(
                     val reserveQty = perPotion.coerceAtMost(bankAvailable)
                     if (reserveQty > 0) {
                         reservePotions[code] = reserveQty
+                        committedBankUtilities[code] = committedBankUtilities.getOrDefault(code, 0) + reserveQty
                         println("[$name] CoopOptimizer: reserve $code x$reserveQty in inventory")
                     }
                 }
@@ -490,12 +501,18 @@ class CoopOptimizer(
             // ── Food pre-load calculation ──────────────────────────────────────
             // Withdraw up to FOOD_BUFFER slots of the best available food. Food is consumed
             // out-of-combat between boss fights — carrying it avoids bank trips for healing.
-            val foodInfo = try { helper.findBestFoodInBank(char) } catch (_: Exception) { null }
+            val foodInfo = try { helper.findBestFoodInBank(char, committedBankUtilities) } catch (_: Exception) { null }
             val foodCode = foodInfo?.first
             val foodQuantity = if (foodInfo != null) {
                 val bankQty = foodInfo.third
                 minOf(bankQty, FOOD_BUFFER)
             } else 0
+            if (foodCode != null && foodQuantity > 0) {
+                committedBankUtilities[foodCode] = committedBankUtilities.getOrDefault(foodCode, 0) + foodQuantity
+            }
+            (transitionCosts.entries + spareKeys.entries).filter { it.key != "gold" }.forEach { (code, qty) ->
+                committedBankUtilities[code] = committedBankUtilities.getOrDefault(code, 0) + qty
+            }
 
             if (foodCode != null && foodQuantity > 0) {
                 println("[$name] CoopOptimizer: pre-load food $foodCode x$foodQuantity")
@@ -523,13 +540,23 @@ class CoopOptimizer(
             )
         }
 
+        // This team's own bank draws: everything committed beyond what earlier parties
+        // reserved, plus the selected gear's bank-sourced copies.
+        val bankDemand = mutableMapOf<String, Int>()
+        committedBankUtilities.forEach { (code, qty) ->
+            val own = qty - bankReserved.getOrDefault(code, 0)
+            if (own > 0) bankDemand[code] = own
+        }
+        selectedTeam?.bankDemand?.forEach { (code, qty) -> bankDemand[code] = bankDemand.getOrDefault(code, 0) + qty }
+
         return CoopOptimizationResult(
             monsterCode = monsterCode,
             participants = plans,
             tankName = tankName,
             baselineWinRate = baselineWinRate,
             optimizedWinRate = optimizedWinRate,
-            avgWinTurns = avgWinTurns
+            avgWinTurns = avgWinTurns,
+            bankDemand = bankDemand
         )
     }
 
@@ -554,8 +581,9 @@ class CoopOptimizer(
         order: List<String>,
         chars: Map<String, Character>,
         monster: Monster,
+        bankReserved: Map<String, Int> = emptyMap(),
     ): TeamLoadoutSelection<GearPickResult> {
-        val claimedGear = mutableMapOf<String, Int>()
+        val claimedGear = bankReserved.toMutableMap()
         val byCharacter = linkedMapOf<String, TeamLoadoutCandidate<GearPickResult>>()
         for (name in order) {
             val role = if (name == tankName) Role.TANK else Role.SUPPORT

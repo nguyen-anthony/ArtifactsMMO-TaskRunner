@@ -1,0 +1,368 @@
+{
+  "data": [
+    {
+      "name": "Novice Guide",
+      "code": "novice_guide",
+      "level": 10,
+      "type": "artifact",
+      "subtype": "",
+      "description": "The essential guide for every aspiring coder-adventurer.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 25,
+          "description": "Adds 25 HP to its stats when equipped."
+        },
+        {
+          "code": "wisdom",
+          "value": 25,
+          "description": "Adds 25 Wisdom to its stats when equipped. Each point of wisdom increases your xp in combat and with skills. (1% extra per 10 wisdom)"
+        },
+        {
+          "code": "prospecting",
+          "value": 25,
+          "description": "Adds 25 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": null,
+      "tradeable": false,
+      "recyclable": false
+    },
+    {
+      "name": "Lich Race Medal",
+      "code": "lich_race_medal",
+      "level": 10,
+      "type": "artifact",
+      "subtype": "",
+      "description": "These medals were awarded to every competitor in the Lich Race, once the greatest competition in the region. Rumor has it they still hold a mysterious power.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 9
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 5,
+          "description": "Adds 5% Damage to its stats when equipped."
+        },
+        {
+          "code": "initiative",
+          "value": 100,
+          "description": "Adds 100 Initiative to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 25,
+          "description": "Adds 25 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Lich Race Trophy",
+      "code": "lich_race_trophy",
+      "level": 20,
+      "type": "artifact",
+      "subtype": "",
+      "description": "This trophy was awarded to Rosenstjerne after he discovered the first Artifact in history. Long since abandoned by its champion, it still carries the power to turn any adventurer into one.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 20,
+          "description": "Adds 20% Damage to its stats when equipped."
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "prospecting",
+          "value": 50,
+          "description": "Adds 50 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Lost World Map",
+      "code": "lost_world_map",
+      "level": 20,
+      "type": "artifact",
+      "subtype": "",
+      "description": "An ancient map showing landmarks and locations long forgotten. Studying it grants profound insights and magical knowledge.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "wisdom",
+          "value": 100,
+          "description": "Adds 100 Wisdom to its stats when equipped. Each point of wisdom increases your xp in combat and with skills. (1% extra per 10 wisdom)"
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Perfect Pearl",
+      "code": "perfect_pearl",
+      "level": 20,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A flawless pearl that glows with inner light. It seems to attract other valuable items to its possessor.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "prospecting",
+          "value": 100,
+          "description": "Adds 100 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Corrupted Skull",
+      "code": "corrupted_skull",
+      "level": 25,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A skull infused with dark energy that twists and enhances its owner's combat abilities, especially their critical strikes.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 24
+        }
+      ],
+      "effects": [
+        {
+          "code": "critical_strike",
+          "value": 8,
+          "description": "Adds 8% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Life Crystal",
+      "code": "life_crystal",
+      "level": 30,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A sparkling crystal pulsing with the energy of life. Reconstructed from fragments stolen from the Lich.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 29
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 180,
+          "description": "Adds 180 HP to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Malefic Crystal",
+      "code": "malefic_crystal",
+      "level": 35,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A dark crystal that pulses with ominous energy. Looking deep into it, you can see shadows moving of their own accord.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 34
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg",
+          "value": 6,
+          "description": "Adds 6% Damage to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Topaz Book",
+      "code": "topaz_book",
+      "level": 40,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A heavy tome adorned with topaz gems that feel as solid as the earth itself. Its pages contain ancient earth magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_earth",
+          "value": 20,
+          "description": "Adds 20% Earth Damage to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Sapphire Book",
+      "code": "sapphire_book",
+      "level": 40,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A book with sapphires that seem to ripple like water on its cover. The pages are always cool to the touch.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_water",
+          "value": 20,
+          "description": "Adds 20% Water Damage to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Emerald Book",
+      "code": "emerald_book",
+      "level": 40,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A tome bound with emerald-studded covers that seems to whisper with the voices of the wind. Contains powerful air magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_air",
+          "value": 20,
+          "description": "Adds 20% Air Damage to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Ruby Book",
+      "code": "ruby_book",
+      "level": 40,
+      "type": "artifact",
+      "subtype": "",
+      "description": "An ancient tome bound in leather with a ruby embedded in its cover. The pages contain fire magic that few can comprehend.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_fire",
+          "value": 20,
+          "description": "Adds 20% Fire Damage to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Sandwhisper Codex",
+      "code": "sandwhisper_codex",
+      "level": 50,
+      "type": "artifact",
+      "subtype": "",
+      "description": "An ancient tome bound in scorpion leather with pages that whisper secrets when turned. The knowledge contained within grants enhanced vitality and combat prowess to its bearer.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "hp",
+          "value": 200,
+          "description": "Adds 200 HP to its stats when equipped."
+        },
+        {
+          "code": "dmg",
+          "value": 20,
+          "description": "Adds 20% Damage to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    }
+  ],
+  "total": 13,
+  "page": 1,
+  "size": 50,
+  "pages": 1
+}

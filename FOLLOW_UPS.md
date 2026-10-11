@@ -49,16 +49,19 @@ The schedule runner currently polls a hardcoded `schedules` table and reads rows
 
 ---
 
-### Boss group timeout
-If a boss group is set up with 3 members but only 2 show up, the group's leader (the initiator) waits forever for the third slot to fill.
+### Boss group timeout (manual groups)
+Event boss groups end when their event expires, and raid groups end when the raid closes. A boss group created manually from NewTask has no time limit. If a slot is never claimed ("Waiting for group: 2/3"), or a claimed member never reaches the tile ("Waiting for participants: X (not on tile)"), the group waits indefinitely.
 
-**Proposal:** add a `timeout_seconds` field to the group spec. If the group isn't full after that time, start the fight with the members on hand, or cancel and return them to idle. The UI should show a countdown.
+**Proposal:** add an optional `formationTimeoutSeconds` to `TaskSpec.BossFight`. Start the clock when the group parent is first claimed, or when the initiator first finds a participant not ready. On timeout, do one of two things (configurable):
+- **fight-with-present:** the initiator fights with the participants who are on the tile and ready, and the slots of the missing members are cancelled. This is now cheap, because the initiator already checks each participant through the API before every fight.
+- **cancel:** cancel the group, so every member returns to its suspended or queued work.
 
 **Files to touch:**
-- `domain/TaskSpec.kt` – add `timeoutSeconds` to `GroupTaskSpec`.
-- `engine/.../GroupCoordinator.kt` – implement the countdown and action.
-- `web/src/pages/NewTask.svelte` – let users set the timeout when creating a group.
-- `web/src/pages/Dashboard.svelte` – show the remaining time on the task card.
+- `domain/.../task/TaskSpec.kt` – `formationTimeoutSeconds` and the timeout action on `BossFight`.
+- `engine/.../worker/BossFightExecutor.kt` – track when waiting started (in task state, so it survives a restart) and apply the action. Today a member leaving cancels the whole group, so dropping a slot needs care.
+- `engine/.../core/task/FightingExecutor.kt` – `executeBossStep` / `participantsNotReady`: let the initiator fight with just the ready subset once the timeout has passed.
+- `web/src/pages/NewTask.svelte` – timeout and action inputs for group tasks.
+- `web/src/pages/Dashboard.svelte` – a countdown on the group card while it waits.
 
 ---
 

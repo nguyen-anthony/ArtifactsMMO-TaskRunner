@@ -154,7 +154,7 @@ class LegacyExecutors(
                 is TaskType.BulkBankWithdraw -> bank.executeBulkBankWithdraw(ctx.character, task, ctx.status)
                 is TaskType.BulkInventoryDeposit -> bank.executeBulkInventoryDeposit(ctx.character, task, ctx.status)
                 is TaskType.EventGather -> event.executeGatherStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status, prev)
-                is TaskType.EventNpc -> event.executeNpcStep(ctx.character, task, ctx.status)
+                is TaskType.EventNpc -> event.executeNpcStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status)
                 is TaskType.EventFight -> event.executeEventFightStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status, prev)
                 else -> return StepOutcome.Fail("Unsupported task type ${ctx.spec.typeName}")
             }

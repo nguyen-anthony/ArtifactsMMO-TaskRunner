@@ -3,6 +3,7 @@ package com.artifactsmmo.engine.realtime
 import com.artifactsmmo.client.RealtimeMessage
 import com.artifactsmmo.client.models.ActiveEvent
 import com.artifactsmmo.core.task.EventConfig
+import com.artifactsmmo.core.task.disjointParties
 import com.artifactsmmo.domain.queue.GroupRole
 import com.artifactsmmo.domain.queue.GroupSlot
 import com.artifactsmmo.domain.queue.NewTask
@@ -43,7 +44,7 @@ val LIVE_STATUSES = setOf(TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.RUN
  *
  *  - spawn:   if an enabled config exists, enqueue one EVENT-priority task per chosen
  *             character (assigned to it, expiring with the event), or — for a boss monster
- *             with a configured `group` — one co-op boss group. The dedupe key makes
+ *             with configured parties — one co-op boss group per party. The dedupe keys make
  *             WebSocket reconnect replays harmless.
  *  - removed: cancel every live task/group for that event. (expires_at also covers a missed message.)
  *
@@ -80,13 +81,22 @@ class EventTaskProducer(
 
     suspend fun onSpawn(event: ActiveEvent) {
         _active.update { it + (event.code to event) }
-        val config = configs.events().firstOrNull { it.eventCode == event.code && it.enabled } ?: return
+        var config = configs.events().firstOrNull { it.eventCode == event.code && it.enabled } ?: return
         val expiration = event.expiresAt
         val expires = expiration?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
         val instance = expiration ?: "open"
-        // Planning a group runs co-op simulations, so skip it when this instance is already queued
-        // (WebSocket spawn + reconnect/startup replay both deliver the same event).
-        if (config.group != null && groupQueued("event:${event.code}:group:$instance")) return
+        // Planning a party runs co-op simulations, so only plan parties not yet queued for this
+        // instance (WebSocket spawn + reconnect/startup replay both deliver the same event).
+        val parties = disjointParties(config.parties)
+        if (parties.isNotEmpty()) {
+            val queued = queuedKeys()
+            val remaining = parties.filterIndexed { i, p ->
+                groupKey(event.code, p.initiatorName, instance) !in queued &&
+                    !(i == 0 && legacyGroupKey(event.code, instance) in queued)
+            }
+            if (remaining.isEmpty()) return
+            config = config.copy(groups = remaining, group = null)
+        }
         for (plan in planner.plan(event, config)) {
             when (plan) {
                 is EventPlan.Solo -> {
@@ -103,7 +113,7 @@ class EventTaskProducer(
                     val group = queue.enqueueGroup(
                         NewTask(
                             type = plan.spec.typeName, spec = plan.spec.toJson(), source = TaskSource.EVENT,
-                            dedupeKey = "event:${event.code}:group:$instance", expiresAtMillis = expires,
+                            dedupeKey = groupKey(event.code, plan.members.first(), instance), expiresAtMillis = expires,
                         ),
                         plan.members.map { GroupSlot(assignedCharacter = it) },
                     )
@@ -113,8 +123,12 @@ class EventTaskProducer(
         }
     }
 
-    private suspend fun groupQueued(dedupe: String): Boolean =
-        queue.list(TaskFilter(statuses = LIVE_STATUSES, source = TaskSource.EVENT, limit = 500)).any { it.dedupeKey == dedupe }
+    private fun groupKey(eventCode: String, initiator: String, instance: String) = "event:$eventCode:group:$initiator:$instance"
+    /** Single-party key used before multi-party configs; treated as the first party's. */
+    private fun legacyGroupKey(eventCode: String, instance: String) = "event:$eventCode:group:$instance"
+
+    private suspend fun queuedKeys(): Set<String> =
+        queue.list(TaskFilter(statuses = LIVE_STATUSES, source = TaskSource.EVENT, limit = 500)).mapNotNull { it.dedupeKey }.toSet()
 
     suspend fun onRemoved(eventCode: String) {
         _active.update { it - eventCode }

@@ -426,31 +426,30 @@ class FightingExecutor(private val helper: ActionHelper) {
     /**
      * Execute a single boss-fight iteration.
      *
-     * Initiator path (task.isInitiator = true):
-     *  1. Heal to full HP
-     *  2. Navigate to boss tile
-     *  3. Ensure 1 free inventory slot
-     *  4. Update status and await all participants via [coordinator]
-     *  5. Fire fight API with participant names
-     *  6. Return FightWon / FightLost
+     * Every member independently restocks, heals and moves to the boss tile. There is no
+     * in-process handshake: the game state is the source of truth.
      *
-     * Participant path (task.isInitiator = false):
-     *  1. Heal to full HP
-     *  2. Navigate to boss tile
-     *  3. Ensure 1 free inventory slot
-     *  4. Signal ready via [coordinator]
-     *  5. Wait for the server-applied fight cooldown to expire
-     *  6. Return StepResult.Waiting to re-enter the loop for the next round
+     * Initiator path (task.isInitiator = true): once on the tile and healthy, look up each
+     * participant via the API and fire `fight(participants)` only when all of them are on
+     * the tile, healthy and off cooldown; otherwise return [StepResult.Waiting] and re-check.
+     *
+     * Participant path (task.isInitiator = false): once on the tile and healthy, do nothing
+     * (return [StepResult.Waiting]) so the initiator always finds it idle. The fight cooldown
+     * the server applies is waited out at the start of the next step.
      */
     @OptIn(kotlin.time.ExperimentalTime::class)
     suspend fun executeBossStep(
         characterName: String,
         task: TaskType.BossFight,
-        coordinator: BossEncounterCoordinator,
         onStatus: (String) -> Unit,
         previousChar: com.artifactsmmo.client.models.Character? = null
     ): StepResult {
         var char = previousChar ?: helper.refreshCharacter(characterName)
+        // Participants pick up the cooldown from fights the initiator fired on their behalf.
+        if (char.cooldownExpiration > Clock.System.now()) {
+            onStatus("Waiting out cooldown...")
+            helper.waitForCooldown(char.cooldownExpiration)
+        }
 
         // ── Restock check — evaluate BEFORE healing so we don't waste a rest action ──
         // Conditions that require leaving the dungeon for a full bank resupply:
@@ -471,18 +470,14 @@ class FightingExecutor(private val helper: ActionHelper) {
             helper.getEquippedInSlot(char, planned.slot) != planned.itemCode ||
                 helper.getEquippedUtilityQuantity(char, planned.slot) == 0
         }
-        // Do not enter a restock loop for a utility plan that was never provisioned.
-        // Potions are an optimization, not a prerequisite for fighting. A plan can become
-        // unavailable after optimization because another character withdrew the final stack
-        // or the bank snapshot was stale. In that case proceed with the available loadout.
-        val hasAnyPlannedUtilityEquipped = task.utilityActions.any { planned ->
-            helper.getEquippedInSlot(char, planned.slot) == planned.itemCode &&
-                helper.getEquippedUtilityQuantity(char, planned.slot) > 0
-        }
         val noPlannedReserves = task.utilityActions.isNotEmpty() && task.utilityActions.all { planned ->
             helper.getItemQuantity(char, planned.itemCode) == 0
         }
-        val potionsExhausted = hasAnyPlannedUtilityEquipped && utilitiesMissing && noPlannedReserves
+        // Potions are an optimization, not a prerequisite: only go to the bank for them when
+        // the bank can actually supply a planned potion, otherwise fight with what we have
+        // (a trip that brings nothing back would loop forever).
+        val plannedPotionsInBank = task.utilityActions.any { helper.getBankItemQuantity(it.itemCode) > 0 }
+        val potionsExhausted = utilitiesMissing && noPlannedReserves && plannedPotionsInBank
 
         val noFood = helper.findBestFoodInInventory(char) == null
         val hpTooLow = !CharacterUtils.hasEnoughHP(char, 0.75)
@@ -533,27 +528,23 @@ class FightingExecutor(private val helper: ActionHelper) {
             return StepResult.Rested
         }
 
-        // ── Utility slot reserve re-equip ──────────────────────────────────────
-        // If any utility slot has dropped to or below the re-equip threshold AND the
-        // character still has reserve potions in inventory for that slot's potion type,
-        // re-equip from inventory now — before moving to the boss tile.
-        if (task.reservePotions.isNotEmpty()) {
-            val reequipActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
-            for (utilitySlot in listOf("utility1", "utility2")) {
-                val equippedCode = helper.getEquippedInSlot(char, utilitySlot)
-                if (equippedCode.isEmpty()) continue
-                val equippedQty = helper.getEquippedUtilityQuantity(char, utilitySlot)
-                if (equippedQty > CoopOptimizer.UTILITY_REEQUIP_THRESHOLD) continue
-                // Slot is below threshold — check if we have reserves in inventory
-                val reserveInInv = helper.getItemQuantity(char, equippedCode)
-                if (reserveInInv <= 0) continue
-                val newQty = (equippedQty + reserveInInv).coerceAtMost(CoopOptimizer.UTILITY_MAX_QUANTITY)
-                onStatus("Refilling $utilitySlot ($equippedCode: ${equippedQty} → ${newQty})...")
-                reequipActions.add(GearOptimizer.UtilityEquipAction(utilitySlot, equippedCode, newQty, "inventory"))
-            }
-            if (reequipActions.isNotEmpty()) {
-                char = helper.retrieveAndEquipUtilities(characterName, reequipActions)
-            }
+        // ── Utility slot re-equip from inventory ───────────────────────────────
+        // Driven by the PLAN, not the current slots: a slot that ran dry is emptied by the
+        // game, so it must still be refilled from inventory reserves. Refill when the planned
+        // potion is missing or at/below the re-equip threshold — before moving to the tile.
+        val reequipActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
+        for (planned in task.utilityActions.filter { it.quantity > 0 }) {
+            val equippedCode = helper.getEquippedInSlot(char, planned.slot)
+            val equippedQty = if (equippedCode == planned.itemCode) helper.getEquippedUtilityQuantity(char, planned.slot) else 0
+            if (equippedQty > CoopOptimizer.UTILITY_REEQUIP_THRESHOLD) continue
+            val inInventory = helper.getItemQuantity(char, planned.itemCode)
+            if (inInventory <= 0) continue
+            val newQty = (equippedQty + inInventory).coerceAtMost(CoopOptimizer.UTILITY_MAX_QUANTITY)
+            onStatus("Refilling ${planned.slot} (${planned.itemCode}: $equippedQty → $newQty)...")
+            reequipActions.add(GearOptimizer.UtilityEquipAction(planned.slot, planned.itemCode, newQty, "inventory"))
+        }
+        if (reequipActions.isNotEmpty()) {
+            char = helper.retrieveAndEquipUtilities(characterName, reequipActions)
         }
 
         // Navigate to boss tile
@@ -580,17 +571,11 @@ class FightingExecutor(private val helper: ActionHelper) {
         if (task.isInitiator) {
             // ── Initiator path ──────────────────────────────────────────────────
             if (task.participantNames.isNotEmpty()) {
-                onStatus("Waiting for participants: ${task.participantNames.joinToString(", ")}...")
-                val waitStart = Clock.System.now().toEpochMilliseconds()
-                try {
-                    coordinator.awaitParticipants(characterName)
-                } catch (_: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
-                    // Encounter was cleared (stop/cancel); bail out
-                    raidTrace(task, onStatus) { "encounter cleared while awaiting participants" }
+                val notReady = participantsNotReady(task, monsterMap)
+                if (notReady.isNotEmpty()) {
+                    onStatus("Waiting for participants: ${notReady.joinToString(", ")}")
+                    raidTrace(task, onStatus) { "participants not ready: ${notReady.joinToString(", ")}" }
                     return StepResult.Waiting
-                }
-                raidTrace(task, onStatus) {
-                    "all participants signalled after ${Clock.System.now().toEpochMilliseconds() - waitStart}ms"
                 }
             }
 
@@ -627,42 +612,34 @@ class FightingExecutor(private val helper: ActionHelper) {
             }
         } else {
             // ── Participant path ─────────────────────────────────────────────────
-            onStatus("Ready for boss fight vs ${task.monsterName}, signalling initiator...")
-            val registeredInitiator = coordinator.encounterFor(characterName)
-            raidTrace(task, onStatus) {
-                "signalling ready (expected initiator=${task.initiatorName}, registered encounter=${registeredInitiator ?: "NONE — signal is a no-op"})"
-            }
-            try {
-                coordinator.signalReady(characterName)
-            } catch (_: kotlinx.coroutines.channels.ClosedSendChannelException) {
-                // Encounter was cleared; bail out
-                raidTrace(task, onStatus) { "encounter cleared while signalling" }
-                return StepResult.Waiting
-            }
-
-            // The initiator fires the fight API after collecting all ready signals.
-            // The server then applies a cooldown to all participants automatically.
-            // We must wait for that cooldown to actually appear before draining it —
-            // polling with short sleeps until cooldown > 0, then waiting it out.
-            onStatus("Boss fight in progress, waiting for cooldown...")
-            var cooldownSeen = false
-            repeat(30) { // poll up to ~15 seconds for the cooldown to appear
-                if (cooldownSeen) return@repeat
-                val polledChar = try { helper.refreshCharacter(characterName) } catch (_: Exception) { return@repeat }
-                if (polledChar.cooldown > 0) {
-                    cooldownSeen = true
-                    onStatus("Boss fight complete, waiting ${polledChar.cooldown}s cooldown...")
-                    helper.waitForCooldown(polledChar.cooldownExpiration)
-                } else {
-                    kotlinx.coroutines.delay(500)
-                }
-            }
-
-            if (!cooldownSeen) raidTrace(task, onStatus) { "no fight cooldown observed within ~15s (initiator has not fought yet)" }
-            onStatus("Ready for next boss fight round...")
+            // On the tile and healthy: stay idle so the initiator finds us ready.
+            onStatus("On site for ${task.monsterName}, waiting for ${task.initiatorName ?: "initiator"} to start the fight...")
             return StepResult.Waiting
         }
     }
+
+    /**
+     * Participants that cannot join a fight right now, with the reason. Uses fresh API
+     * lookups so it reflects the real game state (the fight call fails with 486 if anyone
+     * is off the tile).
+     */
+    @OptIn(kotlin.time.ExperimentalTime::class)
+    private suspend fun participantsNotReady(task: TaskType.BossFight, tile: com.artifactsmmo.client.models.MapInfo): List<String> =
+        task.participantNames.mapNotNull { name ->
+            val p = try {
+                helper.refreshCharacter(name)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@mapNotNull "$name (lookup failed: ${e.message})"
+            }
+            when {
+                !helper.isAt(p, tile.x, tile.y) || p.layer != tile.layer -> "$name (not on tile)"
+                !CharacterUtils.hasEnoughHP(p, 0.75) -> "$name (HP ${p.hp}/${p.maxHp})"
+                p.cooldownExpiration > Clock.System.now() -> "$name (on cooldown)"
+                else -> null
+            }
+        }
 
     /**
      * Full resupply trip for a boss fight loop. Called when [StepResult.NeedsRestock]

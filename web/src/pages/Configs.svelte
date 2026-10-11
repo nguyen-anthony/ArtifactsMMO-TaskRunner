@@ -2,21 +2,25 @@
   Event and raid configs, edited through validated forms (the JSON is shown read-only).
   Event fields adapt to what the event spawns: resource/monster events pick eligible
   characters, NPC events pick a trader and items, and boss-monster events (e.g.
-  out_of_the_ground → duskworm) configure a co-op team instead.
+  out_of_the_ground → duskworm) and raids configure one or more co-op parties instead.
 -->
 <script lang="ts">
   import { api } from '../lib/api'
   import { catalog } from '../lib/catalog'
-  import type { Catalog, EventConfig, ItemQty, RaidConfig } from '../lib/types'
+  import type { Catalog, EventConfig, EventGroupConfig, ItemQty, NpcItem, RaidConfig } from '../lib/types'
 
   type Kind = 'event' | 'raid'
+  /** Form state for one party: slots = [initiator, participant 1, participant 2]. */
+  type Party = { slots: string[]; tank: string }
   const blankEvent = (): EventConfig => ({
     eventCode: '', enabled: true, eligibleCharacters: [], itemsToSell: [], itemsToBuy: [],
-    designatedTrader: null, minWinRate: 0.9, group: null,
+    designatedTrader: null, minWinRate: 0.9, groups: [], group: null,
   })
   const blankRaid = (): RaidConfig => ({
-    raidCode: '', enabled: true, initiatorName: null, participantNames: [], tankOverride: null, leadTimeMinutes: 5,
+    raidCode: '', enabled: true, leadTimeMinutes: 5, parties: [], minWinRate: 0,
+    initiatorName: null, participantNames: [], tankOverride: null,
   })
+  const blankParty = (): Party => ({ slots: ['', '', ''], tank: '' })
 
   let kind = $state<Kind>('event')
   let entries = $state<Record<string, any>>({})
@@ -24,9 +28,8 @@
   let characters = $state<string[]>([])
   let ev = $state<EventConfig>(blankEvent())
   let raid = $state<RaidConfig>(blankRaid())
-  // Team slots shared by the boss-event and raid forms: [initiator, participant 1, participant 2].
-  let team = $state<string[]>(['', '', ''])
-  let tank = $state('')
+  // Parties shared by the boss-event and raid forms. Order = bank priority.
+  let parties = $state<Party[]>([blankParty()])
   let error = $state('')
   let message = $state('')
 
@@ -46,9 +49,32 @@
   )
   const isBossEvent = $derived(evMonster?.type === 'boss')
   const raidMeta = $derived(cat?.raids.find((r) => r.code === raid.raidCode) ?? null)
-  const members = $derived(team.filter(Boolean))
-  // A tank that is no longer on the team falls back to "auto".
-  $effect(() => { if (tank && !members.includes(tank)) tank = '' })
+
+  // ── What the event's NPC trades (null = not loaded / unavailable → free-form codes) ──
+  let npcItems = $state<NpcItem[] | null>(null)
+  let npcError = $state('')
+  $effect(() => {
+    const npc = evMeta?.contentType === 'npc' ? evMeta.contentCode : null
+    npcItems = null; npcError = ''
+    if (!npc) return
+    api.npcItems(npc)
+      .then((items) => { if (evMeta?.contentCode === npc) npcItems = items })
+      .catch((e) => (npcError = `Couldn't load what ${npc} trades: ${e.message}`))
+  })
+  const sellable = $derived(new Map((npcItems ?? []).filter((i) => i.sellPrice != null).map((i) => [i.code, i])))
+  const buyable = $derived(new Map((npcItems ?? []).filter((i) => i.buyPrice != null).map((i) => [i.code, i])))
+  function itemName(code: string): string { return cat?.items.find((i) => i.code === code)?.name ?? code }
+  /** Price hint for a row, or a warning when the NPC doesn't trade that item that way. */
+  function tradeHint(code: string, mode: 'sell' | 'buy'): { text: string; bad: boolean } | null {
+    if (!npcItems || !code.trim()) return null
+    const entry = (mode === 'sell' ? sellable : buyable).get(code.trim())
+    if (!entry) return { text: `NPC doesn't ${mode === 'sell' ? 'buy' : 'sell'} this`, bad: true }
+    return { text: `${mode === 'sell' ? entry.sellPrice : entry.buyPrice} ${entry.currency} each`, bad: false }
+  }
+  // A tank that is no longer in its party falls back to "auto".
+  $effect(() => {
+    for (const p of parties) if (p.tank && !p.slots.includes(p.tank)) p.tank = ''
+  })
 
   function eventLabel(code: string): string {
     const e = cat?.events.find((x) => x.code === code)
@@ -57,16 +83,37 @@
     return `${e.name} — ${boss ? 'boss' : e.contentType} ${e.contentCode}`
   }
 
-  function setTeam(initiator: string | null | undefined, participants: string[] | undefined, tankOverride: string | null | undefined) {
-    const p = participants ?? []
-    team = [initiator ?? '', p[0] ?? '', p[1] ?? '']
-    tank = tankOverride ?? ''
+  /** Saved party lists, falling back to the legacy single-party fields of older documents. */
+  function eventParties(value: any): EventGroupConfig[] {
+    return value.groups?.length ? value.groups : value.group ? [value.group] : []
+  }
+  function raidParties(value: any): EventGroupConfig[] {
+    if (value.parties?.length) return value.parties
+    return value.initiatorName
+      ? [{ initiatorName: value.initiatorName, participantNames: value.participantNames ?? [], tankOverride: value.tankOverride ?? null }]
+      : []
+  }
+
+  function setParties(groups: EventGroupConfig[]) {
+    parties = groups.length
+      ? groups.map((g) => ({
+          slots: [g.initiatorName, g.participantNames[0] ?? '', g.participantNames[1] ?? ''],
+          tank: g.tankOverride ?? '',
+        }))
+      : [blankParty()]
+  }
+
+  /** Filled parties (blank ones are ignored) in config shape. */
+  function builtParties(): EventGroupConfig[] {
+    return parties
+      .filter((p) => p.slots.some(Boolean))
+      .map((p) => ({ initiatorName: p.slots[0], participantNames: p.slots.slice(1).filter(Boolean), tankOverride: p.tank || null }))
   }
 
   function resetForm() {
     error = ''; message = ''
     if (kind === 'event') ev = blankEvent(); else raid = blankRaid()
-    setTeam('', [], null)
+    setParties([])
   }
 
   function edit(value: any) {
@@ -74,12 +121,19 @@
     if (kind === 'event') {
       // Spread over the blank so older documents missing newer fields still bind cleanly.
       ev = { ...blankEvent(), ...structuredClone(value) }
-      setTeam(ev.group?.initiatorName, ev.group?.participantNames, ev.group?.tankOverride)
+      setParties(eventParties(ev))
     } else {
       raid = { ...blankRaid(), ...structuredClone(value) }
-      setTeam(raid.initiatorName, raid.participantNames, raid.tankOverride)
+      setParties(raidParties(raid))
     }
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
+  }
+
+  /** Characters already picked in any slot other than [party pi, slot si]. */
+  function takenElsewhere(pi: number, si: number): Set<string> {
+    const taken = new Set<string>()
+    parties.forEach((p, i) => p.slots.forEach((c, j) => { if (c && !(i === pi && j === si)) taken.add(c) }))
+    return taken
   }
 
   function toggleEligible(name: string, on: boolean) {
@@ -88,35 +142,40 @@
 
   // ── Build + validate ──
   function buildEvent(): EventConfig {
-    const participantNames = team.slice(1).filter(Boolean)
-    // Boss events carry the team; other known events drop a stale one. If the catalog is
-    // unavailable (unknown event type) keep whatever group the document already had.
-    const group = isBossEvent
-      ? (team[0] ? { initiatorName: team[0], participantNames, tankOverride: tank || null } : null)
-      : (evMeta ? null : ev.group)
+    // Boss events carry the parties; other known events drop stale ones. If the catalog is
+    // unavailable (unknown event type) keep whatever parties the document already had.
+    const groups = isBossEvent ? builtParties() : (evMeta ? [] : eventParties(ev))
     const clean = (items: ItemQty[]) => items.filter((i) => i.code.trim()).map((i) => ({ code: i.code.trim(), quantity: Number(i.quantity) }))
-    return { ...ev, minWinRate: Number(ev.minWinRate), itemsToSell: clean(ev.itemsToSell), itemsToBuy: clean(ev.itemsToBuy), group }
+    return { ...ev, minWinRate: Number(ev.minWinRate), itemsToSell: clean(ev.itemsToSell), itemsToBuy: clean(ev.itemsToBuy), groups, group: null }
   }
 
   function buildRaid(): RaidConfig {
     return {
-      ...raid, initiatorName: team[0] || null, participantNames: team.slice(1).filter(Boolean),
-      tankOverride: tank || null, leadTimeMinutes: Number(raid.leadTimeMinutes),
+      ...raid, parties: builtParties(), minWinRate: Number(raid.minWinRate), leadTimeMinutes: Number(raid.leadTimeMinutes),
+      initiatorName: null, participantNames: [], tankOverride: null,
     }
   }
 
   function validate(value: EventConfig | RaidConfig): string | null {
-    if (!team[0] && (team[1] || team[2])) return 'Pick an initiator before participants'
+    if (parties.some((p) => !p.slots[0] && (p.slots[1] || p.slots[2]))) return 'Every party needs an initiator before participants'
     if ('eventCode' in value) {
       if (!value.eventCode) return 'Choose an event'
       if (!(value.minWinRate >= 0 && value.minWinRate <= 1)) return 'Min win rate must be between 0 and 1'
-      if (isBossEvent && value.enabled && !value.group) return 'Boss events need a team (at least an initiator)'
+      if (isBossEvent && value.enabled && !value.groups.length) return 'Boss events need at least one party (an initiator)'
+      if (value.itemsToSell.some((i) => !(i.quantity >= 0))) return 'Sell "keep" amounts must be 0 or more'
+      if (value.itemsToBuy.some((i) => !(i.quantity > 0))) return 'Buy quantities must be positive'
       const items = [...value.itemsToSell, ...value.itemsToBuy]
-      if (items.some((i) => !(i.quantity > 0))) return 'Item quantities must be positive'
+      if (evMeta?.contentType === 'npc') {
+        const badSell = value.itemsToSell.filter((i) => tradeHint(i.code, 'sell')?.bad).map((i) => i.code)
+        const badBuy = value.itemsToBuy.filter((i) => tradeHint(i.code, 'buy')?.bad).map((i) => i.code)
+        if (badSell.length) return `The NPC doesn't buy: ${badSell.join(', ')}`
+        if (badBuy.length) return `The NPC doesn't sell: ${badBuy.join(', ')}`
+      }
       if (evMeta?.contentType === 'npc' && items.length > 0 && !value.designatedTrader) return 'NPC trading needs a designated trader'
     } else {
       if (!value.raidCode) return 'Choose a raid'
-      if (!value.initiatorName) return 'Raids need an initiator'
+      if (!value.parties.length) return 'Raids need at least one party (an initiator)'
+      if (!(value.minWinRate >= 0 && value.minWinRate <= 1)) return 'Min win rate must be between 0 and 1'
       if (!(value.leadTimeMinutes >= 0)) return 'Lead time must be 0 or more minutes'
     }
     return null
@@ -142,14 +201,18 @@
     await load(kind)
   }
 
+  function partiesLabel(groups: EventGroupConfig[]): string {
+    return groups.map((g) => [g.initiatorName, ...(g.participantNames ?? [])].join(', ')).join(' | ')
+  }
+
   function summary(value: any): string {
     if (kind === 'raid') {
-      const names = [value.initiatorName, ...(value.participantNames ?? [])].filter(Boolean)
-      return `Team: ${names.join(', ') || '—'} · lead ${value.leadTimeMinutes ?? 5}m`
+      const groups = raidParties(value)
+      return `${groups.length > 1 ? 'Parties' : 'Team'}: ${partiesLabel(groups) || '—'} · lead ${value.leadTimeMinutes ?? 5}m`
     }
-    if (value.group) {
-      const names = [value.group.initiatorName, ...(value.group.participantNames ?? [])]
-      return `${eventLabel(value.eventCode)} · team: ${names.join(', ')}`
+    const groups = eventParties(value)
+    if (groups.length) {
+      return `${eventLabel(value.eventCode)} · ${groups.length > 1 ? 'parties' : 'team'}: ${partiesLabel(groups)}`
     }
     const who = value.designatedTrader ? `trader: ${value.designatedTrader}`
       : value.eligibleCharacters?.length ? value.eligibleCharacters.join(', ') : 'all characters'
@@ -178,36 +241,52 @@
   {/each}
 </div>
 
-{#snippet teamPicker()}
-  <div class="row">
-    {#each team as _, i}
-      <label>{i === 0 ? 'Initiator' : `Participant ${i}`}
-        <select bind:value={team[i]}>
-          <option value="">—</option>
-          {#each characters as c}<option value={c} disabled={team.includes(c) && team[i] !== c}>{c}</option>{/each}
-        </select>
-      </label>
+{#snippet partyPicker()}
+  <div class="stack">
+    {#each parties as party, pi}
+      <div class="row">
+        {#if parties.length > 1}<span class="muted small">Party {pi + 1}</span>{/if}
+        {#each party.slots as _, si}
+          <label>{si === 0 ? 'Initiator' : `Participant ${si}`}
+            <select bind:value={party.slots[si]}>
+              <option value="">—</option>
+              {#each characters as c}<option value={c} disabled={takenElsewhere(pi, si).has(c)}>{c}</option>{/each}
+            </select>
+          </label>
+        {/each}
+        <label>Tank
+          <select bind:value={party.tank}>
+            <option value="">Auto (optimizer picks)</option>
+            {#each party.slots.filter(Boolean) as c}<option value={c}>{c}</option>{/each}
+          </select>
+        </label>
+        {#if parties.length > 1}<button class="danger" onclick={() => parties.splice(pi, 1)}>✕</button>{/if}
+      </div>
     {/each}
-    <label>Tank
-      <select bind:value={tank}>
-        <option value="">Auto (optimizer picks)</option>
-        {#each members as c}<option value={c}>{c}</option>{/each}
-      </select>
-    </label>
+    <div>
+      <button onclick={() => parties.push(blankParty())}>+ Add party</button>
+      <span class="muted small">Each party fights separately; earlier parties get first pick of bank gear and potions.</span>
+    </div>
   </div>
 {/snippet}
 
-{#snippet itemRows(items: ItemQty[], title: string)}
+{#snippet itemRows(items: ItemQty[], mode: 'sell' | 'buy')}
   <div class="stack">
-    <span class="muted small">{title}</span>
+    <span class="muted small">
+      {mode === 'sell' ? 'Sell to NPC — "keep" = sell down to this many (0 = sell all)' : 'Buy from NPC — quantity per event'}
+    </span>
     {#each items as item, i}
+      {@const hint = tradeHint(item.code, mode)}
       <div class="row">
-        <input list="cfg-items" placeholder="item code" bind:value={item.code} />
-        <input type="number" min="1" style="width:90px" bind:value={item.quantity} />
+        <input list={npcItems ? `npc-${mode}` : 'cfg-items'} placeholder="item code" bind:value={item.code} />
+        <label class="check small">{mode === 'sell' ? 'keep' : 'qty'}
+          <input type="number" min={mode === 'sell' ? 0 : 1} style="width:90px" bind:value={item.quantity} />
+        </label>
         <button class="danger" onclick={() => items.splice(i, 1)}>✕</button>
+        {#if hint}<span class="small {hint.bad ? 'error' : 'muted'}">{hint.text}</span>{/if}
       </div>
     {/each}
-    <div><button onclick={() => items.push({ code: '', quantity: 1 })}>+ Add item</button></div>
+    <div><button onclick={() => items.push({ code: '', quantity: mode === 'sell' ? 0 : 1 })}>+ Add item</button></div>
   </div>
 {/snippet}
 
@@ -240,10 +319,11 @@
 
     {#if isBossEvent}
       <p class="muted small">
-        {evMonster?.name} is a boss: it's fought by this team as one co-op group (initiator fires the
-        fight with the participants). Without a team the event is skipped.
+        {evMonster?.name} is a boss: each party below is queued as its own co-op group (initiator fires
+        the fight with its participants). Parties below the min win rate are skipped; without a
+        party the event is skipped.
       </p>
-      {@render teamPicker()}
+      {@render partyPicker()}
     {:else if evMeta?.contentType === 'npc'}
       <div class="row">
         <label>Designated trader
@@ -253,9 +333,10 @@
           </select>
         </label>
       </div>
+      {#if npcError}<p class="error small">{npcError} — any item code is accepted.</p>{/if}
       <div class="row" style="align-items:start">
-        {@render itemRows(ev.itemsToSell, 'Sell to NPC')}
-        {@render itemRows(ev.itemsToBuy, 'Buy from NPC')}
+        {@render itemRows(ev.itemsToSell, 'sell')}
+        {@render itemRows(ev.itemsToBuy, 'buy')}
       </div>
     {:else}
       <div class="stack">
@@ -287,8 +368,11 @@
       <label>Lead time (minutes)
         <input type="number" min="0" style="width:90px" bind:value={raid.leadTimeMinutes} />
       </label>
+      <label>Min win rate (0 = never skip)
+        <input type="number" min="0" max="1" step="0.05" style="width:90px" bind:value={raid.minWinRate} />
+      </label>
     </div>
-    {@render teamPicker()}
+    {@render partyPicker()}
   {/if}
 
   <details>
@@ -305,6 +389,12 @@
 
 <datalist id="cfg-items">
   {#each cat?.items ?? [] as i}<option value={i.code}>{i.name}</option>{/each}
+</datalist>
+<datalist id="npc-sell">
+  {#each [...sellable.values()] as i}<option value={i.code}>{itemName(i.code)} — {i.sellPrice} {i.currency}</option>{/each}
+</datalist>
+<datalist id="npc-buy">
+  {#each [...buyable.values()] as i}<option value={i.code}>{itemName(i.code)} — {i.buyPrice} {i.currency}</option>{/each}
 </datalist>
 
 <style>

@@ -410,6 +410,29 @@ class ContentCache(private val contentService: ContentService) {
         return getNpcReverseMap()[itemCode] ?: emptyList()
     }
 
+    private val npcCatalogCache: Cache<String, List<NPCItem>> = Caffeine.newBuilder()
+        .maximumSize(200)
+        .expireAfterWrite(24, TimeUnit.HOURS)
+        .build()
+
+    /**
+     * Everything [npcCode] trades: entries with a `buyPrice` can be bought from it, entries
+     * with a `sellPrice` can be sold to it. Cached for 24h; a failed fetch is not cached.
+     */
+    suspend fun getNpcCatalog(npcCode: String): List<NPCItem> {
+        npcCatalogCache.getIfPresent(npcCode)?.let { return it }
+        val items = mutableListOf<NPCItem>()
+        var page = 1
+        while (true) {
+            val result = contentService.getNPCItems(npcCode, page = page, size = 100)
+            items += result.data
+            if (result.data.size < 100 || page >= (result.pages ?: Int.MAX_VALUE)) break
+            page++
+        }
+        npcCatalogCache.put(npcCode, items)
+        return items
+    }
+
     /**
      * Build (or return cached) the full reverse map: item code → sellable NPCItem entries.
      */

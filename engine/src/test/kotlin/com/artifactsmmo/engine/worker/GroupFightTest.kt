@@ -1,6 +1,5 @@
 package com.artifactsmmo.engine.worker
 
-import com.artifactsmmo.core.task.BossEncounterCoordinator
 import com.artifactsmmo.core.task.StepResult
 import com.artifactsmmo.core.task.TaskType
 import com.artifactsmmo.domain.queue.GroupSlot
@@ -10,8 +9,6 @@ import com.artifactsmmo.domain.queue.TaskSource
 import com.artifactsmmo.domain.queue.TaskStatus
 import com.artifactsmmo.domain.task.MemberPlan
 import com.artifactsmmo.domain.task.TaskSpec
-import kotlinx.coroutines.channels.ClosedReceiveChannelException
-import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -24,23 +21,23 @@ import kotlin.test.assertTrue
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class GroupFightTest {
 
-    /** Stand-in for the legacy boss step, using the real rendezvous coordinator. */
+    /** Stand-in for the legacy boss step: participants stand on site, the initiator fights once all are there. */
     private class FakeBossOps : BossOps {
         val fights = mutableListOf<Pair<String, List<String>>>()
         val provisioned = mutableListOf<String>()
+        val onSite = mutableSetOf<String>()
         override suspend fun provision(character: String, plan: MemberPlan, status: (String) -> Unit) {
             provisioned += character; delay(2_000)
         }
-        override suspend fun step(character: String, task: TaskType.BossFight, encounters: BossEncounterCoordinator,
+        override suspend fun step(character: String, task: TaskType.BossFight,
                                   status: (String) -> Unit, previous: com.artifactsmmo.client.models.Character?): StepResult {
             return if (task.isInitiator) {
-                try { encounters.awaitParticipants(character) } catch (_: ClosedReceiveChannelException) { return StepResult.Waiting }
+                if (!onSite.containsAll(task.participantNames)) return StepResult.Waiting
                 fights += character to task.participantNames
                 delay(5_000) // fight cooldown
                 StepResult.FightWon(10, 5)
             } else {
-                try { encounters.signalReady(character) } catch (_: ClosedSendChannelException) { return StepResult.Waiting }
-                delay(5_000)
+                onSite += character
                 StepResult.Waiting
             }
         }
