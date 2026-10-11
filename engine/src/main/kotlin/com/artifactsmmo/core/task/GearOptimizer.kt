@@ -9,10 +9,10 @@ import com.artifactsmmo.client.models.Monster
  * Unified weapon + gear + utility slot optimizer.
  *
  * Design principles:
- *  - Gear/weapon greedy pass uses HEURISTIC scoring (offense + defense formula), not
- *    per-candidate simulation — mirrors [CoopOptimizer]'s scoring philosophy so solo and
- *    boss-fight gear selection behave consistently. A solo fighter is scored with balanced
- *    offense/defense weights and no threat term (see [scoreItemSolo]).
+ *  - Gear/weapon search uses a whole-loadout HEURISTIC ([evaluateLoadout]), not
+ *    per-candidate simulation. Solo loadouts are ranked by expected seconds per kill
+ *    ([cycleSeconds]: fight cooldown incl. haste + rest needed to recover lost HP), so
+ *    damage, HP, resistance and haste are traded in one common currency.
  *  - Real API sim is used only for: the baseline score, one post-gear-pass score (feeds
  *    the utility pass), the utility slot greedy pass itself, and the final validation —
  *    never for per-candidate gear/weapon comparisons. This avoids depending on the local
@@ -67,6 +67,9 @@ class GearOptimizer(
         const val GREEDY_API_ITERATIONS = 50
         const val BEAM_WIDTH = 48
         const val CANDIDATES_PER_SLOT = 10
+        /** Alternative weapons used to anchor non-weapon shortlists (element synergy). */
+        const val ANCHOR_WEAPONS = 2
+        const val CANDIDATES_PER_ANCHOR = 4
         const val API_GEAR_FINALISTS = 3
         const val CACHE_VERIFY_MIN_WINRATE = 0.85
         const val UTILITY_MAX_QUANTITY = 100
@@ -76,7 +79,15 @@ class GearOptimizer(
          * below this threshold, and are added only until the threshold is reached.
          */
         const val NO_UTILITY_MIN_WINRATE = 0.95
-        const val OPTIMIZER_VERSION = "loadout-beam-v2"
+        /**
+         * Heuristic HP-loss ceiling for a loadout to count as "safe" before simulation. Expected
+         * values hide crit/variance, so a loadout predicted to end at 1 HP is not a real win.
+         */
+        const val SAFE_HP_LOSS_FRACTION = 0.8
+        const val MAX_FIGHT_TURNS = 100.0
+        /** Simulated per-kill time differences below this are noise. */
+        const val CYCLE_SECONDS_TOLERANCE = 2.0
+        const val OPTIMIZER_VERSION = "loadout-beam-v3"
 
         /** Utility overrides that simulate both utility slots as empty. */
         val NO_UTILITIES: Map<String, String> = UTILITY_SLOT_NAMES.associateWith { "" }
@@ -116,13 +127,40 @@ class GearOptimizer(
                 ) * monsterCritMultiplier
             val survivalTurns = stats.maxHp.toDouble() / expectedIncoming.coerceAtLeast(1.0)
             val killTurns = monster.hp.toDouble() / expectedDamage.coerceAtLeast(1.0)
+
+            // Whole-hit breakpoints and turn order: the monster only gets the hits that land
+            // before our last one, and acts first when its initiative is higher (ties -> higher HP).
+            val playerFirst = stats.initiative > monster.initiative ||
+                (stats.initiative == monster.initiative && stats.maxHp >= monster.hp)
+            val hitsToKill = kotlin.math.ceil(killTurns).coerceAtLeast(1.0)
+            val monsterHits = if (playerFirst) hitsToKill - 1 else hitsToKill
+            val turns = hitsToKill + monsterHits
+            val hpLost = monsterHits * expectedIncoming
+            val hpLostFraction = hpLost / stats.maxHp.coerceAtLeast(1)
+            val safe = hpLostFraction <= SAFE_HP_LOSS_FRACTION && turns <= MAX_FIGHT_TURNS
             return LoadoutHeuristic(
                 combatRatio = survivalTurns / killTurns.coerceAtLeast(1.0),
                 expectedDamage = expectedDamage,
                 effectiveHp = survivalTurns,
                 initiativeAdvantage = stats.initiative - monster.initiative,
-                utilityStats = stats.prospecting + stats.wisdom
+                utilityStats = stats.prospecting + stats.wisdom,
+                safe = safe,
+                hpLostFraction = hpLostFraction,
+                cycleSeconds = cycleSeconds(turns, stats.haste, hpLostFraction)
             )
+        }
+
+        /**
+         * Seconds one kill costs: the fight cooldown (`turns × 2`, reduced 1% per haste point,
+         * min 5s) plus recovering the HP it cost (rest = 1s per 1% HP missing, min 3s). Food
+         * recovers faster in wall time but costs items in proportion to the same HP, so this
+         * is the common currency for "kill fast" vs "take less damage" vs haste.
+         */
+        fun cycleSeconds(turns: Double, haste: Int, hpLostFraction: Double): Double {
+            val fight = (turns * 2.0 * (1.0 - haste.coerceIn(0, 100) / 100.0)).coerceAtLeast(5.0)
+            val lostPercent = (hpLostFraction * 100.0).coerceAtLeast(0.0)
+            val recovery = if (lostPercent <= 0.0) 0.0 else kotlin.math.ceil(lostPercent).coerceAtLeast(3.0)
+            return fight + recovery
         }
     }
 
@@ -133,15 +171,18 @@ class GearOptimizer(
         val winRate: Double,
         val avgWinTurns: Double,
         val prospecting: Int,
-        val wisdom: Int
+        val wisdom: Int,
+        /** Expected seconds per kill (fight cooldown + HP recovery); see [cycleSeconds]. */
+        val cycleSeconds: Double = Double.MAX_VALUE
     ) : Comparable<GearScore> {
         override fun compareTo(other: GearScore): Int {
             // Primary: win rate descending (1% minimum meaningful difference)
             if (this.winRate > other.winRate + 0.01) return 1
             if (this.winRate < other.winRate - 0.01) return -1
-            // Secondary: avg win turns ascending (1 turn minimum meaningful difference)
-            if (this.avgWinTurns < other.avgWinTurns - 1.0) return 1
-            if (this.avgWinTurns > other.avgWinTurns + 1.0) return -1
+            // Secondary: seconds per kill ascending — fight cooldown (turns, haste) plus the
+            // rest/food needed to recover the HP the fight cost.
+            if (this.cycleSeconds < other.cycleSeconds - CYCLE_SECONDS_TOLERANCE) return 1
+            if (this.cycleSeconds > other.cycleSeconds + CYCLE_SECONDS_TOLERANCE) return -1
             // Tertiary: prospecting + wisdom descending
             return (this.prospecting + this.wisdom).compareTo(other.prospecting + other.wisdom)
         }
@@ -152,7 +193,11 @@ class GearOptimizer(
         val expectedDamage: Double,
         val effectiveHp: Double,
         val initiativeAdvantage: Int,
-        val utilityStats: Int
+        val utilityStats: Int,
+        /** Predicted to win with HP to spare (see [SAFE_HP_LOSS_FRACTION]). */
+        val safe: Boolean = true,
+        val hpLostFraction: Double = 0.0,
+        val cycleSeconds: Double = 0.0
     )
 
     private data class BeamState(
@@ -226,7 +271,8 @@ class GearOptimizer(
             }
             if (verifySim != null && verifySim.winrate >= CACHE_VERIFY_MIN_WINRATE) {
                 println("[${char.name}] GearOptimizer: reusing known-good loadout for $monsterCode (${(verifySim.winrate * 100).toInt()}%)")
-                val score = simToScore(verifySim, char)
+                val monster = try { helper.contentCache.getMonster(monsterCode) } catch (_: Exception) { null }
+                val score = simToScore(verifySim, char, monster)
                 return OptimizationResult(
                     equipActions = plan.first,
                     utilityActions = plan.second,
@@ -277,13 +323,13 @@ class GearOptimizer(
             println("[${char.name}] GearOptimizer: baseline sim failed: ${e.message}")
             return emptyResult(char)
         }
-        val baselineScore = simToScore(baseSim, char)
+        val baselineScore = simToScore(baseSim, char, monster)
 
         // Gear is compared with utility slots empty so equipped potions never mask a
         // loadout that can win on its own.
         val hasEquippedUtilities = char.utility1Slot.isNotEmpty() || char.utility2Slot.isNotEmpty()
         val gearOnlyBaselineScore = if (!hasEquippedUtilities) baselineScore else try {
-            simToScore(simulateGearOnly(char, monsterCode, emptyMap(), API_SIM_ITERATIONS), char)
+            simToScore(simulateGearOnly(char, monsterCode, emptyMap(), API_SIM_ITERATIONS), char, monster)
         } catch (e: Exception) {
             println("[${char.name}] GearOptimizer: gear-only baseline sim failed: ${e.message}")
             return currentLoadoutResult(char, baselineScore)
@@ -299,9 +345,13 @@ class GearOptimizer(
         var selectedStats = char
         var postGearScore = gearOnlyBaselineScore
 
-        val finalists = searchGearLoadouts(char, monster)
+        // Finalists: the best predicted seconds-per-kill loadouts, plus the strongest raw
+        // combat ratio as a hedge in case the heuristic's time estimate is off.
+        val changedStates = searchGearLoadouts(char, monster)
             .filter { state -> state.loadout.any { (slot, item) -> currentTarget[slot] != item.code } }
-            .take(API_GEAR_FINALISTS)
+        val finalists = (changedStates.take(API_GEAR_FINALISTS) +
+            listOfNotNull(changedStates.maxByOrNull { it.heuristic.combatRatio }))
+            .distinctBy { it.signature }
 
         for (finalist in finalists) {
             val target = finalist.loadout.mapValues { it.value.code }
@@ -311,7 +361,7 @@ class GearOptimizer(
                 println("[${char.name}] GearOptimizer: beam finalist validation failed: ${e.message}")
                 continue
             }
-            val score = simToScore(simulated, finalist.stats)
+            val score = simToScore(simulated, finalist.stats, monster)
             if (score > postGearScore) {
                 selectedTarget = target
                 selectedStats = finalist.stats
@@ -324,7 +374,7 @@ class GearOptimizer(
 
         // ── Utility slot pass — only when gear alone can't win reliably ──
         val utilityActions = if (postGearScore.winRate < NO_UTILITY_MIN_WINRATE) {
-            optimizeUtilitySlots(char, monsterCode, accumulatedOverrides, postGearScore)
+            optimizeUtilitySlots(char, selectedStats, monster, accumulatedOverrides, postGearScore)
         } else {
             emptyList()
         }
@@ -339,7 +389,7 @@ class GearOptimizer(
                 val finalSim = helper.simulateFightWithSlotAndUtilityOverrides(
                     char, monsterCode, accumulatedOverrides, utilityOverrides, utilityQuantities, API_SIM_ITERATIONS
                 )
-                simToScore(finalSim, selectedStats)
+                simToScore(finalSim, selectedStats, monster)
             } catch (_: Exception) {
                 validationSucceeded = false
                 postGearScore
@@ -384,11 +434,15 @@ class GearOptimizer(
         )
     }
 
+    /**
+     * Solo ranking: loadouts predicted to win with HP to spare first, then fewest expected
+     * seconds per kill (fight cooldown + recovery), then raw combat ratio for unsafe ones.
+     */
     private val beamStateComparator =
-        compareByDescending<BeamState> { it.heuristic.combatRatio }
+        compareByDescending<BeamState> { it.heuristic.safe }
+            .thenBy { if (it.heuristic.safe) it.heuristic.cycleSeconds else 0.0 }
+            .thenByDescending { it.heuristic.combatRatio }
             .thenByDescending { it.heuristic.expectedDamage }
-            .thenByDescending { it.heuristic.effectiveHp }
-            .thenByDescending { it.heuristic.initiativeAdvantage }
             .thenByDescending { it.heuristic.utilityStats }
             .thenBy { it.changedSlots }
             .thenBy { it.signature }
@@ -469,8 +523,8 @@ class GearOptimizer(
      *  - SUPPORT: highest expected damage wins; effective HP only breaks ties.
      *  - TANK: loadouts that would die before the boss goes down are ruled out first — the
      *    tank is attacked ~90% of the time, so pure damage risks a wipe. The survival bar
-     *    assumes the OTHER ~2 team members contribute comparable damage (monster HP /
-     *    (this loadout's damage × 3)); loadouts clearing it are then ranked by damage, then
+     *    assumes all [partySize] members contribute comparable damage (monster HP /
+     *    (this loadout's damage × partySize)); loadouts clearing it are then ranked by damage, then
      *    effective HP. If none clear it, the highest effective HP is used instead.
      *
      * [claimedGear] is a shared, mutated-by-reference map of item code -> copies already
@@ -486,6 +540,7 @@ class GearOptimizer(
         claimedGear: Map<String, Int> = emptyMap(),
         excludedBankCodes: Set<String> = emptySet(),
         allowBank: Boolean = true,
+        partySize: Int = 3,
     ): CoopLoadoutResult {
         val currentItems = mutableMapOf<String, Item>()
         for (slotInfo in GEAR_SLOTS) {
@@ -497,14 +552,14 @@ class GearOptimizer(
         val availableQuantities = accessibleGearQuantities(char).mapValues { (code, qty) ->
             (qty - (claimedGear[code] ?: 0)).coerceAtLeast(0)
         }
-        val candidatesBySlot = buildCoopBeamCandidates(char, monster, currentItems, excludedBankCodes, allowBank)
+        val candidatesBySlot = buildCoopBeamCandidates(char, monster, currentItems, excludedBankCodes, allowBank, role)
         val initial = makeBeamState(
             char = char, monster = monster, loadout = currentItems,
             usedQuantities = currentItems.values.groupingBy { it.code }.eachCount(),
             stats = char, currentLoadout = currentItems
         )
         var beam = listOf(initial)
-        val comparator = coopBeamComparator(role, monster.hp.toDouble())
+        val comparator = coopBeamComparator(role, monster.hp.toDouble(), partySize)
 
         for (slotInfo in GEAR_SLOTS) {
             if (slotInfo.slot == "rune") continue  // rune is picked separately, by role, in CoopOptimizer
@@ -539,11 +594,11 @@ class GearOptimizer(
     }
 
     /** [role]-specific ordering over beam states — see [searchCoopLoadout] kdoc. */
-    private fun coopBeamComparator(role: CoopOptimizer.Role, monsterHp: Double): Comparator<BeamState> = when (role) {
+    private fun coopBeamComparator(role: CoopOptimizer.Role, monsterHp: Double, partySize: Int): Comparator<BeamState> = when (role) {
         CoopOptimizer.Role.SUPPORT -> compareByDescending<BeamState> { it.heuristic.expectedDamage }
             .thenByDescending { it.heuristic.effectiveHp }
             .thenBy { it.changedSlots }.thenBy { it.signature }
-        CoopOptimizer.Role.TANK -> compareByDescending<BeamState> { survivesTeamFight(it.heuristic, monsterHp) }
+        CoopOptimizer.Role.TANK -> compareByDescending<BeamState> { survivesTeamFight(it.heuristic, monsterHp, partySize) }
             .thenByDescending { it.heuristic.expectedDamage }
             .thenByDescending { it.heuristic.effectiveHp }
             .thenBy { it.changedSlots }.thenBy { it.signature }
@@ -551,12 +606,12 @@ class GearOptimizer(
 
     /**
      * True if this loadout's effective HP (survival turns) covers the fight's expected
-     * length, assuming up to two teammates contribute comparable damage on top of this
-     * loadout's own (monsterHp / (expectedDamage × 3)). A heuristic floor, not a guarantee —
+     * length, assuming each of the [partySize] members contributes comparable damage
+     * (monsterHp / (expectedDamage × partySize)). A heuristic floor, not a guarantee —
      * the tank is targeted ~90% of the time per [artifacts-docs], not always.
      */
-    private fun survivesTeamFight(heuristic: LoadoutHeuristic, monsterHp: Double): Boolean {
-        val teamKillTurns = monsterHp / (heuristic.expectedDamage.coerceAtLeast(1.0) * 3.0)
+    internal fun survivesTeamFight(heuristic: LoadoutHeuristic, monsterHp: Double, partySize: Int): Boolean {
+        val teamKillTurns = monsterHp / (heuristic.expectedDamage.coerceAtLeast(1.0) * partySize.coerceAtLeast(1))
         return heuristic.effectiveHp >= teamKillTurns
     }
 
@@ -567,34 +622,17 @@ class GearOptimizer(
         currentLoadout: Map<String, Item>,
         excludedBankCodes: Set<String>,
         allowBank: Boolean,
+        role: CoopOptimizer.Role,
     ): Map<String, List<Item>> {
-        return GEAR_SLOTS.filter { it.slot != "rune" }.associate { slotInfo ->
-            val current = currentLoadout[slotInfo.slot]
-            val discovered = try {
-                helper.getAvailableEquipmentForSlot(char, slotInfo)
-                    .filter { it.source == "inventory" || (it.source == "bank" && allowBank && it.item.code !in excludedBankCodes) }
-                    .filter { slotInfo.slot != "weapon" || it.item.subtype != "tool" }
-                    .map { it.item }
-            } catch (_: Exception) { emptyList() }
-            val ranked = (discovered + listOfNotNull(current))
-                .distinctBy { it.code }
-                .map { item ->
-                    val stats = if (current?.code == item.code) char else char.applyItemDelta(current, item)
-                    item to evaluateLoadout(stats, monster)
-                }
-                .sortedWith(
-                    compareByDescending<Pair<Item, LoadoutHeuristic>> { it.second.expectedDamage }
-                        .thenByDescending { it.second.effectiveHp }
-                        .thenByDescending { it.first.level }
-                        .thenBy { it.first.code }
-                )
-                .map { it.first }
-            val bounded = ranked.take(CANDIDATES_PER_SLOT).toMutableList()
-            if (current != null && bounded.none { it.code == current.code }) {
-                if (bounded.size == CANDIDATES_PER_SLOT) bounded.removeAt(bounded.lastIndex)
-                bounded += current
-            }
-            slotInfo.slot to bounded.distinctBy { it.code }
+        // Tanks shortlist survivability first; supports shortlist damage first.
+        val ranking = when (role) {
+            CoopOptimizer.Role.TANK -> compareByDescending<LoadoutHeuristic> { it.effectiveHp }
+                .thenByDescending { it.expectedDamage }
+            CoopOptimizer.Role.SUPPORT -> compareByDescending<LoadoutHeuristic> { it.expectedDamage }
+                .thenByDescending { it.effectiveHp }
+        }
+        return rankedSlotCandidates(char, monster, currentLoadout, GEAR_SLOTS.filter { it.slot != "rune" }, ranking) {
+            it.source == "inventory" || (it.source == "bank" && allowBank && it.item.code !in excludedBankCodes)
         }
     }
 
@@ -603,36 +641,70 @@ class GearOptimizer(
         monster: Monster,
         currentLoadout: Map<String, Item>
     ): Map<String, List<Item>> {
-        return GEAR_SLOTS.associate { slotInfo ->
-            val current = currentLoadout[slotInfo.slot]
+        val ranking = compareByDescending<LoadoutHeuristic> { it.safe }
+            .thenBy { if (it.safe) it.cycleSeconds else 0.0 }
+            .thenByDescending { it.combatRatio }
+            .thenByDescending { it.expectedDamage }
+        return rankedSlotCandidates(char, monster, currentLoadout, GEAR_SLOTS, ranking) {
+            it.source == "inventory" || it.source == "bank"
+        }
+    }
+
+    /**
+     * Per-slot shortlists for the beam search, ranked by single-item swaps scored with
+     * [ranking]. Non-weapon slots are ranked against the current weapon AND the top
+     * [ANCHOR_WEAPONS] alternative weapons, and the shortlists are unioned — otherwise
+     * e.g. water-damage armor would never be shortlisted while a fire weapon is equipped,
+     * and the beam could never reach a strong all-water loadout.
+     */
+    private suspend fun rankedSlotCandidates(
+        char: Character,
+        monster: Monster,
+        currentLoadout: Map<String, Item>,
+        slots: List<ActionHelper.SlotInfo>,
+        ranking: Comparator<LoadoutHeuristic>,
+        sourceFilter: (ActionHelper.EquipmentOption) -> Boolean,
+    ): Map<String, List<Item>> {
+        val discoveredBySlot = slots.associate { slotInfo ->
             val discovered = try {
                 helper.getAvailableEquipmentForSlot(char, slotInfo)
-                    .filter { it.source == "inventory" || it.source == "bank" }
+                    .filter(sourceFilter)
                     .filter { slotInfo.slot != "weapon" || it.item.subtype != "tool" }
                     .map { it.item }
-            } catch (_: Exception) {
-                emptyList()
-            }
-            val ranked = (discovered + listOfNotNull(current))
-                .distinctBy { it.code }
-                .map { item ->
-                    val stats = if (current?.code == item.code) char else char.applyItemDelta(current, item)
-                    item to evaluateLoadout(stats, monster)
-                }
-                .sortedWith(
-                    compareByDescending<Pair<Item, LoadoutHeuristic>> { it.second.combatRatio }
-                        .thenByDescending { it.second.expectedDamage }
-                        .thenByDescending { it.first.level }
-                        .thenBy { it.first.code }
-                )
-                .map { it.first }
+            } catch (_: Exception) { emptyList() }
+            slotInfo.slot to (discovered + listOfNotNull(currentLoadout[slotInfo.slot])).distinctBy { it.code }
+        }
 
-            val bounded = ranked.take(CANDIDATES_PER_SLOT).toMutableList()
-            if (current != null && bounded.none { it.code == current.code }) {
-                if (bounded.size == CANDIDATES_PER_SLOT) bounded.removeAt(bounded.lastIndex)
-                bounded += current
-            }
-            slotInfo.slot to bounded.distinctBy { it.code }
+        fun rank(base: Character, slot: String, current: Item?, pool: List<Item>): List<Item> =
+            pool.map { item ->
+                val stats = if (current?.code == item.code) base else base.applyItemDelta(current, item)
+                item to evaluateLoadout(stats, monster)
+            }.sortedWith(
+                compareBy<Pair<Item, LoadoutHeuristic>, LoadoutHeuristic>(ranking) { it.second }
+                    .thenByDescending { it.first.level }
+                    .thenBy { it.first.code }
+            ).map { it.first }
+
+        val currentWeapon = currentLoadout["weapon"]
+        val rankedWeapons = discoveredBySlot["weapon"]?.let { rank(char, "weapon", currentWeapon, it) }.orEmpty()
+        val anchors = listOf(char) + rankedWeapons
+            .filter { it.code != currentWeapon?.code }
+            .take(ANCHOR_WEAPONS)
+            .map { char.applyItemDelta(currentWeapon, it) }
+
+        return slots.associate { slotInfo ->
+            val current = currentLoadout[slotInfo.slot]
+            val pool = discoveredBySlot[slotInfo.slot].orEmpty()
+            val shortlist = if (slotInfo.slot == "weapon") {
+                rankedWeapons.take(CANDIDATES_PER_SLOT)
+            } else {
+                val perAnchor = anchors.map { rank(it, slotInfo.slot, current, pool) }
+                // Primary anchor keeps its full shortlist; alternative anchors contribute their top picks.
+                (perAnchor.first().take(CANDIDATES_PER_SLOT) +
+                    perAnchor.drop(1).flatMap { it.take(CANDIDATES_PER_ANCHOR) }).distinctBy { it.code }
+            }.toMutableList()
+            if (current != null && shortlist.none { it.code == current.code }) shortlist += current
+            slotInfo.slot to shortlist.distinctBy { it.code }
         }
     }
 
@@ -677,66 +749,6 @@ class GearOptimizer(
             helper.getEquippedInSlot(char, slotInfo.slot).takeIf { it.isNotEmpty() }?.let { slotInfo.slot to it }
         }.toMap()
 
-    /**
-     * Heuristic value of [item] in [slot] for a SOLO fighter against a monster whose attack
-     * outputs are [monsterDmg] and whose resistances are [monsterRes]. Higher = better.
-     *
-     * Same formula as [CoopOptimizer]'s scoring but with balanced offense/defense weights
-     * (1.0/1.0) and no threat term — see [optimize]'s kdoc comment for the rationale.
-     */
-    private fun scoreItemSolo(
-        item: Item,
-        slot: String,
-        monsterDmg: Map<String, Int>,
-        monsterRes: Map<String, Int>
-    ): Double {
-        val effects = item.effects.associate { it.code to it.value }
-        val globalDmgBonus = (effects["dmg"] ?: 0) / 100.0
-
-        // Offense: expected damage after monster resistance
-        val offense = monsterRes.entries.sumOf { (element, res) ->
-            val attackKey = "attack_$element"
-            val dmgKey = "dmg_$element"
-            val baseAttack = effects[attackKey] ?: 0
-            val elementDmgBonus = (effects[dmgKey] ?: 0) / 100.0
-            val resMult = (1.0 - res / 100.0).coerceAtLeast(0.0)
-            baseAttack * (1.0 + globalDmgBonus + elementDmgBonus) * resMult
-        }
-
-        // Defense: HP + weighted resistance against the monster's attack outputs
-        val hp = (effects["hp"] ?: 0).toDouble()
-        val defenseFromRes = monsterDmg.entries.sumOf { (element, atk) ->
-            val resKey = "res_$element"
-            val resValue = (effects[resKey] ?: 0)
-            atk * (resValue / 100.0)
-        }
-        val defense = hp + defenseFromRes
-
-        val prospecting = (effects["prospecting"] ?: 0).toDouble()
-        val wisdom = (effects["wisdom"] ?: 0).toDouble()
-        val criticalStrike = (effects["critical_strike"] ?: 0).toDouble()
-        val haste = (effects["haste"] ?: 0).toDouble()
-
-        // Slot-specific weighting — weapons are pure offense, armor/shield pure defense,
-        // jewelry/artifacts/rune are mixed. Matches CoopOptimizer's slot weighting scheme.
-        val slotOffenseWeight = when (slot) {
-            "weapon" -> 3.0
-            "shield", "helmet", "body_armor", "leg_armor", "boots" -> 0.5
-            else -> 1.0
-        }
-        val slotDefenseWeight = when (slot) {
-            "shield", "helmet", "body_armor", "leg_armor", "boots" -> 2.0
-            "weapon" -> 0.0
-            else -> 1.0
-        }
-
-        return offense * slotOffenseWeight +
-               defense * slotDefenseWeight +
-               (prospecting + wisdom) * 0.1 +
-               criticalStrike * 2.0 +
-               haste * 1.5
-    }
-
     // ── Utility optimization ──────────────────────────────────────
 
     /**
@@ -746,10 +758,12 @@ class GearOptimizer(
      */
     private suspend fun optimizeUtilitySlots(
         char: Character,
-        monsterCode: String,
+        gearStats: Character,
+        monster: Monster,
         gearOverrides: Map<String, String>,
         currentScore: GearScore
     ): List<UtilityEquipAction> {
+        val monsterCode = monster.code
         val utilityCandidates = getOwnedUtilityCandidates(char)
         if (utilityCandidates.isEmpty()) return emptyList()
 
@@ -776,7 +790,7 @@ class GearOptimizer(
                     val r = helper.simulateFightWithSlotAndUtilityOverrides(
                         char, monsterCode, gearOverrides, utilityOverrides, utilityQuantities, GREEDY_API_ITERATIONS
                     )
-                    simToScore(r, char)
+                    simToScore(r, gearStats, monster)
                 } catch (_: Exception) { continue }
 
                 if (simResult > bestScoreForSlot) {
@@ -1075,12 +1089,29 @@ class GearOptimizer(
         }.toSet()
     }
 
-    private fun simToScore(sim: CombatSimulationData, char: Character): GearScore = GearScore(
-        winRate = sim.winrate,
-        avgWinTurns = avgWinTurns(sim),
-        prospecting = char.prospecting,
-        wisdom = char.wisdom
-    )
+    /**
+     * [stats] are the aggregate stats of the simulated loadout (haste, max HP). HP lost per
+     * kill comes from the sim's `final_hp` when the API reports it, else from the
+     * [evaluateLoadout] estimate against [monster].
+     */
+    private fun simToScore(sim: CombatSimulationData, stats: Character, monster: Monster?): GearScore {
+        val turns = avgWinTurns(sim)
+        val maxHp = stats.maxHp.coerceAtLeast(1)
+        val simulatedLoss = sim.results.filter { it.result == "win" }
+            .mapNotNull { r -> r.finalHp()?.let { (maxHp - it).coerceIn(0, maxHp).toDouble() / maxHp } }
+            .takeIf { it.isNotEmpty() }?.average()
+        val lossFraction = simulatedLoss
+            ?: monster?.let { evaluateLoadout(stats, it).hpLostFraction.coerceIn(0.0, 1.0) }
+            ?: 0.0
+        return GearScore(
+            winRate = sim.winrate,
+            avgWinTurns = turns,
+            prospecting = stats.prospecting,
+            wisdom = stats.wisdom,
+            cycleSeconds = if (turns == Double.MAX_VALUE) Double.MAX_VALUE
+                           else cycleSeconds(turns, stats.haste, lossFraction)
+        )
+    }
 
     private fun avgWinTurns(sim: CombatSimulationData): Double =
         sim.results.filter { it.result == "win" }

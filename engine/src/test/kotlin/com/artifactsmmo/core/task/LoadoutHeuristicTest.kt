@@ -3,6 +3,8 @@ package com.artifactsmmo.core.task
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.Monster
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 
@@ -31,18 +33,56 @@ class LoadoutHeuristicTest {
         assertTrue(defensiveScore.effectiveHp > baseScore.effectiveHp)
     }
 
-    private fun monster(attackEarth: Int = 0, resEarth: Int = 0) = Monster(
-        name = "Monster", code = "monster", level = 1, type = "normal", hp = 1000,
+    @Test
+    fun actingFirstSavesTheMonstersLastHit() {
+        // 100 dmg vs 1000 HP = 10 hits; the monster hits 10 times if it acts first, 9 if we do.
+        val monster = monster(attackEarth = 10, initiative = 50)
+        val slow = GearOptimizer.evaluateLoadout(character(maxHp = 1000, initiative = 0), monster)
+        val fast = GearOptimizer.evaluateLoadout(character(maxHp = 1000, initiative = 100), monster)
+
+        assertEquals(0.10, slow.hpLostFraction, 1e-9)
+        assertEquals(0.09, fast.hpLostFraction, 1e-9)
+        assertTrue(fast.cycleSeconds < slow.cycleSeconds)
+    }
+
+    @Test
+    fun loadoutThatWouldNearlyDieIsNotSafe() {
+        val monster = monster(attackEarth = 90, hp = 1000)
+        val heuristic = GearOptimizer.evaluateLoadout(character(maxHp = 1000), monster)
+
+        assertFalse(heuristic.safe)
+    }
+
+    @Test
+    fun cycleSecondsAppliesHasteRestAndMinimums() {
+        // 20 turns -> 40s, 10% haste -> 36s; 30% HP lost -> 30s rest.
+        assertEquals(66.0, GearOptimizer.cycleSeconds(20.0, 10, 0.30), 1e-9)
+        // Fight cooldown floor 5s, rest floor 3s.
+        assertEquals(8.0, GearOptimizer.cycleSeconds(1.0, 0, 0.01), 1e-9)
+        // No HP lost -> no rest.
+        assertEquals(5.0, GearOptimizer.cycleSeconds(1.0, 0, 0.0), 1e-9)
+    }
+
+    @Test
+    fun simulatedScoreRanksFasterKillAboveEqualWinRate() {
+        val slow = GearOptimizer.GearScore(1.0, 20.0, 0, 0, cycleSeconds = 90.0)
+        val fast = GearOptimizer.GearScore(1.0, 22.0, 0, 0, cycleSeconds = 80.0)
+        assertTrue(fast > slow)
+    }
+
+    private fun monster(attackEarth: Int = 0, resEarth: Int = 0, hp: Int = 1000, initiative: Int = 0) = Monster(
+        name = "Monster", code = "monster", level = 1, type = "normal", hp = hp,
         attackFire = 0, attackEarth = attackEarth, attackWater = 0, attackAir = 0,
         resFire = 0, resEarth = resEarth, resWater = 0, resAir = 0,
-        criticalStrike = 0, initiative = 0, minGold = 0, maxGold = 0, drops = emptyList()
+        criticalStrike = 0, initiative = initiative, minGold = 0, maxGold = 0, drops = emptyList()
     )
 
     private fun character(
         attackEarth: Int = 100,
         dmgEarth: Int = 0,
         maxHp: Int = 100,
-        resEarth: Int = 0
+        resEarth: Int = 0,
+        initiative: Int = 0
     ) = Character(
         name = "Character", account = "account", skin = "skin", level = 1, xp = 0, maxXp = 100,
         gold = 0, speed = 0,
@@ -55,7 +95,7 @@ class LoadoutHeuristicTest {
         cookingLevel = 1, cookingXp = 0, cookingMaxXp = 100,
         alchemyLevel = 1, alchemyXp = 0, alchemyMaxXp = 100,
         hp = maxHp, maxHp = maxHp, haste = 0, criticalStrike = 0, wisdom = 0,
-        prospecting = 0, initiative = 0, threat = 0,
+        prospecting = 0, initiative = initiative, threat = 0,
         attackFire = 0, attackEarth = attackEarth, attackWater = 0, attackAir = 0,
         dmg = 0, dmgFire = 0, dmgEarth = dmgEarth, dmgWater = 0, dmgAir = 0,
         resFire = 0, resEarth = resEarth, resWater = 0, resAir = 0,

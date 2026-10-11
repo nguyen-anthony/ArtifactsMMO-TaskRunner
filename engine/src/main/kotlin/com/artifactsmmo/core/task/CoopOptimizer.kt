@@ -9,16 +9,16 @@ import com.artifactsmmo.client.models.Monster
 /**
  * Cooperative fight optimizer for boss fights.
  *
- * Strategy (rewritten for clarity):
- *  - **Gear**: per-character HEURISTIC scoring. Solo simulation against a boss is useless
- *    (a single character will lose 100% of the time against a boss), so we don't sim per-char.
- *    Instead we score each candidate slot item by its contribution to combat (expected damage
- *    vs boss resistance for weapons; HP + resistance vs boss's attack elements for defensive
- *    gear; generic stat sums for jewelry/artifacts/rune). This is fast, deterministic, and
- *    yields the "best available" loadout without waiting on sim calls.
- *  - **Utilities**: coop-sim-judged greedy pass. Utilities like Splash Restore only make
- *    sense in a coop context — a single-char sim can't evaluate them meaningfully. We use
- *    the multi-character sim endpoint with all three characters' gear locked in.
+ * Strategy:
+ *  - **Gear**: per-character whole-loadout HEURISTIC search ([GearOptimizer.searchCoopLoadout]
+ *    / [GearOptimizer.evaluateLoadout]) — solo simulation against a boss is useless (one
+ *    character loses 100% of the time). Teams are then ranked by [teamGearScore] (tank
+ *    outlasts the fight given the team's summed damage, then total damage) and the top
+ *    finalists are validated with the multi-character sim.
+ *  - **Utilities**: none when the gear-only team win rate is already ≥ [HIGH_WIN_RATE_THRESHOLD].
+ *    Otherwise a coop-sim-judged pass, tank first: tank self-heal/survival, supports splash
+ *    heal + damage; only potions relevant to the boss's attack elements / the planned
+ *    weapon's elements are considered.
  *  - **Final validation**: one coop sim reports the optimized team win rate for display.
  *
  * @see ActionHelper.simulateCoopFight
@@ -44,12 +44,16 @@ class CoopOptimizer(
 
     enum class Role { TANK, SUPPORT }
 
-    /** Utility candidate category — used for role-based priority ordering. */
+    /**
+     * Utility candidate category — used for role-based priority ordering. Elemental
+     * resistance/damage potions share one category each (an all-element potion such as
+     * diabolic_elixir is a single item), ranked within it by relevance to this fight.
+     */
     private enum class UtilityCategory {
-        BOOST_RES_FIRE, BOOST_RES_EARTH, BOOST_RES_WATER, BOOST_RES_AIR,
+        BOOST_RES,
         RESTORE, BOOST_HP, ANTIPOISON,
         SPLASH_RESTORE,
-        BOOST_DMG, BOOST_DMG_FIRE, BOOST_DMG_EARTH, BOOST_DMG_WATER, BOOST_DMG_AIR,
+        BOOST_DMG, BOOST_DMG_ELEMENT,
         BOOST_CRITICAL_STRIKE,
         OTHER
     }
@@ -59,7 +63,9 @@ class CoopOptimizer(
         val bankDemand: Map<String, Int>,
         val heuristicScore: Double,
         val projectedThreat: Int,
-        val stableKey: String
+        val stableKey: String,
+        val expectedDamage: Double = 0.0,
+        val effectiveHp: Double = 0.0
     )
 
     data class ParticipantPlan(
@@ -112,19 +118,24 @@ class CoopOptimizer(
         const val COOP_SIM_ITERATIONS = 100
         const val UTILITY_MAX_QUANTITY = 100
         /**
-         * Win rate at or above this threshold triggers the priority-first utility assignment
-         * path instead of the sim-guided path. At near-100% win rates the coop sim cannot
-         * meaningfully distinguish between utility candidates, so we assign by role priority
-         * instead to guarantee potions are always equipped for loop sustainability.
+         * Gear-only team win rate at or above which NO utility potions are planned (same
+         * rule as solo [GearOptimizer.NO_UTILITY_MIN_WINRATE]); the potion pass also stops
+         * adding potions once the running team win rate reaches it.
          */
         const val HIGH_WIN_RATE_THRESHOLD = 0.95
         /**
-         * Win rate below this triggers the same priority-first utility assignment as
-         * [HIGH_WIN_RATE_THRESHOLD] — every candidate still loses, so the sim can't compare
-         * them either. Potions can still swing an otherwise-unwinnable fight into winnable,
-         * which is why utilities are assigned by role priority here instead of skipped.
+         * Below this win rate every candidate still loses, so the sim can't compare them;
+         * potions are assigned by role priority (relevance-filtered) instead. Potions can
+         * still swing an otherwise-unwinnable fight into winnable.
          */
         const val LOW_WIN_RATE_THRESHOLD = 0.05
+        /**
+         * Sim-guided utility pick: a higher-role-priority potion is preferred over the
+         * single best-simulating one if its win rate is within this margin.
+         */
+        const val UTILITY_PRIORITY_WINRATE_MARGIN = 0.02
+        /** Offset that ranks every team whose tank survives above every team whose tank doesn't. */
+        const val SURVIVING_TEAM_BONUS = 1_000_000.0
         /**
          * When a utility slot's remaining quantity drops to or below this value mid-loop,
          * the runner re-equips from inventory reserves before the next fight.
@@ -156,6 +167,37 @@ class CoopOptimizer(
             "boost_res_fire", "boost_res_earth", "boost_res_water", "boost_res_air",
             "boost_prospecting", "boost_critical_strike"
         )
+
+        private val ELEMENTS = listOf("fire", "earth", "water", "air")
+
+        /**
+         * Team gear ranking: teams whose tank outlasts the fight (tank effective HP ≥ boss HP
+         * / summed team damage) rank above all others and are ordered by total damage; the
+         * rest are ordered by how close the tank gets to outlasting it.
+         */
+        internal fun teamGearScore(tankEffectiveHp: Double, teamDamage: Double, monsterHp: Double): Double {
+            val killTurns = monsterHp / teamDamage.coerceAtLeast(1.0)
+            return if (tankEffectiveHp >= killTurns) SURVIVING_TEAM_BONUS + teamDamage
+                   else tankEffectiveHp / killTurns.coerceAtLeast(1e-9) * 1000.0
+        }
+
+        /**
+         * How much [item] helps in this fight, or null if it can't help at all:
+         *  - resistance potions: Σ boost × the monster's attack in that element,
+         *  - elemental damage potions: Σ boost × the planned weapon's attack in that element,
+         *  - anything else: the sum of its utility effect values.
+         */
+        internal fun utilityRelevance(item: Item, monsterAttack: Map<String, Int>, weaponAttack: Map<String, Int>): Double? {
+            val effects = item.effects.associate { it.code to it.value }
+            val res = ELEMENTS.sumOf { (effects["boost_res_$it"] ?: 0) * (monsterAttack[it] ?: 0).toDouble() }
+            val elementDmg = ELEMENTS.sumOf { (effects["boost_dmg_$it"] ?: 0) * (weaponAttack[it] ?: 0).toDouble() }
+            val hasRes = ELEMENTS.any { "boost_res_$it" in effects }
+            val hasElementDmg = ELEMENTS.any { "boost_dmg_$it" in effects }
+            if ((hasRes || hasElementDmg) && res + elementDmg <= 0.0) return null
+            val other = item.effects.filter { it.code in UTILITY_EFFECT_CODES && !it.code.startsWith("boost_res_") &&
+                ELEMENTS.none { e -> it.code == "boost_dmg_$e" } }.sumOf { it.value }.toDouble()
+            return res + elementDmg + other
+        }
     }
 
     // ── Public API ─────────────────────────────────────────────────────
@@ -209,7 +251,7 @@ class CoopOptimizer(
         val candidateSets = mutableMapOf<String, List<TeamLoadoutCandidate<GearPickResult>>>()
         for (name in stableParticipantNames) {
             val role = if (name == tankName) Role.TANK else Role.SUPPORT
-            val generated = generateCoopGearCandidates(chars.getValue(name), monster, role)
+            val generated = generateCoopGearCandidates(chars.getValue(name), monster, role, stableParticipantNames.size)
             candidateSets[name] = generated.map { candidate ->
                 TeamLoadoutCandidate(
                     characterName = name,
@@ -217,7 +259,9 @@ class CoopOptimizer(
                     bankDemand = candidate.bankDemand,
                     heuristicScore = candidate.heuristicScore,
                     threat = candidate.projectedThreat,
-                    stableKey = candidate.stableKey
+                    stableKey = candidate.stableKey,
+                    expectedDamage = candidate.expectedDamage,
+                    effectiveHp = candidate.effectiveHp
                 )
             }
         }
@@ -238,12 +282,20 @@ class CoopOptimizer(
         // where each character's pick is filtered against what predecessors already claimed
         // (via pickBestGearHeuristic's existing claimedGear plumbing) — so it always fits by
         // construction, even if a scarce item goes to whoever needed it most (the tank).
-        val greedyTeam = sharedClaimGreedyTeam(tankName, participantOrder, chars, monster, bankReserved)
+        val teamScore: (Map<String, TeamLoadoutCandidate<GearPickResult>>) -> Double = { team ->
+            teamGearScore(
+                tankEffectiveHp = team[tankName]?.effectiveHp ?: 0.0,
+                teamDamage = team.values.sumOf { it.expectedDamage },
+                monsterHp = monster.hp.toDouble()
+            )
+        }
+        val greedyTeam = sharedClaimGreedyTeam(tankName, participantOrder, chars, monster, bankReserved, teamScore)
         val enumerated = TeamLoadoutAllocator.enumerate(
             participantOrder = participantOrder,
             candidates = candidateSets,
             bankQuantities = bankSnapshot,
-            tankName = tankName
+            tankName = tankName,
+            teamScore = teamScore
         )
         if (enumerated.isEmpty()) {
             val demandTotals = mutableMapOf<String, Int>()
@@ -306,21 +358,28 @@ class CoopOptimizer(
         val baselineWinRate = baselineSim?.winrate ?: 0.0
         println("CoopOptimizer: baseline (gear only) coop win rate = ${(baselineWinRate * 100).toInt()}%")
 
-        // 6. Utility greedy pass — tank first, then supports.
-        //    Coop sim is essential here: Splash Restore heals allies, so we need a team sim.
+        // 6. Utility pass ? tank first, then supports. Coop sim is essential here: Splash
+        //    Restore heals allies, so only a team sim can judge it.
         //
-        //    Two strategies depending on baseline win rate:
-        //    - Win rate < HIGH_WIN_RATE_THRESHOLD: sim-guided greedy — pick the candidate that
-        //      most improves the coop score (win rate > avg turns > utility stats).
-        //    - Win rate >= HIGH_WIN_RATE_THRESHOLD: sim-free priority assignment — the team is
-        //      already winning; just assign the highest-priority available potion per role.
-        //      The coop sim can't distinguish utility value at near-100% win rates, so forcing
-        //      the priority list ensures potions are always equipped for loop sustainability.
+        //    - Gear-only team win rate >= HIGH_WIN_RATE_THRESHOLD: no potions at all (same rule
+        //      as solo fights) ? they would only be consumed for nothing.
+        //    - LOW..HIGH: sim-guided ? every relevant owned potion is simulated; the highest
+        //      role-priority one within UTILITY_PRIORITY_WINRATE_MARGIN of the best win rate
+        //      (that still beats no potion) is picked. Stops once the team reaches HIGH.
+        //    - Below LOW: every option still loses so the sim can't rank them ? assign the
+        //      highest role-priority relevant potion instead.
+        //
+        //    Relevance (see [utilityRelevance]): resistance potions only for elements the boss
+        //    attacks with, elemental damage potions only for elements the planned weapon has.
         //
         //    Committed quantity tracking: each time a potion is committed to a character, its
         //    contribution is subtracted from the available pool so that subsequent characters
         //    see the real remaining stock.
         val monsterEffects = monster.effects.map { it.code }.toSet()
+        val monsterAttack = mapOf(
+            "fire" to monster.attackFire, "earth" to monster.attackEarth,
+            "water" to monster.attackWater, "air" to monster.attackAir
+        )
         val committedUtilities = mutableMapOf<String, MutableMap<String, Pair<String, Int>>>()
             .apply { stableParticipantNames.forEach { put(it, mutableMapOf()) } }
         // Shared-bank quantities reserved by previous characters (and by earlier parties via
@@ -328,31 +387,35 @@ class CoopOptimizer(
         // their owning character. Reserve potions, food and keys are committed here too.
         val committedBankUtilities = bankReserved.toMutableMap()
 
-        // Below LOW_WIN_RATE_THRESHOLD the sim has no signal either (every option still loses),
-        // same as at/above HIGH_WIN_RATE_THRESHOLD — assign by role priority instead of
-        // sim-guided search in both cases (see [orderedCandidatesByRole]).
-        val priorityFirst = baselineWinRate >= HIGH_WIN_RATE_THRESHOLD || baselineWinRate < LOW_WIN_RATE_THRESHOLD
+        val usePotions = baselineWinRate < HIGH_WIN_RATE_THRESHOLD
+        val priorityFirst = baselineWinRate < LOW_WIN_RATE_THRESHOLD
+        if (!usePotions) {
+            println("CoopOptimizer: gear-only win rate ${(baselineWinRate * 100).toInt()}% ? no utility potions needed")
+        }
+        // Team score with the utilities committed so far (gear-only to start).
+        var runningScore: CoopScore? = bestScore
 
         val orderedNames = listOf(tankName) + stableParticipantNames.filter { it != tankName }
         for (name in orderedNames) {
+            if (!usePotions) break
             val role = if (name == tankName) Role.TANK else Role.SUPPORT
             val char = chars[name]!!
+            val weaponAttack = weaponAttackFor(char, gearPicks[name]?.targetLoadout.orEmpty())
 
             for (utilitySlot in listOf("utility1", "utility2")) {
+                if (!priorityFirst && (runningScore?.winRate ?: baselineWinRate) >= HIGH_WIN_RATE_THRESHOLD) break
                 val alreadyPickedForOtherSlot = committedUtilities[name]!!
                     .filterKeys { it != utilitySlot }
                     .values.map { it.first }
                     .toSet()
 
-                val candidateGroups = orderedCandidatesByRole(char, role, monsterEffects, alreadyPickedForOtherSlot)
+                val candidateGroups = orderedCandidatesByRole(char, role, monsterEffects, monsterAttack, weaponAttack, alreadyPickedForOtherSlot)
                 if (candidateGroups.all { it.isEmpty() }) {
-                    println("[$name] CoopOptimizer: no owned utility candidates for $utilitySlot")
+                    println("[$name] CoopOptimizer: no relevant owned utility candidates for $utilitySlot")
                     continue
                 }
 
                 if (priorityFirst) {
-                    // ── Priority-first path (team already winning) ──────────────────
-                    // Assign the top-priority potion we actually have available stock for.
                     var picked: Pair<Item, Int>? = null
                     outer@ for (categoryPool in candidateGroups) {
                         for (candidate in categoryPool) {
@@ -368,41 +431,40 @@ class CoopOptimizer(
                         reserveBankUtilityQuantity(char, item.code, qty, committedBankUtilities)
                         println("[$name] CoopOptimizer: $utilitySlot -> ${item.code} x$qty (role=$role, priority-first, win rate ${(baselineWinRate * 100).toInt()}%)")
                     } else {
-                        println("[$name] CoopOptimizer: $utilitySlot -> no available candidates (high win rate path)")
+                        println("[$name] CoopOptimizer: $utilitySlot -> no available stock for any candidate")
                     }
                 } else {
-                    // ── Sim-guided greedy path ──────────────────────────────────────
-                    var bestCandidate: Pair<Item, Int>? = null
-                    var bestScore: CoopScore = simToCoopScore(
+                    val noPotionScore = runningScore ?: simToCoopScore(
                         buildCoopLoadoutsWith(stableParticipantNames, chars, gearPicks, committedUtilities, name, utilitySlot, null),
                         monsterCode
                     )
-
-                    for (categoryPool in candidateGroups) {
-                        if (categoryPool.isEmpty()) continue
+                    data class Trial(val priority: Int, val item: Item, val quantity: Int, val score: CoopScore)
+                    val trials = mutableListOf<Trial>()
+                    for ((priority, categoryPool) in candidateGroups.withIndex()) {
                         for (candidate in categoryPool) {
                             val available = getAvailableUtilityQuantity(char, candidate.code, committedBankUtilities)
                             if (available <= 0) continue
-
                             val loadouts = buildCoopLoadoutsWith(
                                 stableParticipantNames, chars, gearPicks, committedUtilities,
                                 name, utilitySlot, candidate.code to available
                             )
                             val score = simToCoopScore(loadouts, monsterCode)
-                            if (score > bestScore) {
-                                bestCandidate = candidate to available
-                                bestScore = score
-                            }
+                            if (score > noPotionScore) trials += Trial(priority, candidate, available, score)
                         }
-                        if (bestCandidate != null) break
                     }
+                    val bestWinRate = trials.maxOfOrNull { it.score.winRate }
+                    val chosen = if (bestWinRate == null) null else trials
+                        .filter { it.score.winRate >= bestWinRate - UTILITY_PRIORITY_WINRATE_MARGIN }
+                        .sortedWith(compareBy<Trial> { it.priority }.thenByDescending { it.score })
+                        .first()
 
-                    if (bestCandidate != null) {
-                        val (item, qty) = bestCandidate
-                        committedUtilities[name]!![utilitySlot] = item.code to qty
-                        reserveBankUtilityQuantity(char, item.code, qty, committedBankUtilities)
-                        println("[$name] CoopOptimizer: $utilitySlot -> ${item.code} x$qty (role=$role, win rate ${(bestScore.winRate * 100).toInt()}%)")
+                    if (chosen != null) {
+                        committedUtilities[name]!![utilitySlot] = chosen.item.code to chosen.quantity
+                        reserveBankUtilityQuantity(char, chosen.item.code, chosen.quantity, committedBankUtilities)
+                        runningScore = chosen.score
+                        println("[$name] CoopOptimizer: $utilitySlot -> ${chosen.item.code} x${chosen.quantity} (role=$role, team win rate ${(chosen.score.winRate * 100).toInt()}%)")
                     } else {
+                        runningScore = noPotionScore
                         println("[$name] CoopOptimizer: $utilitySlot -> no improvement found")
                     }
                 }
@@ -582,6 +644,7 @@ class CoopOptimizer(
         chars: Map<String, Character>,
         monster: Monster,
         bankReserved: Map<String, Int> = emptyMap(),
+        teamScore: (Map<String, TeamLoadoutCandidate<GearPickResult>>) -> Double,
     ): TeamLoadoutSelection<GearPickResult> {
         val claimedGear = bankReserved.toMutableMap()
         val byCharacter = linkedMapOf<String, TeamLoadoutCandidate<GearPickResult>>()
@@ -590,13 +653,15 @@ class CoopOptimizer(
             val char = chars.getValue(name)
             val pick = pickBestGearHeuristic(
                 char, monster, role, claimedGear = claimedGear,
-                avoidThreat = role == Role.SUPPORT, seekThreat = role == Role.TANK
+                avoidThreat = role == Role.SUPPORT, seekThreat = role == Role.TANK,
+                partySize = order.size
             )
-            val candidate = toCoopGearCandidate(char, monster, role, pick)
+            val candidate = toCoopGearCandidate(char, monster, role, pick, order.size)
             byCharacter[name] = TeamLoadoutCandidate(
                 characterName = name, value = candidate.pick, bankDemand = candidate.bankDemand,
                 heuristicScore = candidate.heuristicScore, threat = candidate.projectedThreat,
-                stableKey = candidate.stableKey
+                stableKey = candidate.stableKey,
+                expectedDamage = candidate.expectedDamage, effectiveHp = candidate.effectiveHp
             )
         }
         val tankThreat = byCharacter[tankName]?.threat ?: Int.MIN_VALUE
@@ -608,7 +673,7 @@ class CoopOptimizer(
         return TeamLoadoutSelection(
             byCharacter = byCharacter,
             bankDemand = totalDemand,
-            heuristicScore = byCharacter.values.sumOf { it.heuristicScore },
+            heuristicScore = teamScore(byCharacter),
             threatViolation = violation,
             stableKey = "greedy:" + order.joinToString("|") { byCharacter.getValue(it).stableKey }
         )
@@ -617,19 +682,19 @@ class CoopOptimizer(
     private suspend fun generateCoopGearCandidates(
         char: Character,
         monster: Monster,
-        role: Role
+        role: Role,
+        partySize: Int
     ): List<CoopGearCandidate> {
         val current = currentGearPick(char)
-        val unrestricted = pickBestGearHeuristic(char, monster, role)
-        val personalOnly = pickBestGearHeuristic(char, monster, role, allowBank = false)
+        val unrestricted = pickBestGearHeuristic(char, monster, role, partySize = partySize)
+        val personalOnly = pickBestGearHeuristic(char, monster, role, allowBank = false, partySize = partySize)
         val candidates = mutableListOf(current, unrestricted, personalOnly)
 
         // Supports: a variant that avoids threat-carrying gear entirely, so a support never
         // wins the tank's targeting priority just because the globally-best armor happens to
-        // carry threat (scoreItem's threatWeight=0 for SUPPORT doesn't PENALIZE threat, it's
-        // just neutral — a threat item can still win on its other stats). The tank gets the
-        // opposite: a variant that actively seeks threat, in case its best-stat item doesn't.
-        candidates += pickBestGearHeuristic(char, monster, role, avoidThreat = role == Role.SUPPORT, seekThreat = role == Role.TANK)
+        // carry threat. The tank gets the opposite: a variant that actively seeks threat,
+        // in case its best-stat item doesn't.
+        candidates += pickBestGearHeuristic(char, monster, role, avoidThreat = role == Role.SUPPORT, seekThreat = role == Role.TANK, partySize = partySize)
 
         val scarceBankCodes = bankDemandForLoadout(char, unrestricted.targetLoadout).keys.sorted()
         for (code in scarceBankCodes) {
@@ -637,13 +702,14 @@ class CoopOptimizer(
                 char = char,
                 monster = monster,
                 role = role,
-                excludedBankCodes = setOf(code)
+                excludedBankCodes = setOf(code),
+                partySize = partySize
             )
         }
 
         return candidates
             .distinctBy { stableGearKey(it.targetLoadout) }
-            .map { pick -> toCoopGearCandidate(char, monster, role, pick) }
+            .map { pick -> toCoopGearCandidate(char, monster, role, pick, partySize) }
             .sortedWith(
                 compareByDescending<CoopGearCandidate> { it.heuristicScore }
                     .thenBy { it.bankDemand.values.sum() }
@@ -656,38 +722,43 @@ class CoopOptimizer(
         char: Character,
         monster: Monster,
         role: Role,
-        pick: GearPickResult
+        pick: GearPickResult,
+        partySize: Int
     ): CoopGearCandidate {
         val executablePick = GearPickResult(
             equipActions = actionsForTarget(char, pick.targetLoadout),
             targetLoadout = pick.targetLoadout
         )
-        val bossDmg = mapOf(
-            "fire" to monster.attackFire, "earth" to monster.attackEarth,
-            "water" to monster.attackWater, "air" to monster.attackAir
-        )
-        val bossRes = mapOf(
-            "fire" to monster.resFire, "earth" to monster.resEarth,
-            "water" to monster.resWater, "air" to monster.resAir
-        )
-        var heuristic = 0.0
+        // Whole-loadout stats, so element synergy (weapon × armor dmg bonus) and survival
+        // are judged together — same model as the beam search that produced the pick.
+        var stats = char
         var threat = char.threat
         for ((slot, code) in pick.targetLoadout) {
-            val item = try { helper.contentCache.getItemOrNull(code) } catch (_: Exception) { null } ?: continue
-            heuristic += scoreItem(item, slot, bossDmg, bossRes, role)
             val currentCode = helper.getEquippedInSlot(char, slot)
+            if (currentCode == code) continue
+            val item = try { helper.contentCache.getItemOrNull(code) } catch (_: Exception) { null } ?: continue
             val currentItem = if (currentCode.isNotEmpty()) {
                 try { helper.contentCache.getItemOrNull(currentCode) } catch (_: Exception) { null }
             } else null
+            stats = stats.applyItemDelta(currentItem, item)
             threat -= currentItem?.effects?.filter { it.code == "threat" }?.sumOf { it.value } ?: 0
             threat += item.effects.filter { it.code == "threat" }.sumOf { it.value }
+        }
+        val loadout = GearOptimizer.evaluateLoadout(stats, monster)
+        // Per-character ranking (candidate pruning): supports by damage; the tank by whether it
+        // outlasts a team of [partySize] dealing comparable damage, then by damage.
+        val heuristic = when (role) {
+            Role.SUPPORT -> loadout.expectedDamage
+            Role.TANK -> teamGearScore(loadout.effectiveHp, loadout.expectedDamage * partySize, monster.hp.toDouble())
         }
         return CoopGearCandidate(
             pick = executablePick,
             bankDemand = bankDemandForLoadout(char, pick.targetLoadout),
             heuristicScore = heuristic,
             projectedThreat = threat,
-            stableKey = stableGearKey(pick.targetLoadout)
+            stableKey = stableGearKey(pick.targetLoadout),
+            expectedDamage = loadout.expectedDamage,
+            effectiveHp = loadout.effectiveHp
         )
     }
 
@@ -772,10 +843,11 @@ class CoopOptimizer(
         avoidThreat: Boolean = false,
         /** Tank variant: break ties in favor of the higher-threat item. */
         seekThreat: Boolean = false,
+        partySize: Int = 3,
     ): GearPickResult {
         // Whole-loadout search (combines elements across slots — a fire weapon pairs with
         // fire armor instead of each slot being scored alone) — see GearOptimizer.searchCoopLoadout.
-        val coopLoadout = gearOptimizer.searchCoopLoadout(char, monster, role, claimedGear, excludedBankCodes, allowBank)
+        val coopLoadout = gearOptimizer.searchCoopLoadout(char, monster, role, claimedGear, excludedBankCodes, allowBank, partySize)
 
         val equipActions = mutableListOf<ActionHelper.EquipAction>()
         val targetLoadout = mutableMapOf<String, String>()
@@ -923,40 +995,42 @@ class CoopOptimizer(
 
     // ── Utility candidate handling ─────────────────────────────────────
 
+    /**
+     * Owned utility potions grouped by role priority, irrelevant ones removed (see
+     * [utilityRelevance]) and each group sorted by relevance to this fight.
+     *
+     *  - TANK (targeted by the boss): self-heal, HP boost, antipoison (if the boss poisons),
+     *    resistance, then damage.
+     *  - SUPPORT: splash heal (heals another character below 50% HP ? i.e. the tank), then
+     *    damage, crit, and self-heal as a fallback.
+     */
     private suspend fun orderedCandidatesByRole(
         char: Character,
         role: Role,
         monsterEffects: Set<String>,
+        monsterAttack: Map<String, Int>,
+        weaponAttack: Map<String, Int>,
         excludeCodes: Set<String>
     ): List<List<Item>> {
-        val owned = getOwnedConsumables(char).filter { it.code !in excludeCodes }
-        val byCategory: Map<UtilityCategory, List<Item>> = owned.groupBy { classifyUtility(it) }
+        val relevant = getOwnedConsumables(char)
+            .filter { it.code !in excludeCodes }
+            .mapNotNull { item -> utilityRelevance(item, monsterAttack, weaponAttack)?.let { item to it } }
+        val byCategory = relevant.groupBy { classifyUtility(it.first) }
         val hasPoison = "poison" in monsterEffects
 
         val tankOrder = buildList {
-            // Tank: survive as long as possible — self-heal first, then HP boost, then
-            // elemental resistances, then damage. Antipoison only when monster poisons.
             add(UtilityCategory.RESTORE)
             add(UtilityCategory.BOOST_HP)
             if (hasPoison) add(UtilityCategory.ANTIPOISON)
-            add(UtilityCategory.BOOST_RES_FIRE)
-            add(UtilityCategory.BOOST_RES_EARTH)
-            add(UtilityCategory.BOOST_RES_WATER)
-            add(UtilityCategory.BOOST_RES_AIR)
+            add(UtilityCategory.BOOST_RES)
             add(UtilityCategory.BOOST_DMG)
-            add(UtilityCategory.BOOST_DMG_FIRE)
-            add(UtilityCategory.BOOST_DMG_EARTH)
-            add(UtilityCategory.BOOST_DMG_WATER)
-            add(UtilityCategory.BOOST_DMG_AIR)
+            add(UtilityCategory.BOOST_DMG_ELEMENT)
             add(UtilityCategory.OTHER)
         }
         val supportOrder = listOf(
             UtilityCategory.SPLASH_RESTORE,
             UtilityCategory.BOOST_DMG,
-            UtilityCategory.BOOST_DMG_FIRE,
-            UtilityCategory.BOOST_DMG_EARTH,
-            UtilityCategory.BOOST_DMG_WATER,
-            UtilityCategory.BOOST_DMG_AIR,
+            UtilityCategory.BOOST_DMG_ELEMENT,
             UtilityCategory.BOOST_CRITICAL_STRIKE,
             UtilityCategory.RESTORE,
             UtilityCategory.OTHER
@@ -964,24 +1038,17 @@ class CoopOptimizer(
         val order = if (role == Role.TANK) tankOrder else supportOrder
         return order.map { category ->
             (byCategory[category] ?: emptyList()).sortedWith(
-                compareByDescending<Item> { item ->
-                    item.effects.filter { effect -> effect.code in UTILITY_EFFECT_CODES }.sumOf { it.value }
-                }.thenByDescending { it.level }.thenBy { it.code }
-            )
+                compareByDescending<Pair<Item, Double>> { it.second }
+                    .thenByDescending { it.first.level }.thenBy { it.first.code }
+            ).map { it.first }
         }
     }
 
     private fun classifyUtility(item: Item): UtilityCategory {
         val codes = item.effects.map { it.code }.toSet()
         return when {
-            "boost_res_fire" in codes -> UtilityCategory.BOOST_RES_FIRE
-            "boost_res_earth" in codes -> UtilityCategory.BOOST_RES_EARTH
-            "boost_res_water" in codes -> UtilityCategory.BOOST_RES_WATER
-            "boost_res_air" in codes -> UtilityCategory.BOOST_RES_AIR
-            "boost_dmg_fire" in codes -> UtilityCategory.BOOST_DMG_FIRE
-            "boost_dmg_earth" in codes -> UtilityCategory.BOOST_DMG_EARTH
-            "boost_dmg_water" in codes -> UtilityCategory.BOOST_DMG_WATER
-            "boost_dmg_air" in codes -> UtilityCategory.BOOST_DMG_AIR
+            codes.any { it.startsWith("boost_res_") } -> UtilityCategory.BOOST_RES
+            codes.any { it.startsWith("boost_dmg_") } -> UtilityCategory.BOOST_DMG_ELEMENT
             "boost_dmg" in codes -> UtilityCategory.BOOST_DMG
             "boost_critical_strike" in codes -> UtilityCategory.BOOST_CRITICAL_STRIKE
             "splash_restore" in codes -> UtilityCategory.SPLASH_RESTORE
@@ -990,6 +1057,15 @@ class CoopOptimizer(
             "antipoison" in codes || "antidote" in codes -> UtilityCategory.ANTIPOISON
             else -> UtilityCategory.OTHER
         }
+    }
+
+    /** Per-element base attack of the weapon in [targetLoadout] (falls back to the equipped one). */
+    private suspend fun weaponAttackFor(char: Character, targetLoadout: Map<String, String>): Map<String, Int> {
+        val code = targetLoadout["weapon"] ?: char.weaponSlot
+        if (code.isEmpty()) return emptyMap()
+        val weapon = try { helper.contentCache.getItemOrNull(code) } catch (_: Exception) { null } ?: return emptyMap()
+        return ELEMENTS.associateWith { element -> weapon.effects.filter { it.code == "attack_$element" }.sumOf { it.value } }
+            .filterValues { it > 0 }
     }
 
     private suspend fun getOwnedConsumables(char: Character): List<Item> {

@@ -63,8 +63,15 @@ data class CombatSimulationRequest(
 @Serializable
 data class CombatSimulationResult(
     val result: String,
-    val turns: Int
-)
+    val turns: Int,
+    /** Per-character outcome objects, in request order (untyped in the API schema; may include `final_hp`). */
+    @SerialName("character_results") val characterResults: List<kotlinx.serialization.json.JsonObject> = emptyList()
+) {
+    /** `final_hp` of the character at [index] in the request, or null when the API omits it. */
+    fun finalHp(index: Int = 0): Int? =
+        (characterResults.getOrNull(index)?.get("final_hp") as? kotlinx.serialization.json.JsonPrimitive)
+            ?.content?.toIntOrNull()
+}
 
 @Serializable
 data class CombatSimulationData(

@@ -141,6 +141,27 @@ class TeamLoadoutAllocatorTest {
         assertTrue(result.isEmpty())
     }
 
+    @Test
+    fun customTeamScoreOverridesSummedHeuristic() {
+        val candidates = mapOf(
+            "tank" to listOf(candidate("tank", "tank", emptyMap(), 1.0, 10)),
+            "support" to listOf(
+                candidate("support", "high-sum", emptyMap(), 100.0, 1),
+                candidate("support", "team-pick", emptyMap(), 1.0, 1)
+            )
+        )
+
+        val result = TeamLoadoutAllocator.enumerate(
+            participantOrder = listOf("tank", "support"),
+            candidates = candidates,
+            bankQuantities = emptyMap(),
+            tankName = "tank",
+            teamScore = { team -> if (team.getValue("support").value == "team-pick") 10.0 else 0.0 }
+        )
+
+        assertEquals("team-pick", result.first().byCharacter.getValue("support").value)
+    }
+
     private fun candidate(
         character: String,
         value: String,

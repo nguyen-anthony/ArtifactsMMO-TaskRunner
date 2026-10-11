@@ -6,7 +6,11 @@ internal data class TeamLoadoutCandidate<T>(
     val bankDemand: Map<String, Int>,
     val heuristicScore: Double,
     val threat: Int,
-    val stableKey: String
+    val stableKey: String,
+    /** Heuristic expected damage per turn of this loadout (see GearOptimizer.evaluateLoadout). */
+    val expectedDamage: Double = 0.0,
+    /** Heuristic turns this loadout survives being the boss's target. */
+    val effectiveHp: Double = 0.0
 )
 
 internal data class TeamLoadoutSelection<T>(
@@ -22,7 +26,12 @@ internal object TeamLoadoutAllocator {
         participantOrder: List<String>,
         candidates: Map<String, List<TeamLoadoutCandidate<T>>>,
         bankQuantities: Map<String, Int>,
-        tankName: String
+        tankName: String,
+        /**
+         * Whole-team ranking value; defaults to the sum of per-character heuristic scores.
+         * Boss teams pass a score that couples the tank's survival with the team's total damage.
+         */
+        teamScore: (Map<String, TeamLoadoutCandidate<T>>) -> Double = { team -> team.values.sumOf { it.heuristicScore } }
     ): List<TeamLoadoutSelection<T>> {
         val results = mutableListOf<TeamLoadoutSelection<T>>()
 
@@ -49,7 +58,7 @@ internal object TeamLoadoutAllocator {
                 results += TeamLoadoutSelection(
                     byCharacter = selected.toMap(),
                     bankDemand = demand.toMap(),
-                    heuristicScore = selected.values.sumOf { it.heuristicScore },
+                    heuristicScore = teamScore(selected),
                     threatViolation = violation,
                     stableKey = participantOrder.joinToString("|") { selected.getValue(it).stableKey }
                 )

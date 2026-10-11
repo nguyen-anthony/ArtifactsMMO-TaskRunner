@@ -57,6 +57,18 @@ interface BossOps {
 /** [BossOps] backed by the existing, tuned FightingExecutor/ActionHelper logic. */
 class LegacyBossOps(private val helper: ActionHelper, private val fighting: FightingExecutor) : BossOps {
     override suspend fun provision(character: String, plan: MemberPlan, status: (String) -> Unit) {
+        // Unequip potions from utility slots this plan doesn't use (e.g. the team wins without
+        // potions) so they aren't consumed for nothing; done before the deposit below so the
+        // unequipped stacks go back to the bank.
+        val plannedSlots = plan.utilities.map { it.slot }.toSet()
+        val clears = com.artifactsmmo.core.task.GearOptimizer.UTILITY_SLOT_NAMES
+            .filter { it !in plannedSlots }
+            .map { com.artifactsmmo.core.task.GearOptimizer.UtilityEquipAction(it, "", 0, "equipped") }
+        if (clears.isNotEmpty()) {
+            runCatching { helper.retrieveAndEquipUtilities(character, clears) }
+                .onFailure { rethrowCancellation(it); status("Utility unequip error: ${it.message}") }
+        }
+
         // Clear the inventory of whatever the character was carrying before this fight (e.g.
         // gathering leftovers) down to just what THIS plan needs, so gear/utility/food/key
         // withdrawals below — and, crucially, the reserve-potion withdrawal at the end — have
