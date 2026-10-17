@@ -104,6 +104,15 @@ class ArtifactsMMOClient(
     /** Scheduled raid definitions and active raid state. */
     val raids = RaidService(transport)
 
+    /** True when this client points at the sandbox server (never production). */
+    val isSandbox: Boolean = isSandboxUrl(baseUrl)
+
+    /**
+     * Sandbox-only cheats (give items/XP/gold, clear cooldowns, teleport, spawn events).
+     * Every call throws [IllegalStateException] unless [isSandbox], so it can never hit production.
+     */
+    val sandbox = SandboxService(transport, isSandbox)
+
     /**
      * Close the HTTP client and release resources
      */
@@ -112,6 +121,12 @@ class ArtifactsMMOClient(
     }
 
     companion object {
+        const val PRODUCTION_URL = "https://api.artifactsmmo.com"
+        const val SANDBOX_URL = "https://api.sandbox.artifactsmmo.com"
+
+        fun isSandboxUrl(url: String): Boolean =
+            runCatching { java.net.URI(url).host }.getOrNull()?.startsWith("api.sandbox.") == true
+
         /**
          * Create a client with a token
          */

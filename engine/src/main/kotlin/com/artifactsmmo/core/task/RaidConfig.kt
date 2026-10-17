@@ -1,5 +1,6 @@
 package com.artifactsmmo.core.task
 
+import com.artifactsmmo.domain.queue.TaskSource
 import kotlinx.serialization.Serializable
 
 /**
@@ -25,4 +26,7 @@ data class RaidConfig(
     /** Configured parties: [parties], or the legacy single-party fields. */
     val allParties: List<EventGroupConfig>
         get() = parties.ifEmpty { listOfNotNull(initiatorName?.let { EventGroupConfig(it, participantNames, tankOverride) }) }
+
+    /** Priority for a raid party: its own, else the RAID default. */
+    fun priorityFor(party: EventGroupConfig): Int = party.priority ?: TaskSource.RAID.defaultPriority
 }

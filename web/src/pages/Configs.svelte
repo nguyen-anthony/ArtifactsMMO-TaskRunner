@@ -11,16 +11,21 @@
 
   type Kind = 'event' | 'raid'
   /** Form state for one party: slots = [initiator, participant 1, participant 2]. */
-  type Party = { slots: string[]; tank: string }
+  type Party = { slots: string[]; tank: string; priority: number | null }
+  const EVENT_PRIORITY = 80
+  const RAID_PRIORITY = 90
   const blankEvent = (): EventConfig => ({
     eventCode: '', enabled: true, eligibleCharacters: [], itemsToSell: [], itemsToBuy: [],
-    designatedTrader: null, minWinRate: 0.9, groups: [], group: null,
+    designatedTrader: null, minWinRate: 0.9, groups: [], group: null, priority: null, characterPriorities: {},
   })
   const blankRaid = (): RaidConfig => ({
     raidCode: '', enabled: true, leadTimeMinutes: 5, parties: [], minWinRate: 0,
     initiatorName: null, participantNames: [], tankOverride: null,
   })
-  const blankParty = (): Party => ({ slots: ['', '', ''], tank: '' })
+  const blankParty = (): Party => ({ slots: ['', '', ''], tank: '', priority: null })
+  /** Blank/invalid number inputs → null (= use the default). */
+  const num = (v: unknown): number | null => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v))
+  const validPriority = (p: number | null | undefined) => p == null || (Number.isInteger(p) && p >= 1 && p <= 100)
 
   let kind = $state<Kind>('event')
   let entries = $state<Record<string, any>>({})
@@ -99,6 +104,7 @@
       ? groups.map((g) => ({
           slots: [g.initiatorName, g.participantNames[0] ?? '', g.participantNames[1] ?? ''],
           tank: g.tankOverride ?? '',
+          priority: g.priority ?? null,
         }))
       : [blankParty()]
   }
@@ -107,7 +113,21 @@
   function builtParties(): EventGroupConfig[] {
     return parties
       .filter((p) => p.slots.some(Boolean))
-      .map((p) => ({ initiatorName: p.slots[0], participantNames: p.slots.slice(1).filter(Boolean), tankOverride: p.tank || null }))
+      .map((p) => ({
+        initiatorName: p.slots[0], participantNames: p.slots.slice(1).filter(Boolean), tankOverride: p.tank || null,
+        priority: num(p.priority),
+      }))
+  }
+
+  /** Default a party falls back to when its priority is blank. */
+  const partyDefault = $derived(kind === 'raid' ? RAID_PRIORITY : (num(ev.priority) ?? EVENT_PRIORITY))
+  /** Characters whose solo tasks can take a per-character priority (none checked = all). */
+  const prioritizable = $derived(ev.eligibleCharacters.length ? ev.eligibleCharacters : characters)
+
+  function setCharPriority(name: string, raw: string) {
+    const { [name]: _, ...rest } = ev.characterPriorities
+    const p = num(raw)
+    ev.characterPriorities = p == null ? rest : { ...rest, [name]: p }
   }
 
   function resetForm() {
@@ -120,10 +140,10 @@
     error = ''; message = ''
     if (kind === 'event') {
       // Spread over the blank so older documents missing newer fields still bind cleanly.
-      ev = { ...blankEvent(), ...structuredClone(value) }
+      ev = { ...blankEvent(), ...$state.snapshot(value) }
       setParties(eventParties(ev))
     } else {
-      raid = { ...blankRaid(), ...structuredClone(value) }
+      raid = { ...blankRaid(), ...$state.snapshot(value) }
       setParties(raidParties(raid))
     }
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })
@@ -146,7 +166,15 @@
     // unavailable (unknown event type) keep whatever parties the document already had.
     const groups = isBossEvent ? builtParties() : (evMeta ? [] : eventParties(ev))
     const clean = (items: ItemQty[]) => items.filter((i) => i.code.trim()).map((i) => ({ code: i.code.trim(), quantity: Number(i.quantity) }))
-    return { ...ev, minWinRate: Number(ev.minWinRate), itemsToSell: clean(ev.itemsToSell), itemsToBuy: clean(ev.itemsToBuy), groups, group: null }
+    // Per-character overrides only apply to solo resource/monster events, and only for eligible characters.
+    const soloEvent = !isBossEvent && evMeta?.contentType !== 'npc'
+    const characterPriorities = soloEvent
+      ? Object.fromEntries(Object.entries(ev.characterPriorities ?? {}).filter(([c]) => !ev.eligibleCharacters.length || ev.eligibleCharacters.includes(c)))
+      : {}
+    return {
+      ...ev, minWinRate: Number(ev.minWinRate), itemsToSell: clean(ev.itemsToSell), itemsToBuy: clean(ev.itemsToBuy), groups, group: null,
+      priority: num(ev.priority), characterPriorities,
+    }
   }
 
   function buildRaid(): RaidConfig {
@@ -158,8 +186,12 @@
 
   function validate(value: EventConfig | RaidConfig): string | null {
     if (parties.some((p) => !p.slots[0] && (p.slots[1] || p.slots[2]))) return 'Every party needs an initiator before participants'
+    const groupList = 'eventCode' in value ? value.groups : value.parties
+    if (!groupList.every((g) => validPriority(g.priority))) return 'Party priorities must be whole numbers from 1 to 100'
     if ('eventCode' in value) {
       if (!value.eventCode) return 'Choose an event'
+      if (!validPriority(value.priority)) return 'Event priority must be a whole number from 1 to 100'
+      if (!Object.values(value.characterPriorities).every(validPriority)) return 'Character priorities must be whole numbers from 1 to 100'
       if (!(value.minWinRate >= 0 && value.minWinRate <= 1)) return 'Min win rate must be between 0 and 1'
       if (isBossEvent && value.enabled && !value.groups.length) return 'Boss events need at least one party (an initiator)'
       if (value.itemsToSell.some((i) => !(i.quantity >= 0))) return 'Sell "keep" amounts must be 0 or more'
@@ -202,7 +234,7 @@
   }
 
   function partiesLabel(groups: EventGroupConfig[]): string {
-    return groups.map((g) => [g.initiatorName, ...(g.participantNames ?? [])].join(', ')).join(' | ')
+    return groups.map((g) => [g.initiatorName, ...(g.participantNames ?? [])].join(', ') + (g.priority != null ? ` (p${g.priority})` : '')).join(' | ')
   }
 
   function summary(value: any): string {
@@ -210,13 +242,15 @@
       const groups = raidParties(value)
       return `${groups.length > 1 ? 'Parties' : 'Team'}: ${partiesLabel(groups) || '—'} · lead ${value.leadTimeMinutes ?? 5}m`
     }
+    const prio = `priority ${value.priority ?? EVENT_PRIORITY}`
     const groups = eventParties(value)
     if (groups.length) {
-      return `${eventLabel(value.eventCode)} · ${groups.length > 1 ? 'parties' : 'team'}: ${partiesLabel(groups)}`
+      return `${eventLabel(value.eventCode)} · ${prio} · ${groups.length > 1 ? 'parties' : 'team'}: ${partiesLabel(groups)}`
     }
+    const overrides = Object.entries(value.characterPriorities ?? {}).map(([c, p]) => `${c} ${p}`).join(', ')
     const who = value.designatedTrader ? `trader: ${value.designatedTrader}`
       : value.eligibleCharacters?.length ? value.eligibleCharacters.join(', ') : 'all characters'
-    return `${eventLabel(value.eventCode)} · ${who}`
+    return `${eventLabel(value.eventCode)} · ${prio}${overrides ? ` (${overrides})` : ''} · ${who}`
   }
 </script>
 
@@ -260,12 +294,15 @@
             {#each party.slots.filter(Boolean) as c}<option value={c}>{c}</option>{/each}
           </select>
         </label>
+        <label>Priority
+          <input type="number" min="1" max="100" step="1" style="width:80px" placeholder={String(partyDefault)} bind:value={party.priority} />
+        </label>
         {#if parties.length > 1}<button class="danger" onclick={() => parties.splice(pi, 1)}>✕</button>{/if}
       </div>
     {/each}
     <div>
       <button onclick={() => parties.push(blankParty())}>+ Add party</button>
-      <span class="muted small">Each party fights separately; earlier parties get first pick of bank gear and potions.</span>
+      <span class="muted small">Each party fights separately; earlier parties get first pick of bank gear and potions. Blank priority = {partyDefault}; higher runs first and can interrupt lower-priority work.</span>
     </div>
   </div>
 {/snippet}
@@ -310,6 +347,9 @@
         {/if}
       </label>
       <label class="check"><input type="checkbox" bind:checked={ev.enabled} /> Enabled</label>
+      <label>Priority (1–100)
+        <input type="number" min="1" max="100" step="1" style="width:80px" placeholder={String(EVENT_PRIORITY)} bind:value={ev.priority} />
+      </label>
       {#if !evMeta || evMeta.contentType === 'monster'}
         <label>Min win rate (0–1)
           <input type="number" min="0" max="1" step="0.05" style="width:90px" bind:value={ev.minWinRate} />
@@ -346,6 +386,20 @@
             <label class="check">
               <input type="checkbox" checked={ev.eligibleCharacters.includes(c)}
                 onchange={(e) => toggleEligible(c, e.currentTarget.checked)} /> {c}
+            </label>
+          {/each}
+        </div>
+        <span class="muted small">
+          Per-character priority overrides (blank = event priority {num(ev.priority) ?? EVENT_PRIORITY}). When events overlap,
+          a character works the higher-priority one first.
+        </span>
+        <div class="row">
+          {#each prioritizable as c}
+            <label class="check small">{c}
+              <input type="number" min="1" max="100" step="1" style="width:70px"
+                placeholder={String(num(ev.priority) ?? EVENT_PRIORITY)}
+                value={ev.characterPriorities?.[c] ?? ''}
+                oninput={(e) => setCharPriority(c, e.currentTarget.value)} />
             </label>
           {/each}
         </div>

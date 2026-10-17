@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 
 /** [CharacterView] backed by the live API (one GET /characters/{name}). */
 class ApiCharacterView(private val helper: ActionHelper) : CharacterView {
@@ -31,12 +32,16 @@ class WorkerPool(
     fun start(scope: CoroutineScope): Job = scope.launch {
         // Single instance => anything still claimed belongs to a dead process.
         runCatching { queue.recoverStale(0) }
-        workers.forEach { it.start(this) }
-        launch {
-            while (isActive) {
-                runCatching { queue.cancelExpired() }
-                runCatching { queue.recoverStale(staleLeaseMillis) }
-                delay(maintenanceMillis)
+        // Supervisor: an unexpected failure in one character's worker must not cancel the
+        // other workers (they are siblings under this job).
+        supervisorScope {
+            workers.forEach { it.start(this) }
+            launch {
+                while (isActive) {
+                    runCatching { queue.cancelExpired() }
+                    runCatching { queue.recoverStale(staleLeaseMillis) }
+                    delay(maintenanceMillis)
+                }
             }
         }
     }

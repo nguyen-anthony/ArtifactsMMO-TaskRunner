@@ -31,9 +31,14 @@ sealed class RealtimeMessage {
  * All parsing is handled by the caller ([WebSocketManager]) so it can both
  * log the raw frame and extract typed messages from a single pass.
  */
-class RealtimeClient(private val token: String) {
-
-    private val realtimeUrl = "wss://realtime.artifactsmmo.com"
+class RealtimeClient(
+    private val token: String,
+    private val realtimeUrl: String = PRODUCTION_URL,
+) {
+    companion object {
+        const val PRODUCTION_URL = "wss://realtime.artifactsmmo.com"
+        const val SANDBOX_URL = "wss://realtime.sandbox.artifactsmmo.com"
+    }
 
     private var wsClient: HttpClient? = null
 

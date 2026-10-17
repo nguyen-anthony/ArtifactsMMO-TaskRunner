@@ -1,6 +1,7 @@
 package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.models.SimpleItem
+import com.artifactsmmo.domain.queue.TaskSource
 import kotlinx.serialization.Serializable
 
 /**
@@ -28,10 +29,20 @@ data class EventConfig(
      */
     val groups: List<EventGroupConfig> = emptyList(),
     /** Legacy single-party form of [groups]; still read when [groups] is empty. */
-    val group: EventGroupConfig? = null
+    val group: EventGroupConfig? = null,
+    /** Queue priority for this event's tasks (higher runs first and can preempt). Null = [TaskSource.EVENT] default. */
+    val priority: Int? = null,
+    /** Per-character overrides of [priority] for solo tasks (gather, fight, NPC trading). */
+    val characterPriorities: Map<String, Int> = emptyMap(),
 ) {
     /** Configured boss parties: [groups], or the legacy single [group]. */
     val parties: List<EventGroupConfig> get() = groups.ifEmpty { listOfNotNull(group) }
+
+    /** Priority for [character]'s solo task. */
+    fun priorityFor(character: String): Int = characterPriorities[character] ?: priority ?: TaskSource.EVENT.defaultPriority
+
+    /** Priority for a boss party: its own, else the event's, else the EVENT default. */
+    fun priorityFor(party: EventGroupConfig): Int = party.priority ?: priority ?: TaskSource.EVENT.defaultPriority
 }
 
 /** A co-op boss party (events and raids): the initiator fires the fight with up to two participants. */
@@ -40,7 +51,9 @@ data class EventGroupConfig(
     val initiatorName: String,
     val participantNames: List<String> = emptyList(),
     /** Null lets [CoopOptimizer] choose the tank. */
-    val tankOverride: String? = null
+    val tankOverride: String? = null,
+    /** Queue priority for every member's slot. Null = the event's priority, or the EVENT/RAID default. */
+    val priority: Int? = null,
 ) {
     /** Initiator first, de-duplicated, capped at the fight API's 3 characters. */
     val members: List<String> get() = (listOf(initiatorName) + participantNames.filter { it != initiatorName }).distinct().take(3)

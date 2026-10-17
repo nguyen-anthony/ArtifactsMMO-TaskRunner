@@ -206,12 +206,14 @@ class CoopOptimizer(
      * [bankReserved] = bank quantities already promised to other parties planned before this
      * one (e.g. a second party for the same boss event). They are treated as unavailable for
      * gear, utilities, reserve potions, food and keys, so the parties' plans fit the bank together.
+     * Bank items reserved by other characters' planned work ([BankState.reservations]) are
+     * added on top.
      */
     suspend fun optimizeForBossFight(
         participantNames: List<String>,
         monsterCode: String,
         tankOverride: String? = null,
-        bankReserved: Map<String, Int> = emptyMap()
+        plannedReserved: Map<String, Int> = emptyMap()
     ): CoopOptimizationResult {
         require(participantNames.isNotEmpty()) { "Must have at least one participant" }
         require(participantNames.size <= 3) { "Coop fight supports at most 3 characters" }
@@ -224,6 +226,14 @@ class CoopOptimizer(
         } catch (e: Exception) {
             println("CoopOptimizer: bank refresh before utility planning failed: ${e.message}")
         }
+        val bankReserved = plannedReserved.toMutableMap().apply {
+            val raw = helper.bankState.snapshot.value
+            val visible = helper.bankState.availableFor(participantNames.toSet())
+            raw.forEach { (code, qty) ->
+                val claimedByOthers = qty - (visible[code] ?: 0)
+                if (claimedByOthers > 0) merge(code, claimedByOthers, Int::plus)
+            }
+        }.toMap()
 
         // 1. Fetch fresh Character objects
         val stableParticipantNames = participantNames.distinct().sorted()

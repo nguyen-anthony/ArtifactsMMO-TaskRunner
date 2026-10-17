@@ -1222,6 +1222,10 @@ class ActionHelper(
             waitForCooldown(result.cooldown.expiration)
             return result.character
         } catch (e: ArtifactsApiException) {
+            if (requests.size == 1 && e.errorCode == 485) {
+                println("[$name] $context: ${requests[0].code} is already equipped — skipping")
+                return refreshCharacter(name)
+            }
             if (requests.size == 1 && e.errorCode != 491 && e.errorCode != 483) throw e
             println("[$name] $context: batched equip of ${requests.size} item(s) failed [${e.errorCode}] ${e.message} — retrying one at a time")
         }
@@ -1921,7 +1925,27 @@ class ActionHelper(
 
         var char = refreshCharacter(characterName)
         // Slots already holding the wanted item need nothing (and would 485 the batch).
-        val equipActions = equipActions.filter { getEquippedInSlot(char, it.slot) != it.itemCode }
+        // Sources come from a plan that may be minutes old (another task can bank or pull an
+        // item in between), so re-resolve inventory vs bank against the live inventory.
+        val invLeft = char.inventory.filter { it.quantity > 0 }
+            .groupingBy { it.code }.fold(0) { acc, s -> acc + s.quantity }.toMutableMap()
+        val equipActions = alignGearSlots(char, equipActions)
+            .filter { getEquippedInSlot(char, it.slot) != it.itemCode }
+            .map { action ->
+                if (action.source != "inventory" && action.source != "bank") return@map action
+                val have = invLeft[action.itemCode] ?: 0
+                when {
+                    have > 0 -> {
+                        invLeft[action.itemCode] = have - 1
+                        action.copy(source = "inventory")
+                    }
+                    action.source == "inventory" -> {
+                        println("[$characterName] retrieveAndEquipItems: ${action.itemCode} is no longer in inventory — withdrawing from bank instead")
+                        action.copy(source = "bank")
+                    }
+                    else -> action
+                }
+            }
         if (equipActions.isEmpty()) return char
 
         // ── Step 1: Soft-verify item availability via bankState snapshot ──
@@ -2186,24 +2210,45 @@ class ActionHelper(
      *  3. [action.quantity] is an ideal target (100), not a hard requirement — equip
      *     whatever is available.
      *  4. An action with quantity 0 means "clear this slot": the equipped potion is
-     *     unequipped so it is not consumed in fights.
+     *     unequipped so it is not consumed in fights. [clearUnplanned] clears every utility
+     *     slot the plan doesn't use.
+     *
+     * Utility slots are interchangeable, so the plan is first re-aligned (see
+     * [alignUtilitySlots]) to keep each planned potion in whichever slot already holds it.
+     * Any stack that still has to come off is unequipped only after making inventory room
+     * for it — a swap into a full inventory fails with 497.
      */
     suspend fun retrieveAndEquipUtilities(
         characterName: String,
-        actions: List<GearOptimizer.UtilityEquipAction>
+        actions: List<GearOptimizer.UtilityEquipAction>,
+        clearUnplanned: Boolean = false,
     ): Character {
-        if (actions.isEmpty()) return refreshCharacter(characterName)
+        if (actions.isEmpty() && !clearUnplanned) return refreshCharacter(characterName)
 
         var char = refreshCharacter(characterName)
+        val planned = alignUtilitySlots(char, actions)
+        val plannedSlots = planned.map { it.slot }.toSet()
+        val keepCodes = planned.map { it.itemCode }.toSet()
 
-        for (action in actions.filter { it.quantity <= 0 }) {
-            val equippedQty = getEquippedUtilityQuantity(char, action.slot)
-            if (getEquippedInSlot(char, action.slot).isEmpty() || equippedQty <= 0) continue
-            char = try {
-                unequip(characterName, action.slot, equippedQty)
-            } catch (e: Exception) {
-                println("[$characterName] retrieveAndEquipUtilities: failed to unequip ${action.slot}: ${e.message}")
-                char
+        val clearSlots = (actions.filter { it.quantity <= 0 }.map { it.slot } +
+            (if (clearUnplanned) GearOptimizer.UTILITY_SLOT_NAMES else emptyList()))
+            .filter { it !in plannedSlots }
+        val displacedSlots = planned
+            .filter { getEquippedInSlot(char, it.slot).let { code -> code.isNotEmpty() && code != it.itemCode } }
+            .map { it.slot }
+        val toUnequip = (clearSlots + displacedSlots).distinct()
+            .filter { getEquippedInSlot(char, it).isNotEmpty() && getEquippedUtilityQuantity(char, it) > 0 }
+        if (toUnequip.isNotEmpty()) {
+            char = ensureInventoryRoom(characterName, char, toUnequip.sumOf { getEquippedUtilityQuantity(char, it) }, keepCodes)
+            for (slot in toUnequip) {
+                char = try {
+                    unequip(characterName, slot, getEquippedUtilityQuantity(char, slot))
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    println("[$characterName] retrieveAndEquipUtilities: failed to unequip $slot: ${e.message}")
+                    char
+                }
             }
         }
 
@@ -2211,7 +2256,7 @@ class ActionHelper(
         val inventoryActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
         val bankNeededActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
 
-        for (action in actions.filter { it.quantity > 0 }) {
+        for (action in planned) {
             val currentEquipped = getEquippedInSlot(char, action.slot)
             val equippedQty = if (currentEquipped == action.itemCode) getEquippedUtilityQuantity(char, action.slot) else 0
             val inInv = getItemQuantity(char, action.itemCode)
@@ -2275,10 +2320,14 @@ class ActionHelper(
                 }
             }
 
+            // Withdraw only what fits: a stack that can't be equipped (e.g. a failed swap)
+            // must not leave the inventory too full for the next equip or the loot.
+            val freeQty = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity }).coerceAtLeast(0)
+            val perAction = freeQty / bankNeededActions.size
             for (action in bankNeededActions) {
                 val bankQty = bankState.getQuantity(action.itemCode)
                 val inInv = getItemQuantity(char, action.itemCode)
-                val deficit = (action.quantity - inInv).coerceAtMost(bankQty)
+                val deficit = (action.quantity - inInv).coerceAtMost(bankQty).coerceAtMost(perAction)
                 if (deficit <= 0) continue
                 try {
                     val result = client.bank.withdrawItems(characterName, listOf(SimpleItem(action.itemCode, deficit)))
@@ -2292,6 +2341,94 @@ class ActionHelper(
         }
 
         return char
+    }
+
+    /**
+     * Re-assigns interchangeable gear slots (ring1/ring2, artifact1-3) so an item the
+     * character already wears stays where it is. Plans can be minutes old or computed from a
+     * different slot layout; without this, a plan asking for e.g. artifact2 = X while X sits
+     * in artifact1 is rejected with 485 ("already equipped") — artifacts are unique.
+     * Only slots the plan touches are reshuffled, so items the plan keeps implicitly stay put.
+     */
+    fun alignGearSlots(char: Character, actions: List<EquipAction>): List<EquipAction> {
+        val groups = listOf(listOf("ring1", "ring2"), listOf("artifact1", "artifact2", "artifact3"))
+        val result = actions.filter { a -> groups.none { a.slot in it } }.toMutableList()
+        for (group in groups) {
+            val planned = actions.filter { it.slot in group }
+            if (planned.isEmpty()) continue
+            val plannedSlots = planned.map { it.slot }.distinct()
+            val assigned = linkedMapOf<String, EquipAction>()
+            val pending = mutableListOf<EquipAction>()
+            for (a in planned) {
+                val holding = plannedSlots.firstOrNull { it !in assigned && getEquippedInSlot(char, it) == a.itemCode }
+                if (holding != null) assigned[holding] = a.copy(slot = holding) else pending += a
+            }
+            for (a in pending) {
+                val slot = if (a.slot !in assigned) a.slot else plannedSlots.firstOrNull { it !in assigned } ?: continue
+                assigned[slot] = a.copy(slot = slot)
+            }
+            var aligned = assigned.values.toList()
+            if (group.first().startsWith("artifact")) {
+                // Already worn in a slot the plan leaves alone → already on (artifacts are unique).
+                val untouched = group.filter { it !in plannedSlots }.map { getEquippedInSlot(char, it) }.filter { it.isNotEmpty() }.toSet()
+                aligned = aligned.filter { it.itemCode !in untouched }
+            }
+            result += aligned
+        }
+        return result
+    }
+
+    /**
+     * Re-targets planned utility actions (quantity > 0) so each potion that is already
+     * equipped stays in the slot that holds it; the rest go to their planned slot if it's
+     * empty, else any empty slot, else any remaining slot. Utility slots are interchangeable
+     * in combat, and this avoids pulling a whole stack out into the inventory just to move
+     * it across slots. Deterministic for a given character state, so callers that compare
+     * the plan with the equipped slots must align against the same character first.
+     */
+    fun alignUtilitySlots(
+        char: Character,
+        actions: List<GearOptimizer.UtilityEquipAction>,
+    ): List<GearOptimizer.UtilityEquipAction> {
+        val planned = actions.filter { it.quantity > 0 }
+        if (planned.isEmpty()) return emptyList()
+        val slots = GearOptimizer.UTILITY_SLOT_NAMES
+        val assigned = linkedMapOf<String, GearOptimizer.UtilityEquipAction>()
+        val pending = mutableListOf<GearOptimizer.UtilityEquipAction>()
+        for (action in planned) {
+            val holding = slots.firstOrNull {
+                it !in assigned && getEquippedInSlot(char, it) == action.itemCode && getEquippedUtilityQuantity(char, it) > 0
+            }
+            if (holding != null) assigned[holding] = action.copy(slot = holding) else pending += action
+        }
+        for (action in pending) {
+            val free = slots.filter { it !in assigned }
+            val slot = free.firstOrNull { it == action.slot && getEquippedInSlot(char, it).isEmpty() }
+                ?: free.firstOrNull { getEquippedInSlot(char, it).isEmpty() }
+                ?: free.firstOrNull { it == action.slot }
+                ?: free.firstOrNull()
+                ?: continue
+            assigned[slot] = action.copy(slot = slot)
+        }
+        return assigned.values.toList()
+    }
+
+    /**
+     * Makes room for [needed] more items, banking everything but [keep] (and tools) when the
+     * inventory is too full. Best-effort: returns the character unchanged if it can't.
+     */
+    private suspend fun ensureInventoryRoom(name: String, char: Character, needed: Int, keep: Set<String>): Character {
+        val free = char.inventoryMaxItems - char.inventory.sumOf { it.quantity }
+        if (free >= needed) return char
+        println("[$name] Inventory has room for $free item(s) but $needed are coming off — banking the rest first")
+        return try {
+            depositInventoryExcept(name, keep, char)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            println("[$name] Could not make inventory room: ${e.message}")
+            char
+        }
     }
 
     /**

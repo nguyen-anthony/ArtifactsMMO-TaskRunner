@@ -90,7 +90,11 @@ export interface Catalog {
 export interface NpcItem { code: string; currency: string; buyPrice: number | null; sellPrice: number | null }
 
 /** Mirrors engine `EventConfig` / `EventGroupConfig` (stored under /configs/event). */
-export interface EventGroupConfig { initiatorName: string; participantNames: string[]; tankOverride: string | null }
+export interface EventGroupConfig {
+  initiatorName: string; participantNames: string[]; tankOverride: string | null
+  /** Queue priority for every member; null = the event's priority, or the EVENT (80) / RAID (90) default. */
+  priority?: number | null
+}
 export interface EventConfig {
   eventCode: string; enabled: boolean; eligibleCharacters: string[]
   itemsToSell: ItemQty[]; itemsToBuy: ItemQty[]; designatedTrader: string | null
@@ -99,6 +103,10 @@ export interface EventConfig {
   groups: EventGroupConfig[]
   /** Legacy single party; superseded by `groups`. */
   group: EventGroupConfig | null
+  /** Queue priority for this event's tasks; null = EVENT default (80). */
+  priority: number | null
+  /** Per-character overrides of `priority` for solo tasks. */
+  characterPriorities: Record<string, number>
 }
 /** Mirrors engine `RaidConfig` (stored under /configs/raid). */
 export interface RaidConfig {

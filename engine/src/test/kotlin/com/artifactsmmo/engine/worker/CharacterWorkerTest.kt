@@ -30,12 +30,18 @@ class CharacterWorkerTest {
     private class ScriptedExecutor : TaskExecutor {
         val started = mutableListOf<Long>()
         val cleaned = mutableListOf<Long>()
-        override suspend fun start(ctx: ExecContext) { started += ctx.taskId; ctx.state.prepared = true }
+        var startFailures = 0
+        override suspend fun start(ctx: ExecContext) {
+            started += ctx.taskId
+            if (startFailures > 0) { startFailures--; throw ArtifactsApiException(478, "Missing required item(s).") }
+            ctx.state.prepared = true
+        }
         override suspend fun step(ctx: ExecContext): StepOutcome {
             val mode = (ctx.spec as TaskSpec.Gather).resourceCode
             when (mode) {
                 "boom" -> error("kaboom")
                 "fatal" -> throw ArtifactsApiException(452, "token invalid")
+                "benign" -> throw ArtifactsApiException(485, "This item is already equipped.")
             }
             ctx.state.gathers++
             return if (mode == "three" && ctx.state.gathers >= 3) StepOutcome.Complete("done")
@@ -57,11 +63,13 @@ class CharacterWorkerTest {
         val settings = MapSettings()
         val control = WorkerControl()
         var snapshot = CharacterSnapshot("alice", level = 10, skills = mapOf("mining" to 5), freeInventorySlots = 10)
+        val ended = mutableListOf<Long>()
         val worker = CharacterWorker(
             character = "alice", queue = queue, executors = { exec }, view = { snapshot }, settings = settings,
             awaitCooldown = {}, control = control,
             config = WorkerConfig(idlePollMillis = 5_000, checkpointMillis = 0, controlCheckMillis = 60_000),
             clock = clock,
+            onTaskEnd = { ended += it.id },
         )
     }
 
@@ -84,6 +92,19 @@ class CharacterWorkerTest {
         assertEquals(TaskStatus.COMPLETED, done.status)
         assertEquals(3, done.checkpoint!!["gathers"]!!.jsonPrimitive.intOrNull)
         assertEquals(listOf(t.id), h.exec.cleaned)
+        assertEquals(listOf(t.id), h.ended, "onTaskEnd runs once the task ends")
+        assertEquals(WorkerState.IDLE, h.worker.status.value.state)
+    }
+
+    @Test
+    fun `an error thrown from executor start is retried instead of killing the worker`() = runTest {
+        val h = Harness(this)
+        h.exec.startFailures = 1
+        val t = h.queue.enqueue(gather("three"))!!
+        start(h)
+        advance(30_000)
+        assertEquals(TaskStatus.COMPLETED, h.queue.get(t.id)!!.status)
+        assertTrue(h.exec.started.size >= 2, "start must be retried")
         assertEquals(WorkerState.IDLE, h.worker.status.value.state)
     }
 
@@ -160,6 +181,15 @@ class CharacterWorkerTest {
         val failed = h.queue.get(t.id)!!
         assertEquals(TaskStatus.FAILED, failed.status)
         assertTrue(failed.lastError!!.contains("consecutive errors"))
+    }
+
+    @Test
+    fun `a benign error that keeps repeating still fails the task instead of looping forever`() = runTest {
+        val h = Harness(this)
+        val t = h.queue.enqueue(gather("benign"))!!
+        start(h)
+        advance(120_000)
+        assertEquals(TaskStatus.FAILED, h.queue.get(t.id)!!.status)
     }
 
     @Test

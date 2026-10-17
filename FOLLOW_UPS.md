@@ -78,6 +78,21 @@ The engine holds an advisory lock to ensure only one backend runs workers. On bo
 
 ---
 
+### Whole-account inventory allocator (Phase 1 done; Phases 2–4 open)
+**Done (Phase 1):** in-memory bank reservation ledger (`core/task/BankReservations.kt`, owned by `BankState`).
+- Event/raid producers reserve each queued plan's bank demand under `task:<id>` (group parent id for parties); claims are consumed by the WebSocket `withdraw_item` log, released when the task ends (`CharacterWorker.onTaskEnd`) or is cancelled by its producer, and expire after 30 min.
+- `GearOptimizer` (all callers: fights, TaskMaster, events) and `CoopOptimizer` plan against `BankState.availableFor(...)` = bank minus other characters' claims.
+- Solo monster events plan all candidates jointly (`SoloFightAllocator`): scarce items go to the characters that lose the most kills/hour without them; others get their best fallback or are dropped.
+
+**Phase 2 – other plan members' items:** include inventory/equipped gear of characters in the same event plan as a pool, with a hand-off step (owner deposits → recipient withdraws) sequenced before the fight.
+
+**Phase 3 – everything respects reservations:** crafting/restock withdrawals, `StatGearOptimizer`, TaskMaster item turn-ins, food/key withdrawals should read `availableFor` and reserve their own demand; also reserve for normal (non-event) fight tasks when queued.
+
+**Phase 4 – re-validate and re-plan:** at task start, check that the planned items are still obtainable; on a missing item (478) or loss streak, release + re-plan that character against the current pool instead of failing.
+
+**Known gaps:** manual play and non-reserving code paths, snapshot drift between full syncs, and a restart clearing all claims (planning just becomes less conservative).
+---
+
 ### Consolidate error handling
 The backend has error handling in multiple places: the HTTP gateway (retries, rate limits), the worker (cooldown recovery), and the task queue (suspend/resume on failure). The rules aren't always consistent.
 

@@ -290,6 +290,8 @@ class EventExecutor(
             return fightingExecutor.handleEventHealing(characterName, char, fightTask, onStatus)
         }
 
+        char = fightingExecutor.refillPlannedUtilities(characterName, char, task.utilityActions, onStatus)
+
         // Navigate to event tile using stored coordinates — never uses map cache
         val eventTarget = com.artifactsmmo.client.models.MapInfo(
             mapId = 0, name = "", skin = "",

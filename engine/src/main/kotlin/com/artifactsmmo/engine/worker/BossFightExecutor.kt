@@ -19,13 +19,13 @@ import java.util.concurrent.ConcurrentHashMap
  * Per-group, in-process state for group fights, keyed by the group (parent task) id.
  * Safe because only one backend instance runs workers (advisory instance lock).
  *
- * Only serializes bank access: there is no fight handshake. The initiator checks the
+ * Only serializes mid-fight restocks: there is no fight handshake. The initiator checks the
  * participants' real game state before each fight (see FightingExecutor.executeBossStep).
  */
 class GroupCoordinator {
     private val provisionLocks = ConcurrentHashMap<Long, Mutex>()
 
-    /** Members provision one at a time so they don't race for the same bank stacks. */
+    /** Members restock one at a time so they don't race for the same bank stacks. */
     fun provisionLock(groupId: Long): Mutex = provisionLocks.computeIfAbsent(groupId) { Mutex() }
 
     fun forget(groupId: Long) {
@@ -37,8 +37,8 @@ class GroupCoordinator {
  * Runs one member slot of a boss/raid group (see `GroupRole`).
  *
  * Lifecycle per member:
- *  1. start: provision (gear, utilities, reserve potions, food, dungeon keys) — serialized
- *     per group. Happens as soon as the slot is claimed, before the group is formed.
+ *  1. start: provision (gear, utilities, reserve potions, food,  dungeon keys) — members
+  *     provision in parallel. Happens as soon as the slot is claimed, before the group is formed.
  *  2. step: wait until every slot is claimed ("formed"); then the legacy boss step runs —
  *     every member heals/restocks on its own and stands on the tile; the initiator calls
  *     fight(participants = …) once the API shows all of them there and ready.
@@ -57,22 +57,11 @@ interface BossOps {
 /** [BossOps] backed by the existing, tuned FightingExecutor/ActionHelper logic. */
 class LegacyBossOps(private val helper: ActionHelper, private val fighting: FightingExecutor) : BossOps {
     override suspend fun provision(character: String, plan: MemberPlan, status: (String) -> Unit) {
-        // Unequip potions from utility slots this plan doesn't use (e.g. the team wins without
-        // potions) so they aren't consumed for nothing; done before the deposit below so the
-        // unequipped stacks go back to the bank.
-        val plannedSlots = plan.utilities.map { it.slot }.toSet()
-        val clears = com.artifactsmmo.core.task.GearOptimizer.UTILITY_SLOT_NAMES
-            .filter { it !in plannedSlots }
-            .map { com.artifactsmmo.core.task.GearOptimizer.UtilityEquipAction(it, "", 0, "equipped") }
-        if (clears.isNotEmpty()) {
-            runCatching { helper.retrieveAndEquipUtilities(character, clears) }
-                .onFailure { rethrowCancellation(it); status("Utility unequip error: ${it.message}") }
-        }
-
         // Clear the inventory of whatever the character was carrying before this fight (e.g.
         // gathering leftovers) down to just what THIS plan needs, so gear/utility/food/key
         // withdrawals below — and, crucially, the reserve-potion withdrawal at the end — have
         // real free space to work with instead of competing with unrelated stray items.
+        // Done FIRST so unequipping utility stacks below has room to land.
         val keep = plan.equip.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
             plan.utilities.map { it.itemCode } +
             plan.reservePotions.keys +
@@ -86,12 +75,18 @@ class LegacyBossOps(private val helper: ActionHelper, private val fighting: Figh
             status("Equipping boss gear...")
             helper.retrieveAndEquipItems(character, plan.equip.map { ActionHelper.EquipAction(it.slot, it.itemCode, it.source) })
         }
-        if (plan.utilities.isNotEmpty()) {
-            status("Applying utility potions...")
+        // Utilities: equip the planned potions and unequip any slot the plan doesn't use (e.g.
+        // the team wins without potions) so they aren't consumed for nothing.
+        if (plan.utilities.isNotEmpty()) status("Applying utility potions...")
+        runCatching {
             helper.retrieveAndEquipUtilities(character, plan.utilities.map {
                 com.artifactsmmo.core.task.GearOptimizer.UtilityEquipAction(it.slot, it.itemCode, it.quantity, it.source)
-            })
-        }
+            }, clearUnplanned = true)
+        }.onFailure { rethrowCancellation(it); status("Utility equip error: ${it.message}") }
+        // Bank whatever came off (replaced gear, unplanned potion stacks).
+        runCatching { helper.depositInventoryExcept(character, keep) }
+            .onFailure { rethrowCancellation(it); status("Post-equip deposit error: ${it.message}") }
+
         val food = plan.foodCode
         if (food != null && plan.foodQuantity > 0) {
             helper.bankWithdrawItems(character, listOf(SimpleItem(food, plan.foodQuantity)))
@@ -127,10 +122,10 @@ class BossFightExecutor(
         val spec = ctx.spec as TaskSpec.BossFight
         val plan = spec.plans[ctx.character]
         if (plan != null) {
-            coordinator.provisionLock(groupId(ctx)).withLock {
-                ctx.status("Provisioning for ${spec.monsterName}...")
-                ops.provision(ctx.character, plan, ctx.status)
-            }
+            // Not locked: the coop plan already splits shared bank stacks between members, and
+            // serializing made the last member start minutes late.
+            ctx.status("Provisioning for ${spec.monsterName}...")
+            ops.provision(ctx.character, plan, ctx.status)
         }
         ctx.state.prepared = true
     }

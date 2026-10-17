@@ -2,6 +2,7 @@ package com.artifactsmmo.engine.scheduler
 
 import com.artifactsmmo.client.RealtimeMessage
 import com.artifactsmmo.client.models.Raid
+import com.artifactsmmo.core.task.BankReserver
 import com.artifactsmmo.core.task.RaidConfig
 import com.artifactsmmo.core.task.disjointParties
 import com.artifactsmmo.domain.queue.GroupRole
@@ -42,7 +43,7 @@ fun interface RaidPlanner {
  *
  * Every [pollMillis] it reads /raids; for each enabled config whose raid is active, or starts
  * within `leadTimeMinutes`, it enqueues one group per configured party: initiator slot +
- * participant slots, all assigned, RAID priority, expiring when the raid window closes.
+ * participant slots, all assigned, at the party's priority (default RAID), expiring when the raid window closes.
  * Parties are planned in order and each later party plans around the bank stock the earlier
  * ones will withdraw; a party below `minWinRate` is skipped. The dedupe key
  * `raid:<code>:<start>:<initiator>` means each party is queued once per raid instance, even
@@ -62,6 +63,8 @@ class RaidTaskProducer(
     private val clock: () -> Long = System::currentTimeMillis,
     private val pollMillis: Long = 60_000,
     private val log: (String) -> Unit = {},
+    /** Bank reservation ledger for the planned parties' withdrawals; null = not reserved. */
+    private val reserver: BankReserver? = null,
 ) {
     fun start(scope: CoroutineScope): Job = scope.launch {
         launch {
@@ -81,14 +84,20 @@ class RaidTaskProducer(
         val now = clock()
         for (raid in raids()) {
             val config = enabled.firstOrNull { it.raidCode == raid.code } ?: continue
-            val finished = raid.status.startsWith("finished") || (raid.status != "active" && raid.activeInstance == null && raid.nextStartAt == null)
-            if (finished) { cancelRaid(raid.code, "raid finished"); continue }
+            val instance = raid.activeInstance?.takeUnless { it.status.startsWith("finished") }
+            val isActive = instance != null || raid.status == "active"
+            val upcoming = raid.nextStartAt?.toEpochMilliseconds()
+            if (!isActive) {
+                // `status` describes the LATEST instance: between raids it reads finished_* while
+                // next_start_at already points at the next one, so "finished" must not block staging.
+                cancelRaid(raid.code, "raid finished", keepStartingFrom = upcoming)
+                if (upcoming == null) continue
+            }
 
-            val start = raid.activeInstance?.startsAt?.toEpochMilliseconds() ?: raid.nextStartAt?.toEpochMilliseconds() ?: continue
-            val isActive = raid.status == "active" || raid.activeInstance != null
+            val start = instance?.startsAt?.toEpochMilliseconds() ?: upcoming ?: continue
+            if (!isActive && start - now > config.leadTimeMinutes * 60_000L) continue
             log("Raid ${raid.code}: status=${raid.status} active=$isActive start=$start (in ${(start - now) / 1000}s) " +
                 "leadTime=${config.leadTimeMinutes}m parties=${config.allParties.joinToString(" | ") { it.members.joinToString() }}")
-            if (!isActive && start - now > config.leadTimeMinutes * 60_000L) continue
             val end = raid.activeInstance?.endsAt?.toEpochMilliseconds() ?: (start + raid.schedule.durationHours * 3_600_000L)
             if (end <= now) continue
             enqueueRaid(raid, config, start, end)
@@ -125,22 +134,32 @@ class RaidTaskProducer(
                 monsterCode = raid.monster, monsterName = raid.name, plans = plans, raidCode = raid.code,
                 scheduledStartAtMillis = start, scheduledEndAtMillis = end,
             )
+            val priority = config.priorityFor(party)
             val group = queue.enqueueGroup(
-                NewTask(type = spec.typeName, spec = spec.toJson(), source = TaskSource.RAID,
+                NewTask(type = spec.typeName, spec = spec.toJson(), source = TaskSource.RAID, priority = priority,
                     dedupeKey = dedupe, expiresAtMillis = end),
                 members.map { GroupSlot(assignedCharacter = it) },
             )
-            if (group != null) log("Raid ${raid.code}: queued group ${group.parent.id} for ${members.joinToString()}")
+            if (group != null) {
+                log("Raid ${raid.code}: queued group ${group.parent.id} for ${members.joinToString()} (priority $priority)")
+                if (result.bankDemand.isNotEmpty()) reserver?.reserve(BankReserver.taskOwner(group.parent.id), members.toSet(), result.bankDemand)
+            }
             else log("Raid ${raid.code}: enqueueGroup returned null (dedupe=$dedupe)")
         }
     }
 
-    suspend fun cancelRaid(raidCode: String, reason: String) {
+    /**
+     * Cancels live groups for [raidCode]. With [keepStartingFrom], groups already staged for an
+     * instance starting at or after that time (the upcoming raid) are kept.
+     */
+    suspend fun cancelRaid(raidCode: String, reason: String, keepStartingFrom: Long? = null) {
         val live = queue.list(TaskFilter(statuses = LIVE_STATUSES, source = TaskSource.RAID, limit = 200))
         for (t in live.filter { it.groupRole == GroupRole.GROUP }) {
             val spec = runCatching { TaskSpec.fromJson(t.spec) as? TaskSpec.BossFight }.getOrNull() ?: continue
-            if (spec.raidCode == raidCode) {
+            val upcoming = keepStartingFrom != null && (spec.scheduledStartAtMillis ?: Long.MIN_VALUE) >= keepStartingFrom
+            if (spec.raidCode == raidCode && !upcoming) {
                 queue.cancel(t.id, reason)
+                reserver?.release(BankReserver.taskOwner(t.id))
                 log("Raid $raidCode: cancelled group ${t.id} ($reason)")
             }
         }

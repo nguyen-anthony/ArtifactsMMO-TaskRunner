@@ -89,6 +89,8 @@ class CharacterWorker(
     private val clock: () -> Long = System::currentTimeMillis,
     /** Log sink (task-scoped lines also go to task_events via the queue). */
     private val log: (String, String) -> Unit = { _, _ -> },
+    /** Called after a task ends in any way (e.g. to release its bank reservations). */
+    private val onTaskEnd: (QueuedTask) -> Unit = {},
 ) {
     private val _status = MutableStateFlow(WorkerStatus(character))
     val status: StateFlow<WorkerStatus> = _status.asStateFlow()
@@ -131,7 +133,18 @@ class CharacterWorker(
                 waitForWake()
                 continue
             }
-            runTask(task)
+            try {
+                runTask(task)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Never let one task's failure end this worker's loop (or, via the shared
+                // parent job, every other character's worker).
+                log(character, "Worker error in task ${task.id}: ${e.message}")
+                runCatching { queue.fail(task.id, "Worker error: ${e.message}", retry = true) }
+                setStatus(WorkerState.IDLE, message = "Worker error: ${e.message}", taskId = null, taskType = null, lastError = e.message)
+                delay(5_000)
+            }
         }
     }
 
@@ -216,7 +229,9 @@ class CharacterWorker(
         controlDirty = false
 
         awaitCooldown(character)
-        executor.start(ctx)
+        // start() (provisioning) runs inside the step error handling below so an API
+        // failure there is retried like any step error instead of escaping the worker.
+        var started = false
 
         while (true) {
             // Control checks: cancelled? higher-priority work waiting?
@@ -233,6 +248,10 @@ class CharacterWorker(
             }
 
             val outcome: StepOutcome = try {
+                if (!started) {
+                    executor.start(ctx)
+                    started = true
+                }
                 executor.step(ctx).also { errors = 0 }
             } catch (e: CancellationException) {
                 throw e
@@ -247,7 +266,10 @@ class CharacterWorker(
                         return End.Suspend("fatal API error ${e.errorCode}")
                     }
                     ErrorAction.WaitCooldown -> { awaitCooldown(character); StepOutcome.Continue() }
-                    ErrorAction.Benign -> StepOutcome.Continue()
+                    // "Already true" codes escaping a step mean the step was aborted, not that it
+                    // made progress; counting them stops a step that always hits one (e.g. 485
+                    // during provisioning) from looping forever.
+                    ErrorAction.Benign -> { errors++; StepOutcome.Continue(1_000) }
                     ErrorAction.Retry -> { errors++; StepOutcome.Continue(2_000) }
                     is ErrorAction.Replan -> { errors++; StepOutcome.Continue(3_000) }
                     ErrorAction.FailTask -> { errors++; StepOutcome.Continue(10_000) }
@@ -318,6 +340,7 @@ class CharacterWorker(
                 setStatus(WorkerState.IDLE, message = "Cancelled", taskId = null, taskType = null)
             }
         }
+        runCatching { onTaskEnd(task) }.onFailure { log(character, "onTaskEnd failed: ${it.message}") }
     }
 
     private fun record(ctx: ExecContext, msg: String) {

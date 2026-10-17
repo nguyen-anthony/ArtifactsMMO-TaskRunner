@@ -35,6 +35,9 @@ class TaskMasterExecutor(
     private val lastUpgradeCheck = mutableMapOf<String, Long>()
     /** Last skill [ensureStatGear] optimized for, per character — re-run only on change. */
     private val lastStatGearSkill = mutableMapOf<String, String>()
+
+    /** Character → (monster, utilities planned for it), so monster-task fights keep them topped up. */
+    private val plannedUtilities = java.util.concurrent.ConcurrentHashMap<String, Pair<String, List<GearOptimizer.UtilityEquipAction>>>()
     /** How often to check for tool upgrades (10 minutes). */
     private val upgradeCheckIntervalMs = 10 * 60 * 1000L
 
@@ -370,6 +373,7 @@ class TaskMasterExecutor(
         // New in-game task = fresh start: bank the previous monster's drops, food and any
         // loose gear before swapping. Keep what the new plan equips from inventory.
         val plannedUtilityCodes = result.utilityActions.filter { it.quantity > 0 }.map { it.itemCode }.toSet()
+        plannedUtilities[characterName] = monsterCode to result.utilityActions
         val keep = result.equipActions.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
             plannedUtilityCodes
         try {
@@ -845,7 +849,8 @@ class TaskMasterExecutor(
         val fightTask = TaskType.Fight(
             monsterCode = monsterCode,
             monsterName = monsterCode,
-            defaultDropStrategy = DropStrategy.BANK_RAW
+            defaultDropStrategy = DropStrategy.BANK_RAW,
+            utilityActions = plannedUtilities[characterName]?.takeIf { it.first == monsterCode }?.second.orEmpty(),
         )
         return fightingExecutor.executeStep(characterName, fightTask, { msg -> onStatus(msg) }, previousChar = char)
     }

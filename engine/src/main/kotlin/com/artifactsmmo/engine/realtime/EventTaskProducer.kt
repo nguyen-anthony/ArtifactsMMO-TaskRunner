@@ -2,6 +2,7 @@ package com.artifactsmmo.engine.realtime
 
 import com.artifactsmmo.client.RealtimeMessage
 import com.artifactsmmo.client.models.ActiveEvent
+import com.artifactsmmo.core.task.BankReserver
 import com.artifactsmmo.core.task.EventConfig
 import com.artifactsmmo.core.task.disjointParties
 import com.artifactsmmo.domain.queue.GroupRole
@@ -24,11 +25,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 
-/** What an event spawn turns into: per-character solo tasks, or one co-op boss group. */
+/**
+ * What an event spawn turns into: per-character solo tasks, or one co-op boss group.
+ * [bankDemand] = bank items the plan will withdraw; reserved for the queued task so later
+ * planning (other events, fights, TaskMaster) works around them.
+ */
 sealed interface EventPlan {
-    data class Solo(val character: String, val spec: TaskSpec) : EventPlan
+    val bankDemand: Map<String, Int>
+    data class Solo(val character: String, val spec: TaskSpec, override val bankDemand: Map<String, Int> = emptyMap()) : EventPlan
     /** [members] are initiator first; every slot row carries [spec]. */
-    data class Group(val members: List<String>, val spec: TaskSpec.BossFight) : EventPlan
+    data class Group(val members: List<String>, val spec: TaskSpec.BossFight, override val bankDemand: Map<String, Int> = emptyMap()) : EventPlan
 }
 
 /** Decides which characters respond to an event and with what spec (game logic lives here). */
@@ -42,9 +48,10 @@ val LIVE_STATUSES = setOf(TaskStatus.PENDING, TaskStatus.CLAIMED, TaskStatus.RUN
 /**
  * Turns realtime event messages into queue tasks.
  *
- *  - spawn:   if an enabled config exists, enqueue one EVENT-priority task per chosen
- *             character (assigned to it, expiring with the event), or — for a boss monster
- *             with configured parties — one co-op boss group per party. The dedupe keys make
+ *  - spawn:   if an enabled config exists, enqueue one task per chosen character (assigned
+ *             to it, expiring with the event, at the configured per-character priority), or —
+ *             for a boss monster with configured parties — one co-op boss group per party at
+ *             that party's priority. The dedupe keys make
  *             WebSocket reconnect replays harmless.
  *  - removed: cancel every live task/group for that event. (expires_at also covers a missed message.)
  *
@@ -57,6 +64,8 @@ class EventTaskProducer(
     private val configs: TypedConfigs,
     private val planner: EventPlanner,
     private val log: (String) -> Unit = {},
+    /** Bank reservation ledger; null = plans are not reserved (tests, legacy wiring). */
+    private val reserver: BankReserver? = null,
 ) {
     private val _active = MutableStateFlow<Map<String, ActiveEvent>>(emptyMap())
     val activeEvents: StateFlow<Map<String, ActiveEvent>> = _active.asStateFlow()
@@ -103,24 +112,38 @@ class EventTaskProducer(
                     val t = queue.enqueue(
                         NewTask(
                             type = plan.spec.typeName, spec = plan.spec.toJson(), source = TaskSource.EVENT,
+                            priority = config.priorityFor(plan.character),
                             assignedCharacter = plan.character, expiresAtMillis = expires,
                             dedupeKey = "event:${event.code}:${plan.character}:$instance",
                         )
                     )
-                    if (t != null) log("Event ${event.code}: queued ${plan.spec.typeName} for ${plan.character} (task ${t.id})")
+                    if (t != null) {
+                        log("Event ${event.code}: queued ${plan.spec.typeName} for ${plan.character} (task ${t.id}, priority ${t.priority})")
+                        reserve(t.id, setOf(plan.character), plan.bankDemand)
+                    }
                 }
                 is EventPlan.Group -> {
+                    val party = config.parties.firstOrNull { it.initiatorName == plan.members.first() }
+                    val priority = party?.let { config.priorityFor(it) } ?: config.priority ?: TaskSource.EVENT.defaultPriority
                     val group = queue.enqueueGroup(
                         NewTask(
-                            type = plan.spec.typeName, spec = plan.spec.toJson(), source = TaskSource.EVENT,
+                            type = plan.spec.typeName, spec = plan.spec.toJson(), source = TaskSource.EVENT, priority = priority,
                             dedupeKey = groupKey(event.code, plan.members.first(), instance), expiresAtMillis = expires,
                         ),
                         plan.members.map { GroupSlot(assignedCharacter = it) },
                     )
-                    if (group != null) log("Event ${event.code}: queued boss group ${group.parent.id} for ${plan.members.joinToString()}")
+                    if (group != null) {
+                        log("Event ${event.code}: queued boss group ${group.parent.id} for ${plan.members.joinToString()} (priority $priority)")
+                        reserve(group.parent.id, plan.members.toSet(), plan.bankDemand)
+                    }
                 }
             }
         }
+    }
+
+    private fun reserve(taskId: Long, characters: Set<String>, items: Map<String, Int>) {
+        if (items.isEmpty()) return
+        reserver?.reserve(BankReserver.taskOwner(taskId), characters, items)
     }
 
     private fun groupKey(eventCode: String, initiator: String, instance: String) = "event:$eventCode:group:$initiator:$instance"
@@ -136,7 +159,10 @@ class EventTaskProducer(
         // Group slots are cancelled with their parent.
         for (t in live.filter { it.groupRole == GroupRole.SOLO || it.groupRole == GroupRole.GROUP }) {
             val code = runCatching { TaskSpec.fromJson(t.spec).eventCodeOrNull() }.getOrNull()
-            if (code == eventCode) queue.cancel(t.id, "event $eventCode ended")
+            if (code == eventCode) {
+                queue.cancel(t.id, "event $eventCode ended")
+                reserver?.release(BankReserver.taskOwner(t.id))
+            }
         }
     }
 }

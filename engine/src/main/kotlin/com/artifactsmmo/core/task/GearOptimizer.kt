@@ -151,6 +151,24 @@ class GearOptimizer(
         }
 
         /**
+         * Bank items [result] will withdraw for [char]: gear sourced from the bank plus the
+         * part of each planned utility stack not already in the inventory or equipped.
+         */
+        fun bankDemand(char: Character, result: OptimizationResult): Map<String, Int> {
+            val demand = mutableMapOf<String, Int>()
+            result.equipActions.filter { it.source == "bank" }.forEach { demand.merge(it.itemCode, 1, Int::plus) }
+            for (u in result.utilityActions) {
+                if (u.quantity <= 0 || u.source != "bank") continue
+                val held = char.inventory.filter { it.code == u.itemCode }.sumOf { it.quantity } +
+                    (if (char.utility1Slot == u.itemCode) char.utility1SlotQuantity else 0) +
+                    (if (char.utility2Slot == u.itemCode) char.utility2SlotQuantity else 0)
+                val need = u.quantity - held
+                if (need > 0) demand.merge(u.itemCode, need, Int::plus)
+            }
+            return demand
+        }
+
+        /**
          * Seconds one kill costs: the fight cooldown (`turns × 2`, reduced 1% per haste point,
          * min 5s) plus recovering the HP it cost (rest = 1s per 1% HP missing, min 3s). Food
          * recovers faster in wall time but costs items in proportion to the same HP, so this
@@ -252,10 +270,10 @@ class GearOptimizer(
      * Reuse an exact character/level known-good loadout when its complete item multiset is
      * still available and an API verification still meets the required safety floor.
      */
-    suspend fun optimizeWithCacheHint(char: Character, monsterCode: String): OptimizationResult {
+    suspend fun optimizeWithCacheHint(char: Character, monsterCode: String, bank: Map<String, Int>? = null): OptimizationResult {
         val cached = knownLoadoutStore.find(char.name, char.level, monsterCode, OPTIMIZER_VERSION)
-        if (cached != null && requiredItemsAvailable(char, cached.requiredItems)) {
-            val plan = buildActionsForTarget(char, cached.gear, cached.utilities)
+        if (cached != null && requiredItemsAvailable(char, cached.requiredItems, bank)) {
+            val plan = buildActionsForTarget(char, cached.gear, cached.utilities, bank)
             val verifySim = try {
                 helper.simulateFightWithSlotAndUtilityOverrides(
                     char,
@@ -286,7 +304,7 @@ class GearOptimizer(
             }
         }
 
-        val result = optimize(char, monsterCode)
+        val result = optimize(char, monsterCode, bank)
         if (result.targetLoadout.isNotEmpty() && result.optimizedScore >= result.baselineScore) {
             val utilities = result.targetUtilities.mapValues { KnownUtilityLoadout(it.value.first, it.value.second) }
             knownLoadoutStore.put(
@@ -310,8 +328,11 @@ class GearOptimizer(
     /**
      * Full greedy optimization pass.
      * See class kdoc for algorithm details.
+     *
+     * [bank] is the bank stock this plan may draw from; null = the bank minus other
+     * characters' reservations ([BankState.availableFor]).
      */
-    suspend fun optimize(char: Character, monsterCode: String): OptimizationResult {
+    suspend fun optimize(char: Character, monsterCode: String, bank: Map<String, Int>? = null): OptimizationResult {
         val monster = try { helper.contentCache.getMonster(monsterCode) }
                       catch (_: Exception) { return emptyResult(char) }
 
@@ -347,7 +368,7 @@ class GearOptimizer(
 
         // Finalists: the best predicted seconds-per-kill loadouts, plus the strongest raw
         // combat ratio as a hedge in case the heuristic's time estimate is off.
-        val changedStates = searchGearLoadouts(char, monster)
+        val changedStates = searchGearLoadouts(char, monster, bank)
             .filter { state -> state.loadout.any { (slot, item) -> currentTarget[slot] != item.code } }
         val finalists = (changedStates.take(API_GEAR_FINALISTS) +
             listOfNotNull(changedStates.maxByOrNull { it.heuristic.combatRatio }))
@@ -374,7 +395,7 @@ class GearOptimizer(
 
         // ── Utility slot pass — only when gear alone can't win reliably ──
         val utilityActions = if (postGearScore.winRate < NO_UTILITY_MIN_WINRATE) {
-            optimizeUtilitySlots(char, selectedStats, monster, accumulatedOverrides, postGearScore)
+            optimizeUtilitySlots(char, selectedStats, monster, accumulatedOverrides, postGearScore, bank)
         } else {
             emptyList()
         }
@@ -417,7 +438,8 @@ class GearOptimizer(
         val actions = buildActionsForTarget(
             char,
             targetLoadout,
-            targetUtilities.mapValues { KnownUtilityLoadout(it.value.first, it.value.second) }
+            targetUtilities.mapValues { KnownUtilityLoadout(it.value.first, it.value.second) },
+            bank
         )
         if (utilityActions.isEmpty()) {
             println("[${char.name}] GearOptimizer: no utility potions needed for $monsterCode (${(optimizedScore.winRate * 100).toInt()}% without)")
@@ -447,7 +469,7 @@ class GearOptimizer(
             .thenBy { it.changedSlots }
             .thenBy { it.signature }
 
-    private suspend fun searchGearLoadouts(char: Character, monster: Monster): List<BeamState> {
+    private suspend fun searchGearLoadouts(char: Character, monster: Monster, bank: Map<String, Int>? = null): List<BeamState> {
         val currentItems = mutableMapOf<String, Item>()
         for (slotInfo in GEAR_SLOTS) {
             val code = helper.getEquippedInSlot(char, slotInfo.slot)
@@ -457,7 +479,7 @@ class GearOptimizer(
             } catch (_: Exception) {}
         }
 
-        val availableQuantities = accessibleGearQuantities(char)
+        val availableQuantities = accessibleGearQuantities(char, bank)
         val candidatesBySlot = buildBeamCandidates(char, monster, currentItems)
         val initial = makeBeamState(
             char = char,
@@ -761,10 +783,11 @@ class GearOptimizer(
         gearStats: Character,
         monster: Monster,
         gearOverrides: Map<String, String>,
-        currentScore: GearScore
+        currentScore: GearScore,
+        bank: Map<String, Int>? = null,
     ): List<UtilityEquipAction> {
         val monsterCode = monster.code
-        val utilityCandidates = getOwnedUtilityCandidates(char)
+        val utilityCandidates = getOwnedUtilityCandidates(char, bank)
         if (utilityCandidates.isEmpty()) return emptyList()
 
         val results = mutableListOf<UtilityEquipAction>()
@@ -778,12 +801,12 @@ class GearOptimizer(
             var bestScoreForSlot = runningScore
 
             for (candidate in utilityCandidates.filter { it.code !in excludeCodes }) {
-                val quantity = getOwnedQuantity(char, candidate.code).coerceAtMost(UTILITY_MAX_QUANTITY)
+                val quantity = getOwnedQuantity(char, candidate.code, bank).coerceAtMost(UTILITY_MAX_QUANTITY)
                 if (quantity <= 0) continue
 
                 val utilityOverrides = NO_UTILITIES + filledSlots + (slot to candidate.code)
                 val utilityQuantities = utilityOverrides.filterValues { it.isNotEmpty() }.mapValues { (_, code) ->
-                    getOwnedQuantity(char, code).coerceAtMost(UTILITY_MAX_QUANTITY)
+                    getOwnedQuantity(char, code, bank).coerceAtMost(UTILITY_MAX_QUANTITY)
                 }
 
                 val simResult = try {
@@ -828,8 +851,8 @@ class GearOptimizer(
      * We additionally filter by [UTILITY_EFFECT_CODES] as a safety net so any misclassified
      * item without a real utility effect is excluded.
      */
-    private suspend fun getOwnedUtilityCandidates(char: Character): List<Item> {
-        val ownedCodes = (char.inventory.map { it.code } + helper.bankState.snapshot.value.keys +
+    private suspend fun getOwnedUtilityCandidates(char: Character, bank: Map<String, Int>? = null): List<Item> {
+        val ownedCodes = (char.inventory.map { it.code } + bankView(char, bank).keys +
             listOf(char.utility1Slot, char.utility2Slot))
             .filter { it.isNotEmpty() }
             .distinct()
@@ -845,12 +868,16 @@ class GearOptimizer(
         }
     }
 
-    private fun getOwnedQuantity(char: Character, code: String): Int =
-        helper.getItemQuantity(char, code) + helper.bankState.getQuantity(code) +
+    /** Bank stock a plan for [char] may use: [bank] if given, else the reservation-aware view. */
+    private fun bankView(char: Character, bank: Map<String, Int>?): Map<String, Int> =
+        bank ?: helper.bankState.availableFor(char.name)
+
+    private fun getOwnedQuantity(char: Character, code: String, bank: Map<String, Int>? = null): Int =
+        helper.getItemQuantity(char, code) + (bankView(char, bank)[code] ?: 0) +
             (if (char.utility1Slot == code) char.utility1SlotQuantity else 0) +
             (if (char.utility2Slot == code) char.utility2SlotQuantity else 0)
 
-    private fun accessibleGearQuantities(char: Character): Map<String, Int> {
+    private fun accessibleGearQuantities(char: Character, bank: Map<String, Int>? = null): Map<String, Int> {
         val quantities = mutableMapOf<String, Int>()
         fun add(code: String, quantity: Int = 1) {
             if (code.isNotEmpty() && quantity > 0) {
@@ -858,7 +885,7 @@ class GearOptimizer(
             }
         }
         char.inventory.forEach { add(it.code, it.quantity) }
-        helper.bankState.snapshot.value.forEach { (code, quantity) -> add(code, quantity) }
+        bankView(char, bank).forEach { (code, quantity) -> add(code, quantity) }
         GEAR_SLOTS.forEach { add(helper.getEquippedInSlot(char, it.slot)) }
         return quantities
     }
@@ -877,8 +904,8 @@ class GearOptimizer(
         return required
     }
 
-    internal fun requiredItemsAvailable(char: Character, requiredItems: Map<String, Int>): Boolean {
-        val available = accessibleGearQuantities(char).toMutableMap()
+    internal fun requiredItemsAvailable(char: Character, requiredItems: Map<String, Int>, bank: Map<String, Int>? = null): Boolean {
+        val available = accessibleGearQuantities(char, bank).toMutableMap()
         if (char.utility1Slot.isNotEmpty()) {
             available[char.utility1Slot] = available.getOrDefault(char.utility1Slot, 0) + char.utility1SlotQuantity
         }
@@ -902,13 +929,14 @@ class GearOptimizer(
     private fun buildActionsForTarget(
         char: Character,
         gear: Map<String, String>,
-        utilities: Map<String, KnownUtilityLoadout>
+        utilities: Map<String, KnownUtilityLoadout>,
+        bank: Map<String, Int>? = null,
     ): Triple<List<ActionHelper.EquipAction>, List<UtilityEquipAction>, List<SlotChange>> {
         val inventoryRemaining = char.inventory
             .filter { it.quantity > 0 }
             .associate { it.code to it.quantity }
             .toMutableMap()
-        val bankRemaining = helper.bankState.snapshot.value.toMutableMap()
+        val bankRemaining = bankView(char, bank).toMutableMap()
         val equippedRemaining = GEAR_SLOTS
             .map { helper.getEquippedInSlot(char, it.slot) }
             .filter { it.isNotEmpty() }

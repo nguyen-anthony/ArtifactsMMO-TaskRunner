@@ -34,10 +34,30 @@ import kotlin.time.Duration.Companion.minutes
 class BankState(
     private val client: ArtifactsMMOClient,
     private val scope: CoroutineScope,
-    private val logger: TaskLogger? = null
-) {
+    private val logger: TaskLogger? = null,
+    val reservations: BankReservations = BankReservations(),
+) : BankReserver {
     private val _snapshot = MutableStateFlow<Map<String, Int>>(emptyMap())
     val snapshot: StateFlow<Map<String, Int>> = _snapshot.asStateFlow()
+
+    /**
+     * What planning for [characters] may use: the bank minus items other characters' planned
+     * work has reserved (see [BankReservations]). Planners should read this, not [snapshot].
+     */
+    fun availableFor(characters: Set<String>): Map<String, Int> = reservations.available(characters, _snapshot.value)
+    fun availableFor(character: String): Map<String, Int> = availableFor(setOf(character))
+
+    override fun reserve(owner: String, characters: Set<String>, items: Map<String, Int>): Map<String, Int> {
+        val granted = reservations.reserve(owner, characters, items, _snapshot.value)
+        if (granted != items.filterValues { it > 0 }) {
+            logger?.log("BankState: $owner reserved $granted of requested $items for ${characters.joinToString()}")
+        }
+        return granted
+    }
+
+    override fun release(owner: String) {
+        reservations.release(owner)
+    }
 
     private val REFRESH_INTERVAL = 5.minutes
     private var refreshJob: Job? = null
@@ -96,6 +116,9 @@ class BankState(
     @OptIn(kotlin.time.ExperimentalTime::class)
     fun applyLogEntry(entry: AccountLogEntry) {
         val delta = extractBankDelta(entry) ?: return
+        if (entry.type == "withdraw_item") {
+            reservations.consume(entry.character, delta.mapValues { -it.value }.filterValues { it > 0 })
+        }
         _snapshot.update { current ->
             val mutable = current.toMutableMap()
             for ((code, qty) in delta) {

@@ -25,9 +25,14 @@ class GroupFightTest {
     private class FakeBossOps : BossOps {
         val fights = mutableListOf<Pair<String, List<String>>>()
         val provisioned = mutableListOf<String>()
+        var provisioning = 0
+        var maxConcurrentProvisioning = 0
         val onSite = mutableSetOf<String>()
         override suspend fun provision(character: String, plan: MemberPlan, status: (String) -> Unit) {
-            provisioned += character; delay(2_000)
+            provisioned += character
+            provisioning++
+            maxConcurrentProvisioning = maxOf(maxConcurrentProvisioning, provisioning)
+            try { delay(2_000) } finally { provisioning-- }
         }
         override suspend fun step(character: String, task: TaskType.BossFight,
                                   status: (String) -> Unit, previous: com.artifactsmmo.client.models.Character?): StepResult {
@@ -89,6 +94,15 @@ class GroupFightTest {
         assertEquals(TaskStatus.COMPLETED, group.parent.status)
         assertTrue(group.slots.all { it.status == TaskStatus.COMPLETED })
         assertTrue(h.workers.all { it.status.value.taskId == null })
+    }
+
+    @Test
+    fun `members provision in parallel`() = runTest {
+        val h = Harness(this)
+        h.queue.enqueueGroup(bossTask(StopCondition.Count(1)), listOf(GroupSlot("alice"), GroupSlot(), GroupSlot()))!!
+        h.workers.forEach { it.start(backgroundScope) }
+        advance(1_000)
+        assertEquals(3, h.ops.maxConcurrentProvisioning)
     }
 
     @Test

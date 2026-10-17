@@ -139,11 +139,21 @@ class ApiTransport(
     private val clock: Clock = SystemClock,
     private val random: Random = Random.Default,
 ) {
-    /** Executes the request and returns the raw successful response body. */
-    suspend fun execute(method: HttpMethod, path: String, block: HttpRequestBuilder.() -> Unit): String {
+    /**
+     * Executes the request and returns the raw successful response body.
+     *
+     * [actor] names the character whose cooldown gates this call when the path itself does not
+     * (e.g. sandbox endpoints take the character in the body). Defaults to the `/my/{name}/action/` match.
+     */
+    suspend fun execute(
+        method: HttpMethod,
+        path: String,
+        actor: String? = null,
+        block: HttpRequestBuilder.() -> Unit,
+    ): String {
         val category = RateCategory.of(method.value, path)
         val bucket = limiter.bucket(category)
-        val actingCharacter = ACTION_PATH.find(path.substringBefore('?'))?.groupValues?.get(1)
+        val actingCharacter = actor ?: ACTION_PATH.find(path.substringBefore('?'))?.groupValues?.get(1)
         val idempotent = method == HttpMethod.Get || category == RateCategory.SIMULATION
 
         var rateLimitRetries = 0
@@ -232,7 +242,7 @@ abstract class BaseApiService(protected val transport: ApiTransport) {
     protected suspend inline fun <reified T> get(
         path: String,
         noinline block: HttpRequestBuilder.() -> Unit = {}
-    ): T = transport.json.decodeFromString(transport.execute(HttpMethod.Get, path, block))
+    ): T = transport.json.decodeFromString(transport.execute(HttpMethod.Get, path, block = block))
 
     protected suspend inline fun <reified T> post(
         path: String,

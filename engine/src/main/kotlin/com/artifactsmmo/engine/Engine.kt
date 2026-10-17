@@ -3,6 +3,7 @@ package com.artifactsmmo.engine
 import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.RealtimeClient
 import com.artifactsmmo.core.task.ActionHelper
+import com.artifactsmmo.core.task.BankReserver
 import com.artifactsmmo.core.task.BankState
 import com.artifactsmmo.core.task.ContentCache
 import com.artifactsmmo.core.task.CoopOptimizer
@@ -78,7 +79,7 @@ class Engine(
 
         val log: (String) -> Unit = { logger.log(it) }
         events = EventTaskProducer(webSocket.messages, queue, configs,
-            LegacyEventPlanner(helper, fighting.gearOptimizer, coop, { characters }, log), log)
+            LegacyEventPlanner(helper, fighting.gearOptimizer, coop, { characters }, log), log, reserver = bankState)
 
         val registry = LegacyExecutors(
             helper, gathering = GatheringExecutor(helper), fighting = fighting,
@@ -92,6 +93,10 @@ class Engine(
                 character = name, queue = queue, executors = registry, view = view, settings = settings,
                 awaitCooldown = { client.cooldowns.awaitReady(it) }, control = control,
                 log = { c, m -> logger.log(c, m) },
+                onTaskEnd = { t ->
+                    bankState.release(BankReserver.taskOwner(t.id))
+                    t.groupId?.let { bankState.release(BankReserver.taskOwner(it)) }
+                },
             )
         })
 
@@ -99,7 +104,7 @@ class Engine(
         // Subscribe the producer before the socket starts so the initial replay isn't missed.
         events.start(scope)
         RaidTaskProducer(queue, configs, { client.raids.getRaids().data }, LegacyRaidPlanner(coop),
-            webSocket.messages, log = log).start(scope)
+            webSocket.messages, log = log, reserver = bankState).start(scope)
         ScheduleRunner(schedules, queue, log = log).start(scope)
         pool.start(scope)
         webSocket.start()

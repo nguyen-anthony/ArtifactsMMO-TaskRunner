@@ -6,6 +6,8 @@ import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.CoopOptimizer
 import com.artifactsmmo.core.task.EventConfig
 import com.artifactsmmo.core.task.GearOptimizer
+import com.artifactsmmo.core.task.SoloFightAllocator
+import com.artifactsmmo.core.task.SoloFightOption
 import com.artifactsmmo.core.task.disjointParties
 import com.artifactsmmo.domain.task.EquipPlan
 import com.artifactsmmo.domain.task.EventMap
@@ -21,7 +23,8 @@ import com.artifactsmmo.engine.scheduler.RaidPlanner
  * specs instead of assigning tasks directly:
  *  - resource: every candidate with the required skill level gathers,
  *  - npc: only the designated trader, if items are configured,
- *  - monster: each candidate is gear-optimized; only those above minWinRate fight.
+ *  - monster: candidates are gear-optimized together against one shared bank (see
+ *    [SoloFightAllocator]); only those above minWinRate fight.
  *  - boss monster: each configured party is co-op optimized and fights as its own
  *    BossFight group at the event tile; skipped when no party is configured.
  */
@@ -65,20 +68,39 @@ class LegacyEventPlanner(
         }
     }
 
-    private suspend fun planSoloFights(event: ActiveEvent, config: EventConfig, map: EventMap, candidates: List<String>): List<EventPlan> =
-        candidates.mapNotNull { name ->
-            // Sequential on purpose: later characters reuse the optimizer's cache.
-            val char = runCatching { helper.refreshCharacter(name) }.getOrNull() ?: return@mapNotNull null
-            val opt = runCatching { gear.optimizeWithCacheHint(char, event.content.code) }.getOrNull() ?: return@mapNotNull null
-            val win = opt.optimizedScore.winRate
-            if (win < config.minWinRate) { log("Event ${event.code}: $name win rate ${(win * 100).toInt()}% too low"); return@mapNotNull null }
-            if (opt.equipActions.isNotEmpty() || opt.utilityActions.isNotEmpty()) gear.markOptimized(name, event.content.code)
+    private suspend fun planSoloFights(event: ActiveEvent, config: EventConfig, map: EventMap, candidates: List<String>): List<EventPlan> {
+        val monsterCode = event.content.code
+        val chars = candidates.mapNotNull { name -> runCatching { helper.refreshCharacter(name) }.getOrNull()?.let { name to it } }.toMap()
+        // All candidates are planned together against one bank (minus items other planned
+        // work has reserved), so they don't all count on the same scarce items.
+        val allocator = SoloFightAllocator<GearOptimizer.OptimizationResult>(
+            plan = { name, bank ->
+                val char = chars.getValue(name)
+                val opt = runCatching { gear.optimizeWithCacheHint(char, monsterCode, bank) }.getOrNull()
+                val win = opt?.optimizedScore?.winRate ?: 0.0
+                if (opt == null || win < config.minWinRate) {
+                    log("Event ${event.code}: $name win rate ${(win * 100).toInt()}% too low")
+                    null
+                } else {
+                    val cycle = opt.optimizedScore.cycleSeconds
+                    val kph = if (cycle > 0 && cycle < 1e6) win * 3600.0 / cycle else win
+                    SoloFightOption(opt, GearOptimizer.bankDemand(char, opt), kph)
+                }
+            },
+            log = { log("Event ${event.code}: $it") },
+        )
+        val allocation = allocator.allocate(chars.keys.toList(), helper.bankState.availableFor(emptySet()))
+        return chars.keys.mapNotNull { name ->
+            val chosen = allocation[name] ?: return@mapNotNull null
+            val opt = chosen.value
+            if (opt.equipActions.isNotEmpty() || opt.utilityActions.isNotEmpty()) gear.markOptimized(name, monsterCode)
             EventPlan.Solo(name, TaskSpec.EventFight(
-                event.code, event.content.code, map, monsterName = event.name,
+                event.code, monsterCode, map, monsterName = event.name,
                 equip = opt.equipActions.map { EquipPlan(it.slot, it.itemCode, it.source) },
                 utilities = opt.utilityActions.map { UtilityPlan(it.slot, it.itemCode, it.quantity, it.source) },
-            ))
+            ), bankDemand = chosen.bankDemand)
         }
+    }
 
     /**
      * Boss monsters can't be soloed: each configured party fights as its own co-op group, or
@@ -107,7 +129,7 @@ class LegacyEventPlanner(
             EventPlan.Group(members, TaskSpec.BossFight(
                 monsterCode = event.content.code, monsterName = monsterName,
                 plans = result.toMemberPlans(), eventCode = event.code, eventMap = map,
-            ))
+            ), bankDemand = result.bankDemand)
         }
     }
 }

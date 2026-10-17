@@ -8,6 +8,9 @@ data class MyDetails(
     val username: String,
     val email: String? = null,
     val status: String? = null,
+    /** True when the account has an active membership (required for the sandbox server and simulations). */
+    val member: Boolean = false,
+    @SerialName("member_expiration") val memberExpiration: String? = null,
     @SerialName("subscription_end") val subscriptionEnd: String? = null,
     val gems: Int = 0,
     val uid: String? = null,

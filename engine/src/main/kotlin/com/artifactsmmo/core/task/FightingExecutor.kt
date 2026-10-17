@@ -125,6 +125,8 @@ class FightingExecutor(private val helper: ActionHelper) {
             return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
         }
 
+        char = refillPlannedUtilities(characterName, char, task.utilityActions, onStatus)
+
         // Find monster location and move there (handles underground/interior transitions)
         val monsterMap = helper.findNearest(char, "monster", task.monsterCode)
             ?: return StepResult.Error("No ${task.monsterCode} locations found on map")
@@ -157,6 +159,61 @@ class FightingExecutor(private val helper: ActionHelper) {
             if (e.errorCode == 486) {
                 StepResult.Waiting
             } else throw e
+        }
+    }
+
+    /**
+     * Tops up the task's planned utility potions once a slot is at or below
+     * [CoopOptimizer.UTILITY_REEQUIP_THRESHOLD] (the game empties a slot that runs dry), from
+     * inventory first, then the bank. Without this a fight task equips utilities once at start
+     * and fights on without them once they're used up. No-op when nothing can be gained, so a
+     * potion that is out everywhere doesn't cause a bank trip every step.
+     */
+    internal suspend fun refillPlannedUtilities(
+        characterName: String,
+        char: com.artifactsmmo.client.models.Character,
+        utilityActions: List<GearOptimizer.UtilityEquipAction>,
+        onStatus: (String) -> Unit,
+    ): com.artifactsmmo.client.models.Character {
+        val planned = helper.alignUtilitySlots(char, utilityActions)
+        if (planned.isEmpty()) return char
+        fun equippedQty(a: GearOptimizer.UtilityEquipAction) =
+            if (helper.getEquippedInSlot(char, a.slot) == a.itemCode) helper.getEquippedUtilityQuantity(char, a.slot) else 0
+        var freeQty = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity }).coerceAtLeast(0)
+        val withdraw = linkedMapOf<String, Int>()
+        val invLeft = mutableMapOf<String, Int>()
+        val refills = mutableListOf<GearOptimizer.UtilityEquipAction>()
+        for (a in planned) {
+            val equipped = equippedQty(a)
+            if (equipped > CoopOptimizer.UTILITY_REEQUIP_THRESHOLD) continue
+            val target = a.quantity.coerceAtMost(CoopOptimizer.UTILITY_MAX_QUANTITY)
+            val inInventory = invLeft.getOrPut(a.itemCode) { helper.getItemQuantity(char, a.itemCode) }
+            val fromInventory = inInventory.coerceAtMost(target - equipped).coerceAtLeast(0)
+            invLeft[a.itemCode] = inInventory - fromInventory
+            val fromBank = (target - equipped - fromInventory)
+                .coerceAtMost(helper.getBankItemQuantity(a.itemCode) - (withdraw[a.itemCode] ?: 0))
+                .coerceAtMost(freeQty)
+                .coerceAtLeast(0)
+            if (fromInventory <= 0 && fromBank <= 0) continue
+            if (fromBank > 0) {
+                withdraw[a.itemCode] = (withdraw[a.itemCode] ?: 0) + fromBank
+                freeQty -= fromBank
+            }
+            refills += a.copy(quantity = target, source = "inventory")
+        }
+        if (refills.isEmpty()) return char
+        onStatus("Refilling utility potions: ${refills.joinToString { "${it.slot}=${it.itemCode} (${equippedQty(it)} left)" }}...")
+        return try {
+            if (withdraw.isNotEmpty()) {
+                onStatus("Withdrawing ${withdraw.entries.joinToString { "${it.value}x ${it.key}" }} from bank...")
+                helper.bankWithdrawItems(characterName, withdraw.map { SimpleItem(it.key, it.value) })
+            }
+            helper.retrieveAndEquipUtilities(characterName, refills)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onStatus("Utility refill failed: ${e.message}")
+            helper.refreshCharacter(characterName)
         }
     }
 
@@ -456,7 +513,12 @@ class FightingExecutor(private val helper: ActionHelper) {
         //   1. Inventory is full of loot (no room for boss drops)
         //   2. Both utility slots are empty AND no inventory reserves remain
         //   3. No food left AND HP is too low to fight safely
-        val protectedCodes = task.reservePotions.keys + setOfNotNull(task.foodCode)
+        // Planned utilities, re-aligned to the slots that already hold them (utility slots are
+        // interchangeable — see ActionHelper.alignUtilitySlots).
+        val plannedUtilities = helper.alignUtilitySlots(char, task.utilityActions)
+        // Planned utility potions waiting in inventory for a refill are supplies, not loot.
+        val protectedCodes = task.reservePotions.keys + setOfNotNull(task.foodCode) +
+            plannedUtilities.map { it.itemCode }
         val nonProtectedUsed = char.inventory
             .filter { it.quantity > 0 && it.code !in protectedCodes }
             .sumOf { it.quantity }
@@ -466,17 +528,17 @@ class FightingExecutor(private val helper: ActionHelper) {
         // task.utilityActions is the source of truth for boss/raid utilities. Do not infer
         // intent from the currently equipped slots: they can be empty after a failed prior
         // provisioning attempt. An empty utility plan means utilities are not required.
-        val utilitiesMissing = task.utilityActions.isNotEmpty() && task.utilityActions.all { planned ->
+        val utilitiesMissing = plannedUtilities.isNotEmpty() && plannedUtilities.all { planned ->
             helper.getEquippedInSlot(char, planned.slot) != planned.itemCode ||
                 helper.getEquippedUtilityQuantity(char, planned.slot) == 0
         }
-        val noPlannedReserves = task.utilityActions.isNotEmpty() && task.utilityActions.all { planned ->
+        val noPlannedReserves = plannedUtilities.isNotEmpty() && plannedUtilities.all { planned ->
             helper.getItemQuantity(char, planned.itemCode) == 0
         }
         // Potions are an optimization, not a prerequisite: only go to the bank for them when
         // the bank can actually supply a planned potion, otherwise fight with what we have
         // (a trip that brings nothing back would loop forever).
-        val plannedPotionsInBank = task.utilityActions.any { helper.getBankItemQuantity(it.itemCode) > 0 }
+        val plannedPotionsInBank = plannedUtilities.any { helper.getBankItemQuantity(it.itemCode) > 0 }
         val potionsExhausted = utilitiesMissing && noPlannedReserves && plannedPotionsInBank
 
         val noFood = helper.findBestFoodInInventory(char) == null
@@ -493,7 +555,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 "pos=(${char.x},${char.y},${char.layer}) hp=${char.hp}/${char.maxHp} cooldown=${char.cooldown}s " +
                 "inv=$totalUsed/${char.inventoryMaxItems} nonProtected=$nonProtectedUsed " +
                 "food=${task.foodCode ?: "none"} invFood=${!noFood} bankFood=$bankFoodQty " +
-                "utilities=${task.utilityActions.joinToString { "${it.slot}=${it.itemCode}:" +
+                "utilities=${plannedUtilities.joinToString { "${it.slot}=${it.itemCode}:" +
                     "${helper.getEquippedInSlot(char, it.slot)}x${helper.getEquippedUtilityQuantity(char, it.slot)}" }.ifEmpty { "none" }} " +
                 "flags[inventoryFull=$inventoryFull potionsExhausted=$potionsExhausted noFood=$noFood " +
                 "hpTooLow=$hpTooLow foodRestockable=$foodRestockable]"
@@ -533,7 +595,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         // game, so it must still be refilled from inventory reserves. Refill when the planned
         // potion is missing or at/below the re-equip threshold — before moving to the tile.
         val reequipActions = mutableListOf<GearOptimizer.UtilityEquipAction>()
-        for (planned in task.utilityActions.filter { it.quantity > 0 }) {
+        for (planned in helper.alignUtilitySlots(char, task.utilityActions)) {
             val equippedCode = helper.getEquippedInSlot(char, planned.slot)
             val equippedQty = if (equippedCode == planned.itemCode) helper.getEquippedUtilityQuantity(char, planned.slot) else 0
             if (equippedQty > CoopOptimizer.UTILITY_REEQUIP_THRESHOLD) continue
@@ -652,7 +714,7 @@ class FightingExecutor(private val helper: ActionHelper) {
      *  4. Withdraws food up to [CoopOptimizer.FOOD_BUFFER]
      *  5. Withdraws transition costs + spare keys for re-entry
      *  6. Heals (food, then rest) if HP is still below 75%
-     *  7. Navigates back to the boss tile (consuming keys at the transition)
+     *  7. Returns; the next boss step navigates back to the tile (consuming keys at the transition)
      */
     suspend fun restockForBossFight(
         characterName: String,
@@ -671,8 +733,9 @@ class FightingExecutor(private val helper: ActionHelper) {
             return false
         }
 
-        // 1. Deposit all loot — keep reserve potions, food, and keys
+        // 1. Deposit all loot — keep reserve potions, planned utility potions, food, and keys
         val keepCodes = task.reservePotions.keys +
+            task.utilityActions.filter { it.quantity > 0 }.map { it.itemCode } +
             setOfNotNull(task.foodCode) +
             task.transitionCosts.keys +
             task.spareKeys.keys
@@ -695,7 +758,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         // 3. Restore utilities from the TASK PLAN, including slots that are completely
         // empty or currently contain the wrong potion. The old implementation only looked
         // at currently equipped codes, so an empty slot could never recover.
-        val utilityRestoreActions = task.utilityActions.map { planned ->
+        val utilityRestoreActions = helper.alignUtilitySlots(char, task.utilityActions).map { planned ->
             planned.copy(
                 quantity = CoopOptimizer.UTILITY_MAX_QUANTITY,
                 source = if (helper.getItemQuantity(char, planned.itemCode) > 0) "inventory" else "bank"
@@ -714,7 +777,7 @@ class FightingExecutor(private val helper: ActionHelper) {
         // that was successfully equipped. The restock predicate deliberately does not loop
         // for a plan that has no equipped utility remaining.
         char = helper.refreshCharacter(characterName)
-        val missingUtilities = task.utilityActions.filter { planned ->
+        val missingUtilities = helper.alignUtilitySlots(char, task.utilityActions).filter { planned ->
             helper.getEquippedInSlot(char, planned.slot) != planned.itemCode ||
                 helper.getEquippedUtilityQuantity(char, planned.slot) <= 0
         }
@@ -783,12 +846,10 @@ class FightingExecutor(private val helper: ActionHelper) {
                 "food=${task.foodCode?.let { "$it x${helper.getItemQuantity(char, it)}" } ?: "none"}"
         }
 
-        // 7. Navigate back to boss tile (transition consumes keys automatically)
+        // 7. Don't walk back here: the next boss step navigates to the tile. Returning control
+        // to the worker now lets higher-priority work (e.g. a raid) preempt between the bank
+        // trip and the long walk back.
         onStatus("Restock complete — returning to ${task.monsterName}...")
-        val encounterMap = bossTile(char, task)
-        if (encounterMap != null) {
-            helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), encounterMap)
-        }
         return true
     }
 

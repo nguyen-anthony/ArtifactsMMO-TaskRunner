@@ -5,11 +5,14 @@ import com.artifactsmmo.client.models.EventSpawnMap
 import com.artifactsmmo.client.models.MapContent
 import com.artifactsmmo.client.models.MapInteraction
 import com.artifactsmmo.client.models.Raid
+import com.artifactsmmo.client.models.RaidInstance
 import com.artifactsmmo.client.models.RaidSchedule
+import com.artifactsmmo.core.task.BankReserver
 import com.artifactsmmo.core.task.EventConfig
 import com.artifactsmmo.core.task.EventGroupConfig
 import com.artifactsmmo.core.task.RaidConfig
 import com.artifactsmmo.domain.queue.GroupRole
+import com.artifactsmmo.domain.queue.GroupSlot
 import com.artifactsmmo.domain.queue.NewTask
 import com.artifactsmmo.domain.queue.TaskSource
 import com.artifactsmmo.domain.queue.TaskStatus
@@ -147,6 +150,39 @@ class ProducerTest {
     }
 
     @Test
+    fun `raid stages inside the lead window even while the previous instance reads finished`() = runTest {
+        var now = 0L
+        val queue = FakeTaskQueue { now }
+        val configs = TypedConfigs(MemConfigs()).also {
+            it.putRaid(RaidConfig("lich_raid", enabled = true, initiatorName = "alice", participantNames = listOf("bob"), leadTimeMinutes = 5))
+        }
+        val previousStart = 0L
+        val start = 24 * 3_600_000L
+        // Real /raids shape between raids: status/latest_instance describe the last (finished) instance.
+        val raid = Raid("lich_raid", "Lich", "", "lich", RaidSchedule(startHourUtc = 0, startMinuteUtc = 0, durationHours = 12),
+            status = "finished_success", nextStartAt = Instant.fromEpochMilliseconds(start),
+            latestInstance = RaidInstance(Instant.fromEpochMilliseconds(previousStart), Instant.fromEpochMilliseconds(12 * 3_600_000L),
+                "finished_success", totalHp = 100, remainingHp = 0, participantCount = 2))
+        val producer = RaidTaskProducer(queue, configs, { listOf(raid) },
+            planner = { members, _, _, _ -> PartyPlan(members.associateWith { MemberPlan() }) }, clock = { now })
+
+        // A group left over from the previous instance is cleaned up.
+        val stale = TaskSpec.BossFight("lich", plans = mapOf("alice" to MemberPlan()), raidCode = "lich_raid", scheduledStartAtMillis = previousStart)
+        val staleGroup = queue.enqueueGroup(NewTask(stale.typeName, stale.toJson(), source = TaskSource.RAID, dedupeKey = "raid:lich_raid:$previousStart:alice"),
+            listOf(GroupSlot(assignedCharacter = "alice")))!!
+
+        now = start - 4 * 60_000
+        producer.tick()
+        val parents = queue.list().filter { it.groupRole == GroupRole.GROUP }
+        assertEquals(TaskStatus.CANCELLED, parents.single { it.id == staleGroup.parent.id }.status)
+        val staged = parents.single { it.id != staleGroup.parent.id }
+        assertEquals("raid:lich_raid:$start:alice", staged.dedupeKey)
+
+        producer.tick() // still "finished_success": the newly staged group must survive
+        assertTrue(queue.list().single { it.id == staged.id }.status != TaskStatus.CANCELLED)
+    }
+
+    @Test
     fun `boss event queues one group per disjoint party and honours the legacy dedupe key`() = runTest {
         val queue = FakeTaskQueue { 0L }
         val configs = TypedConfigs(MemConfigs()).also {
@@ -209,6 +245,103 @@ class ProducerTest {
         assertEquals(mapOf("potion" to 5), reservedSeen["erin"], "a skipped party's demand is not reserved")
         val keys = queue.list().filter { it.groupRole == GroupRole.GROUP }.map { it.dedupeKey }
         assertEquals(listOf("raid:lich_raid:$start:alice", "raid:lich_raid:$start:erin"), keys)
+    }
+
+    @Test
+    fun `event and raid plans reserve their bank demand under the task id and release it when cancelled`() = runTest {
+        var now = 0L
+        val queue = FakeTaskQueue { now }
+        val reserver = object : BankReserver {
+            val claims = mutableMapOf<String, Pair<Set<String>, Map<String, Int>>>()
+            override fun reserve(owner: String, characters: Set<String>, items: Map<String, Int>): Map<String, Int> {
+                claims[owner] = characters to items; return items
+            }
+            override fun release(owner: String) { claims.remove(owner) }
+        }
+        val configs = TypedConfigs(MemConfigs()).also {
+            it.putEvent(EventConfig("magic_tree", enabled = true))
+            it.putRaid(RaidConfig("lich_raid", enabled = true, leadTimeMinutes = 5, parties = listOf(EventGroupConfig("carol", listOf("dave")))))
+        }
+        val events = EventTaskProducer(emptyFlow(), queue, configs, planner = { e, _ ->
+            listOf(
+                EventPlan.Solo("alice", TaskSpec.EventGather(e.code, "magic_tree", "woodcutting", EventMap(3, 4)), bankDemand = mapOf("sword" to 1)),
+                EventPlan.Solo("bob", TaskSpec.EventGather(e.code, "magic_tree", "woodcutting", EventMap(3, 4))),
+            )
+        }, reserver = reserver)
+        events.onSpawn(event("magic_tree"))
+        val alice = queue.list().single { it.assignedCharacter == "alice" }
+        assertEquals(mapOf(BankReserver.taskOwner(alice.id) to (setOf("alice") to mapOf("sword" to 1))), reserver.claims,
+            "only plans with bank demand are reserved")
+
+        val start = 60 * 60_000L
+        val raid = Raid("lich_raid", "Lich", "", "lich", RaidSchedule(startHourUtc = 1, startMinuteUtc = 0, durationHours = 2),
+            status = "scheduled", nextStartAt = Instant.fromEpochMilliseconds(start))
+        val raids = RaidTaskProducer(queue, configs, { listOf(raid) },
+            planner = { members, _, _, _ -> PartyPlan(members.associateWith { MemberPlan() }, winRate = 1.0, bankDemand = mapOf("potion" to 5)) },
+            clock = { now }, reserver = reserver)
+        now = start - 4 * 60_000
+        raids.tick()
+        val parent = queue.list().single { it.groupRole == GroupRole.GROUP }
+        assertEquals(setOf("carol", "dave") to mapOf("potion" to 5), reserver.claims[BankReserver.taskOwner(parent.id)])
+
+        events.onRemoved("magic_tree")
+        assertTrue(BankReserver.taskOwner(alice.id) !in reserver.claims)
+    }
+
+    @Test
+    fun `event tasks use per-character, event-level, and default priorities`() = runTest {
+        val queue = FakeTaskQueue { 0L }
+        val configs = TypedConfigs(MemConfigs()).also {
+            it.putEvent(EventConfig("magic_tree", enabled = true, priority = 70, characterPriorities = mapOf("alice" to 95)))
+            it.putEvent(EventConfig("strange_rocks", enabled = true))
+        }
+        val producer = EventTaskProducer(emptyFlow(), queue, configs, planner = { e, _ ->
+            listOf("alice", "bob").map { EventPlan.Solo(it, TaskSpec.EventGather(e.code, "magic_tree", "woodcutting", EventMap(3, 4))) }
+        })
+
+        producer.onSpawn(event("magic_tree"))
+        producer.onSpawn(event("strange_rocks"))
+        val byKey = queue.list().associate { it.dedupeKey!!.removeSuffix(":2030-01-01T00:00:00Z") to it.priority }
+        assertEquals(95, byKey["event:magic_tree:alice"])
+        assertEquals(70, byKey["event:magic_tree:bob"])
+        assertEquals(TaskSource.EVENT.defaultPriority, byKey["event:strange_rocks:alice"])
+    }
+
+    @Test
+    fun `boss event and raid parties carry their own priority to every slot`() = runTest {
+        var now = 0L
+        val queue = FakeTaskQueue { now }
+        val configs = TypedConfigs(MemConfigs()).also {
+            it.putEvent(EventConfig("out_of_the_ground", enabled = true, priority = 60, groups = listOf(
+                EventGroupConfig("alice", listOf("bob"), priority = 99),
+                EventGroupConfig("carol", listOf("dave")),
+            )))
+            it.putRaid(RaidConfig("lich_raid", enabled = true, parties = listOf(
+                EventGroupConfig("erin", listOf("frank"), priority = 40),
+                EventGroupConfig("gina", listOf("hank")),
+            )))
+        }
+        val producer = EventTaskProducer(emptyFlow(), queue, configs, planner = { e, c ->
+            c.parties.map { p ->
+                EventPlan.Group(p.members, TaskSpec.BossFight(
+                    "duskworm", plans = p.members.associateWith { MemberPlan() }, eventCode = e.code, eventMap = EventMap(-1, 19, "underground"),
+                ))
+            }
+        })
+        producer.onSpawn(ActiveEvent("Out Of The Ground", "out_of_the_ground",
+            EventSpawnMap(mapId = 1, x = -1, y = 19, layer = "underground", interactions = MapInteraction(MapContent("monster", "duskworm"))),
+            expiration = "2030-01-01T00:00:00Z"))
+
+        val start = 60 * 60_000L
+        val raid = Raid("lich_raid", "Lich", "", "lich", RaidSchedule(startHourUtc = 1, startMinuteUtc = 0, durationHours = 2),
+            status = "scheduled", nextStartAt = Instant.fromEpochMilliseconds(start))
+        now = start - 60_000
+        RaidTaskProducer(queue, configs, { listOf(raid) },
+            planner = { members, _, _, _ -> PartyPlan(members.associateWith { MemberPlan() }) }, clock = { now }).tick()
+
+        val slotPriority = queue.list().filter { it.groupRole != GroupRole.GROUP }.associate { it.assignedCharacter!! to it.priority }
+        assertEquals(mapOf("alice" to 99, "bob" to 99, "carol" to 60, "dave" to 60,
+            "erin" to 40, "frank" to 40, "gina" to TaskSource.RAID.defaultPriority, "hank" to TaskSource.RAID.defaultPriority), slotPriority)
     }
 
     @Test
