@@ -319,7 +319,13 @@ class CoopOptimizer(
         }
         // Greedy first: it's guaranteed feasible and prioritizes the tank, so it anchors the
         // finalist simulation even when enumeration found nothing (or something worse).
-        val teamCandidates = (listOf(greedyTeam) + enumerated).distinctBy { it.stableKey }
+        // Never simulate a team where a support out-threatens the tank if a valid one exists:
+        // the boss would target the support, so the plan's roles (and win rate) don't hold.
+        val teamCandidates = TeamLoadoutAllocator.preferThreatValid((listOf(greedyTeam) + enumerated).distinctBy { it.stableKey })
+        if (teamCandidates.firstOrNull()?.threatViolation?.let { it > 0 } == true) {
+            println("CoopOptimizer: WARNING — no gear team keeps $tankName's threat >= every support's " +
+                "(smallest gap ${teamCandidates.first().threatViolation}); the boss may target a support")
+        }
         var selectedTeam = teamCandidates.firstOrNull()
         var baselineSim: CombatSimulationData? = null
         var bestScore: CoopScore? = null
@@ -857,7 +863,9 @@ class CoopOptimizer(
     ): GearPickResult {
         // Whole-loadout search (combines elements across slots — a fire weapon pairs with
         // fire armor instead of each slot being scored alone) — see GearOptimizer.searchCoopLoadout.
-        val coopLoadout = gearOptimizer.searchCoopLoadout(char, monster, role, claimedGear, excludedBankCodes, allowBank, partySize)
+        val coopLoadout = gearOptimizer.searchCoopLoadout(
+            char, monster, role, claimedGear, excludedBankCodes, allowBank, partySize, excludeThreat = avoidThreat
+        )
 
         val equipActions = mutableListOf<ActionHelper.EquipAction>()
         val targetLoadout = mutableMapOf<String, String>()
@@ -868,15 +876,9 @@ class CoopOptimizer(
             val code = coopLoadout.targetLoadout[slotInfo.slot] ?: continue
             val currentEquipped = helper.getEquippedInSlot(char, slotInfo.slot)
 
-            // avoidThreat/seekThreat aren't modeled inside the whole-loadout search (they're
-            // role-wide policy, not a per-slot damage/survival tradeoff); apply as a veto here:
-            // if the search's own pick fails the check, fall back to the current item instead
-            // (the search always includes "keep current" as a candidate, so this never leaves
-            // the slot worse than where it started).
-            val item = try { helper.contentCache.getItemOrNull(code) } catch (_: Exception) { null }
-            val hasThreat = item?.effects?.any { it.code == "threat" && it.value > 0 } == true
-            val finalCode = if (avoidThreat && hasThreat) currentEquipped.ifEmpty { code } else code
-            if (finalCode.isEmpty()) continue
+            // avoidThreat is enforced inside the search (excludeThreat), which also swaps out
+            // CURRENTLY equipped threat gear whenever an owned threat-free alternative exists.
+            val finalCode = code
 
             targetLoadout[slotInfo.slot] = finalCode
             if (slotInfo.slot in ARTIFACT_SLOTS) committedArtifactCodes.add(finalCode)

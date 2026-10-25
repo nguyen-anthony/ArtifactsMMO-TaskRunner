@@ -5,6 +5,12 @@ import com.artifactsmmo.client.models.CombatSimulationData
 import com.artifactsmmo.client.models.Item
 import com.artifactsmmo.client.models.Monster
 
+internal fun Item.hasThreat(): Boolean = effects.any { it.code == "threat" && it.value > 0 }
+
+/** Threat-free items from [items] when any exist; otherwise [items] unchanged. */
+internal fun withoutThreatIfPossible(items: List<Item>): List<Item> =
+    items.filterNot { it.hasThreat() }.ifEmpty { items }
+
 /**
  * Unified weapon + gear + utility slot optimizer.
  *
@@ -563,6 +569,8 @@ class GearOptimizer(
         excludedBankCodes: Set<String> = emptySet(),
         allowBank: Boolean = true,
         partySize: Int = 3,
+        /** Support policy: never pick threat gear, and replace equipped threat gear when an owned alternative exists. */
+        excludeThreat: Boolean = false,
     ): CoopLoadoutResult {
         val currentItems = mutableMapOf<String, Item>()
         for (slotInfo in GEAR_SLOTS) {
@@ -574,7 +582,7 @@ class GearOptimizer(
         val availableQuantities = accessibleGearQuantities(char).mapValues { (code, qty) ->
             (qty - (claimedGear[code] ?: 0)).coerceAtLeast(0)
         }
-        val candidatesBySlot = buildCoopBeamCandidates(char, monster, currentItems, excludedBankCodes, allowBank, role)
+        val candidatesBySlot = buildCoopBeamCandidates(char, monster, currentItems, excludedBankCodes, allowBank, role, excludeThreat)
         val initial = makeBeamState(
             char = char, monster = monster, loadout = currentItems,
             usedQuantities = currentItems.values.groupingBy { it.code }.eachCount(),
@@ -604,8 +612,10 @@ class GearOptimizer(
                     expanded += makeBeamState(char, monster, loadout, counts, stats, currentItems)
                 }
             }
-            beam = expanded.sortedWith(comparator).distinctBy { canonicalLoadoutKey(it.loadout) }.take(BEAM_WIDTH)
-            if (beam.isEmpty()) { beam = listOf(initial); break }
+            val next = expanded.sortedWith(comparator).distinctBy { canonicalLoadoutKey(it.loadout) }.take(BEAM_WIDTH)
+            // No feasible candidate for this slot (possible when excludeThreat removed the
+            // current item): leave the slot as-is rather than discarding the search.
+            if (next.isNotEmpty()) beam = next
         }
         val best = beam.sortedWith(comparator).firstOrNull() ?: initial
         return CoopLoadoutResult(
@@ -645,6 +655,7 @@ class GearOptimizer(
         excludedBankCodes: Set<String>,
         allowBank: Boolean,
         role: CoopOptimizer.Role,
+        excludeThreat: Boolean = false,
     ): Map<String, List<Item>> {
         // Tanks shortlist survivability first; supports shortlist damage first.
         val ranking = when (role) {
@@ -653,9 +664,14 @@ class GearOptimizer(
             CoopOptimizer.Role.SUPPORT -> compareByDescending<LoadoutHeuristic> { it.expectedDamage }
                 .thenByDescending { it.effectiveHp }
         }
-        return rankedSlotCandidates(char, monster, currentLoadout, GEAR_SLOTS.filter { it.slot != "rune" }, ranking) {
-            it.source == "inventory" || (it.source == "bank" && allowBank && it.item.code !in excludedBankCodes)
+        val ranked = rankedSlotCandidates(char, monster, currentLoadout, GEAR_SLOTS.filter { it.slot != "rune" }, ranking) {
+            (it.source == "inventory" || (it.source == "bank" && allowBank && it.item.code !in excludedBankCodes)) &&
+                (!excludeThreat || !it.item.hasThreat())
         }
+        if (!excludeThreat) return ranked
+        // rankedSlotCandidates always re-adds the current item; drop it when it carries threat
+        // and a threat-free alternative exists, so the beam must replace it.
+        return ranked.mapValues { (_, items) -> withoutThreatIfPossible(items) }
     }
 
     private suspend fun buildBeamCandidates(
@@ -972,10 +988,12 @@ class GearOptimizer(
             changes += SlotChange(slotInfo.slot, currentCode, targetCode, source)
         }
 
-        val utilityActions = utilities.entries.sortedBy { it.key }.mapNotNull { (slot, utility) ->
+        // Always emit every planned utility, even one already fully equipped: tasks persist
+        // these as THE utility plan, and refills/re-equips only restock what is listed here.
+        // retrieveAndEquipUtilities is a no-op for slots that are already satisfied.
+        val utilityActions = utilities.entries.sortedBy { it.key }.map { (slot, utility) ->
             val currentCode = helper.getEquippedInSlot(char, slot)
             val currentQuantity = if (currentCode == utility.code) helper.getEquippedUtilityQuantity(char, slot) else 0
-            if (currentCode == utility.code && currentQuantity >= utility.quantity) return@mapNotNull null
             val inventoryQuantity = helper.getItemQuantity(char, utility.code)
             val source = if (inventoryQuantity + currentQuantity >= utility.quantity) "inventory" else "bank"
             UtilityEquipAction(slot, utility.code, utility.quantity, source)

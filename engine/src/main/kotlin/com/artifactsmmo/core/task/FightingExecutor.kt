@@ -6,6 +6,22 @@ import com.artifactsmmo.client.utils.CharacterUtils
 import kotlin.time.Clock
 
 /**
+ * True when ANY planned utility potion has run dry (slot empty or holding something else)
+ * with no copies left in inventory, and the bank can supply it — the boss-fight restock
+ * trigger. Per potion, not all-or-nothing: the tank's health potions can run out while a
+ * boost potion in the other slot still has stock.
+ */
+internal suspend fun anyPlannedPotionExhausted(
+    planned: List<GearOptimizer.UtilityEquipAction>,
+    equipped: (slot: String) -> Pair<String, Int>,
+    inventoryQty: (code: String) -> Int,
+    bankQty: suspend (code: String) -> Int,
+): Boolean = planned.any { p ->
+    val (code, qty) = equipped(p.slot)
+    (code != p.itemCode || qty == 0) && inventoryQty(p.itemCode) == 0 && bankQty(p.itemCode) > 0
+}
+
+/**
  * Executes fighting task loops.
  *
  * Loop: move to monster -> fight -> heal if needed -> repeat
@@ -528,18 +544,14 @@ class FightingExecutor(private val helper: ActionHelper) {
         // task.utilityActions is the source of truth for boss/raid utilities. Do not infer
         // intent from the currently equipped slots: they can be empty after a failed prior
         // provisioning attempt. An empty utility plan means utilities are not required.
-        val utilitiesMissing = plannedUtilities.isNotEmpty() && plannedUtilities.all { planned ->
-            helper.getEquippedInSlot(char, planned.slot) != planned.itemCode ||
-                helper.getEquippedUtilityQuantity(char, planned.slot) == 0
-        }
-        val noPlannedReserves = plannedUtilities.isNotEmpty() && plannedUtilities.all { planned ->
-            helper.getItemQuantity(char, planned.itemCode) == 0
-        }
-        // Potions are an optimization, not a prerequisite: only go to the bank for them when
-        // the bank can actually supply a planned potion, otherwise fight with what we have
-        // (a trip that brings nothing back would loop forever).
-        val plannedPotionsInBank = plannedUtilities.any { helper.getBankItemQuantity(it.itemCode) > 0 }
-        val potionsExhausted = utilitiesMissing && noPlannedReserves && plannedPotionsInBank
+        // Only restock for a potion the bank can actually supply, otherwise fight with what
+        // we have (a trip that brings nothing back would loop forever).
+        val potionsExhausted = anyPlannedPotionExhausted(
+            plannedUtilities,
+            equipped = { slot -> helper.getEquippedInSlot(char, slot) to helper.getEquippedUtilityQuantity(char, slot) },
+            inventoryQty = { helper.getItemQuantity(char, it) },
+            bankQty = { helper.getBankItemQuantity(it) },
+        )
 
         val noFood = helper.findBestFoodInInventory(char) == null
         val hpTooLow = !CharacterUtils.hasEnoughHP(char, 0.75)

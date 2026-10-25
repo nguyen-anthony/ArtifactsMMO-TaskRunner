@@ -3,6 +3,7 @@ package com.artifactsmmo.core.task
 import com.artifactsmmo.client.RealtimeClient
 import com.artifactsmmo.client.RealtimeMessage
 import com.artifactsmmo.client.services.EventService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,7 +41,8 @@ class WebSocketManager(
     private val realtimeClient: RealtimeClient,
     private val eventService: EventService,
     private val scope: CoroutineScope,
-    private val bankState: BankState? = null
+    private val bankState: BankState? = null,
+    private val log: (String) -> Unit = {},
 ) {
     // ── Typed message flow ────────────────────────────────────────────────────
 
@@ -86,8 +88,12 @@ class WebSocketManager(
                     realtimeClient.connect { rawText ->
                         val message = parseAndLog(rawText)
                         _messages.tryEmit(message)
-                    }                } catch (_: Exception) {
-                    // Ignore — reconnect below
+                    }
+                    log("WebSocket: realtime connection closed — reconnecting")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log("WebSocket: realtime connection lost (${e.message ?: e::class.simpleName}) — reconnecting")
                 }
                 if (isActive) delay(10.seconds)
             }

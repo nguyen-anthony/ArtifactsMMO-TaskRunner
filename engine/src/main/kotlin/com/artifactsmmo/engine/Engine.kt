@@ -58,7 +58,7 @@ class Engine(
     private val fighting = FightingExecutor(helper)
     val gearOptimizer get() = fighting.gearOptimizer
     val coop = CoopOptimizer(helper, fighting.gearOptimizer, client)
-    val webSocket = WebSocketManager(RealtimeClient(token), client.events, scope, bankState)
+    val webSocket = WebSocketManager(RealtimeClient(token), client.events, scope, bankState, log = { logger.log(it) })
 
     lateinit var characters: List<String>
         private set

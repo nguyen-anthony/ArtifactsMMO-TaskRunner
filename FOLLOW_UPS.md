@@ -217,10 +217,71 @@ Achievements are read once at `Engine.start()`. Tiles/gates/potions unlocked mid
 ### Cooking-speed gear priority
 Next season is expected to add gear that reduces cooking cooldowns. When it does, add a `StatGearOptimizer.Priority.COOKING` (that stat first, wisdom as tie-breaker) and route cooking tasks to it instead of the shared `CRAFTING` priority — see the comment on `StatGearOptimizer.Priority`. Also worth checking then whether the same kind of gear exists for other gathering skills.
 
-### Combat prospecting (deferred)
-`GearOptimizer.GearScore`'s tie-break is currently `prospecting + wisdom` combined; for task-master monster / fight tasks we deferred doing anything more here. Two options if revisited:
-- (a) cheap: change the tie-break to prospecting only (helps only when candidates already tie on win rate and fight length);
-- (b) real: after combat optimization, try swapping each slot to its highest-prospecting item and keep the swap only if a fight simulation still clears the win-rate threshold (costs extra simulation calls, cached per monster).
+### Fight-gear objective: drops/hour and XP/hour, not just win rate
+**Problem.** `GearOptimizer.GearScore` ranks by win rate, then cycle seconds, and only then `prospecting + wisdom` as the last tie-break. Grinding a rare drop (e.g. lich `life_crystal` at 1/50, `red_dragon_scale` at 1/10) therefore runs on gear that wins easily but has almost no prospecting.
+
+**Mechanics** (docs.artifactsmmo.com/concepts/stats_and_fights):
+- Prospecting multiplies drop chance by `1 + prospecting × 0.001`. Wisdom multiplies XP by `1 + wisdom × 0.001`. Both apply to fights.
+- Level ≤ 50 sources found on 2026-10-24:
+  - Armor: diamond_armor +200, diamond_skirt +200, enchanter_pants +120, enchanter_boots +120.
+  - Jewelry: prospecting_amulet +100, mithril_ring/adamantite_ring +60 each.
+  - Artifacts: perfect_pearl +100 (5 owned), lich_race_trophy +50.
+- A loadout that still wins could plausibly reach 500–800 prospecting, so rare drops become 1.5–1.8× as likely.
+
+**Proposal.**
+1. **Fight goal per task:** `WIN_RATE` (current behavior), `DROPS` (prospecting), or `XP` (wisdom).
+   - Add an optional `fightGoal` to `TaskSpec.Fight` (and the task-master/event fight specs); mirror it in `web/src/lib/types.ts`.
+   - Default `WIN_RATE`, or `DROPS` when the fight task has a target drop item.
+2. **Constrained objective:** keep loadouts with `winRate ≥ threshold` (e.g. 0.95 and no utilities consumed if possible), then rank by expected value per hour:
+   - `DROPS`: `(1 + prospecting/1000) / cycleSeconds`
+   - `XP`: `(1 + wisdom/1000) / cycleSeconds`
+   - `cycleSeconds` already covers fight cooldown plus HP recovery. A slower fight with +60% drops still wins on drops/hour.
+   - Count utility consumption as a cost so a prospecting loadout that needs potions isn't chosen over a free one without justification.
+3. **Search:**
+   - Run the current combat optimization to get a baseline.
+   - Then greedily try swapping each slot to higher-prospecting (or higher-wisdom) candidates, best stat first.
+   - Simulate each swap and keep it if it still clears the threshold and improves the objective. Repeat until no swap helps.
+   - Cache the result in `known_loadouts.json` keyed by (monster, goal).
+   - About 10–30 extra simulation calls per monster, one-time.
+4. **UI:**
+   - Add a goal selector on the fight task form.
+   - Show the expected drop multiplier, XP multiplier, and win rate on the chosen loadout.
+5. **Tests:** Using a fake simulator, check that:
+   - The `DROPS` goal picks a higher-prospecting loadout when win rate stays above the threshold.
+   - It falls back to the combat loadout when no prospecting swap survives.
+   - `WIN_RATE` behavior is unchanged.
+
+**Open questions:**
+- Win-rate threshold: per task or global?
+- Should event fights (short windows) always use `WIN_RATE`?
+- Should boss/raid coop planning get the same goal, with supports carrying prospecting?
 
 ### Boss/raid gear: consider all characters' equipped items
 `CoopOptimizer` only considers a participant's own equipped gear, inventory, and the shared bank when planning boss/raid loadouts. It doesn't consider gear currently equipped on OTHER (non-participating) characters, since using it would require unequipping that character first — out of scope for this fix. If pursued: detect "best item is equipped elsewhere" candidates, then queue an unequip + bank-deposit task for that character before the group's provisioning step runs.
+
+---
+
+### Bank cleanup: storage rules + Grand Exchange disposal
+The bank (210 slots, 194 used on 2026-10-17; the next +20 expansion costs 448k gold) fills because everything gets deposited. Decisions so far: dry-run first with approval in the UI, a 5-level recipe relevance window, list even low-value surplus on the GE, sell surplus gear if priced (otherwise recycle), and stop depositing surplus going forward.
+
+**Policy (pure classifier, per bank item ? keep / keep-up-to-N / surplus + reason):**
+- Resource is surplus when no recipe within 5 levels of the best character's skill level uses it, directly or through intermediates (ore ? bar ? gear). On 2026-10-17 that was about 33 codes (feather, raw_chicken, trout, algae, sap, gudgeon, ...).
+- Always keep: `resource/key`, currency, teleport potions, `resource/task`, NPC trade inputs, TaskMaster/event items, items in `known_loadouts.json`, and user overrides.
+- Gear/tools: keep up to N copies when used in any known loadout or at least level 40. Older gear is surplus.
+- Some items should have a cap instead of yes/no (e.g. keep 500 raw_chicken).
+
+**Disposal:**
+- GE sell price = max(lowest competing sell order - 1, ~70% of the 7-day median from `/grandexchange/history/{code}`, user floor).
+- No listings and no history ? a manual pricing queue in the UI.
+- Orders are 1�100 items, with at most 100 open orders. Sale gold arrives as pending items (`/my/pending_items` ? `claim_item/{id}`).
+- Periodically cancel and relist undercut orders (cancelling needs inventory space).
+- There were no buy orders on the sampled items, so `fill` is rarely useful.
+
+**Client work:** `GrandExchangeService` is stale: it posts to `/action/grandexchange/sell` (now `create_sell_order`), orders have `type`/`account` instead of `seller`, and `GEOrderCreated.tax` no longer exists. Add history, pending items and claim, plus `Item.recyclable`.
+
+**Engine/server/web:**
+- A `bank_cleanup` TaskSpec and executor: withdraw a batch, go to the GE, list items, recycle gear, claim gold, reprice.
+- A `bank_policy` config.
+- `GET` dry-run plan, `POST` approve.
+- A Bank Cleanup page: verdicts, prices, approve, open orders.
+- A deposit filter so approved surplus is no longer banked.

@@ -85,16 +85,18 @@ internal object TeamLoadoutAllocator {
         }
 
         visit(0, linkedMapOf(), mutableMapOf())
-        val hasThreatValid = results.any { it.threatViolation == 0 }
-        return results
-            .asSequence()
-            .filter { !hasThreatValid || it.threatViolation == 0 }
-            .sortedWith(
-                compareBy<TeamLoadoutSelection<T>> { it.threatViolation }
-                    .thenByDescending { it.heuristicScore }
-                    .thenBy { it.bankDemand.values.sum() }
-                    .thenBy { it.stableKey }
-            )
-            .toList()
+        return preferThreatValid(results.sortedWith(
+            compareByDescending<TeamLoadoutSelection<T>> { it.heuristicScore }
+                .thenBy { it.bankDemand.values.sum() }
+                .thenBy { it.stableKey }
+        ))
     }
+
+    /**
+     * Keeps only teams where no support out-threatens the tank, when at least one exists;
+     * otherwise orders by smallest violation. Relative order is otherwise preserved.
+     */
+    fun <T> preferThreatValid(teams: List<TeamLoadoutSelection<T>>): List<TeamLoadoutSelection<T>> =
+        if (teams.any { it.threatViolation == 0 }) teams.filter { it.threatViolation == 0 }
+        else teams.sortedBy { it.threatViolation }
 }

@@ -162,6 +162,25 @@ class TeamLoadoutAllocatorTest {
         assertEquals("team-pick", result.first().byCharacter.getValue("support").value)
     }
 
+    @Test
+    fun preferThreatValidDropsViolatingTeamsWhenAValidOneExists() {
+        // Regression (Pixie raid): the greedy team (always first) out-threatened the tank
+        // but was still simulated and won the finalist pick on win rate alone.
+        val teams = listOf(selection("greedy", violation = 7), selection("valid", violation = 0))
+        assertEquals(listOf("valid"), TeamLoadoutAllocator.preferThreatValid(teams).map { it.stableKey })
+    }
+
+    @Test
+    fun preferThreatValidKeepsSmallestViolationFirstWhenNoneAreValid() {
+        val teams = listOf(selection("big", violation = 9), selection("small", violation = 2))
+        assertEquals(listOf("small", "big"), TeamLoadoutAllocator.preferThreatValid(teams).map { it.stableKey })
+    }
+
+    private fun selection(key: String, violation: Int) = TeamLoadoutSelection<String>(
+        byCharacter = emptyMap(), bankDemand = emptyMap(), heuristicScore = 0.0,
+        threatViolation = violation, stableKey = key
+    )
+
     private fun candidate(
         character: String,
         value: String,

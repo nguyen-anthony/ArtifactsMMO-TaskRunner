@@ -1824,6 +1824,11 @@ class ActionHelper(
      * A single participant's full loadout for a cooperative fight simulation.
      * Used by [simulateCoopFight] to describe each character in the multi-character
      * simulation request.
+     *
+     * Utility slots are exactly [utilityOverrides]: a slot without an override is simulated
+     * EMPTY, never with whatever the character happens to have equipped. Boss provisioning
+     * clears unplanned utility slots, so a sim that counted leftover potions would score a
+     * loadout the party never actually fights with.
      */
     data class CoopParticipantLoadout(
         val char: Character,
@@ -1846,10 +1851,10 @@ class ActionHelper(
     ): com.artifactsmmo.client.models.CombatSimulationData {
         val fakeChars = participantLoadouts.map { p ->
             val base = com.artifactsmmo.client.models.FakeCharacterRequest.fromCharacter(p.char)
-            val u1Code: String? = p.utilityOverrides["utility1"] ?: base.utility1Slot
-            val u2Code: String? = p.utilityOverrides["utility2"] ?: base.utility2Slot
-            val u1Qty: Int? = p.utilityQuantities["utility1"] ?: base.utility1SlotQuantity
-            val u2Qty: Int? = p.utilityQuantities["utility2"] ?: base.utility2SlotQuantity
+            val u1Code: String? = p.utilityOverrides["utility1"]
+            val u2Code: String? = p.utilityOverrides["utility2"]
+            val u1Qty: Int? = p.utilityQuantities["utility1"]
+            val u2Qty: Int? = p.utilityQuantities["utility2"]
             base.copy(
                 weaponSlot    = p.slotOverrides["weapon"]     ?: base.weaponSlot,
                 shieldSlot    = p.slotOverrides["shield"]     ?: base.shieldSlot,

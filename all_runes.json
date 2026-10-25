@@ -1,0 +1,313 @@
+{
+  "data": [
+    {
+      "name": "Healing Aura Rune",
+      "code": "healing_aura_rune",
+      "level": 20,
+      "type": "rune",
+      "subtype": "",
+      "description": "A stone tablet that radiates soothing green energy. When activated, it creates a restorative field that gradually heals all allies within its radius.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "healing_aura",
+          "value": 10,
+          "description": "Every 2 played turns, they heal all allies for 10% of their maximum HP. This effect does not heal the caster."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Protection Rune",
+      "code": "protection_rune",
+      "level": 20,
+      "type": "rune",
+      "subtype": "",
+      "description": "A simple stone tablet etched with protective symbols. When activated, it creates a translucent magical shell that absorbs incoming damage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "shell",
+          "value": 40,
+          "description": "When they drop below 40% of their HP, they gain 40 % resistance to all elements for 3 turns. Activates once per combat. This effect is only active during boss or raid boss fights."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Healing Rune",
+      "code": "healing_rune",
+      "level": 20,
+      "type": "rune",
+      "subtype": "",
+      "description": "A stone tablet etched with ancient symbols of restoration. When activated, it emits a warm green glow that mends wounds and restores vitality.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "healing",
+          "value": 5,
+          "description": "Every 3 played turns, restores 5% of HP at the start of the turn.\n"
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Burn Rune",
+      "code": "burn_rune",
+      "level": 20,
+      "type": "rune",
+      "subtype": "",
+      "description": "A smoldering rune that applies lingering damage to enemies. The flames are impossible to extinguish by normal means.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "burn",
+          "value": 20,
+          "description": "On his first turn, apply a burn effect of 20% of your attack of all elements. The damage is applied each turn and decreases by 10% each time."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Lifesteal Rune",
+      "code": "lifesteal_rune",
+      "level": 20,
+      "type": "rune",
+      "subtype": "",
+      "description": "A blood-red rune that, when activated, allows its wielder to draw life from their critical strikes.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 19
+        }
+      ],
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 15,
+          "description": "Restores 15% of the total attack of all elements in HP after a critical strike."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Vampiric Rune",
+      "code": "vampiric_rune",
+      "level": 40,
+      "type": "rune",
+      "subtype": "",
+      "description": "A dark crimson rune that seems to drink in surrounding light. It infuses attacks with blood magic that drains life from enemies while fueling a battle rage.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "vampiric_strike",
+          "value": 30,
+          "description": "After landing a critical hit, they heal the ally with the lowest HP for 30% of the damage dealt. Can only trigger once every 3 turns. This effect does not heal the caster."
+        },
+        {
+          "code": "frenzy",
+          "value": 15,
+          "description": "Each time they land a critical hit, they give 15% damage to themselves and their allies until the end of their next turn."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Greater Lifesteal Rune",
+      "code": "greater_lifesteal_rune",
+      "level": 40,
+      "type": "rune",
+      "subtype": "",
+      "description": "A blood-red rune that pulses with dark hunger. It channels life essence from critical strikes to the bearer while feeding a growing battle frenzy.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "lifesteal",
+          "value": 25,
+          "description": "Restores 25% of the total attack of all elements in HP after a critical strike."
+        },
+        {
+          "code": "frenzy",
+          "value": 15,
+          "description": "Each time they land a critical hit, they give 15% damage to themselves and their allies until the end of their next turn."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Greater Protection Rune",
+      "code": "greater_protection_rune",
+      "level": 40,
+      "type": "rune",
+      "subtype": "",
+      "description": "A blue-hued stone tablet inscribed with layered defensive sigils. When activated, it creates overlapping shields that absorb physical and magical damage alike.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "guard",
+          "value": 50,
+          "description": "If one or more allies have less than 50% of their HP, protects the ally with the lowest HP percentage, redirecting 50 % of their damage to this character until the start of my next turn. Activates a maximum of 3 times per combat."
+        },
+        {
+          "code": "shell",
+          "value": 35,
+          "description": "When they drop below 40% of their HP, they gain 35 % resistance to all elements for 3 turns. Activates once per combat. This effect is only active during boss or raid boss fights."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Greater Healing Rune",
+      "code": "greater_healing_rune",
+      "level": 40,
+      "type": "rune",
+      "subtype": "",
+      "description": "An advanced healing rune that pulses with powerful regenerative magic. Its soothing aura continuously rejuvenates allies while healing the bearer directly.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "healing_aura",
+          "value": 12,
+          "description": "Every 2 played turns, they heal all allies for 12% of their maximum HP. This effect does not heal the caster."
+        },
+        {
+          "code": "healing",
+          "value": 8,
+          "description": "Every 3 played turns, restores 8% of HP at the start of the turn.\n"
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Enchanted Rune",
+      "code": "enchanted_rune",
+      "level": 40,
+      "type": "rune",
+      "subtype": "",
+      "description": "A rune carved with forest magic, strengthening mirrored enchantments and restorative power.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "enchanted_mirror",
+          "value": 50,
+          "description": "When the fighter takes damage, they deal back 50% of the damage taken. This can trigger once every 3 turns."
+        },
+        {
+          "code": "healing",
+          "value": 5,
+          "description": "Every 3 played turns, restores 5% of HP at the start of the turn.\n"
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Powerful Rune",
+      "code": "powerful_rune",
+      "level": 50,
+      "type": "rune",
+      "subtype": "",
+      "description": "A forceful rune humming with concentrated power, sharpening greed and frenzy in equal measure.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 49
+        }
+      ],
+      "effects": [
+        {
+          "code": "greed",
+          "value": 15,
+          "description": "Each time the fighter loses 10% max HP, they gain 15% damage for the rest of the fight."
+        },
+        {
+          "code": "frenzy",
+          "value": 12,
+          "description": "Each time they land a critical hit, they give 12% damage to themselves and their allies until the end of their next turn."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    }
+  ],
+  "total": 11,
+  "page": 1,
+  "size": 50,
+  "pages": 1
+}
