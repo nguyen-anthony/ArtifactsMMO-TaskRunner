@@ -65,13 +65,29 @@ data class CombatSimulationResult(
     val result: String,
     val turns: Int,
     /** Per-character outcome objects, in request order (untyped in the API schema; may include `final_hp`). */
-    @SerialName("character_results") val characterResults: List<kotlinx.serialization.json.JsonObject> = emptyList()
+    @SerialName("character_results") val characterResults: List<kotlinx.serialization.json.JsonObject> = emptyList(),
+    val logs: List<String> = emptyList()
 ) {
     /** `final_hp` of the character at [index] in the request, or null when the API omits it. */
     fun finalHp(index: Int = 0): Int? =
         (characterResults.getOrNull(index)?.get("final_hp") as? kotlinx.serialization.json.JsonPrimitive)
             ?.content?.toIntOrNull()
+
+    /**
+     * Monster HP left at the end of the fight as a fraction of its max (0.0 = dead), parsed
+     * from the logs ("... vs <Monster> HP: 13500/13500" then "<Monster> HP: x/y" lines);
+     * null when the logs don't contain it.
+     */
+    fun monsterHpRemainingFraction(): Double? {
+        val name = logs.firstNotNullOfOrNull { FIGHT_START.find(it)?.groupValues?.get(1) } ?: return null
+        val hpLine = Regex(Regex.escape(name) + """ HP: (-?\d+)/(\d+)""")
+        val match = logs.asReversed().firstNotNullOfOrNull { line -> hpLine.findAll(line).lastOrNull() } ?: return null
+        val max = match.groupValues[2].toDouble().takeIf { it > 0 } ?: return null
+        return (match.groupValues[1].toDouble() / max).coerceIn(0.0, 1.0)
+    }
 }
+
+private val FIGHT_START = Regex("""\bvs (.+?) HP: -?\d+/\d+""")
 
 @Serializable
 data class CombatSimulationData(

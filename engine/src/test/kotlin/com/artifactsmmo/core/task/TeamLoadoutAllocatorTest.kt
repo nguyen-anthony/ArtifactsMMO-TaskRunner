@@ -85,6 +85,22 @@ class TeamLoadoutAllocatorTest {
     }
 
     @Test
+    fun equalThreatWithLowerMaxHpMakesTheSupportTheTarget() {
+        // Sandwhisper Empress: all three at threat 39, the boss hits the lowest max HP (Shuckle).
+        val team = mapOf(
+            "Ront" to candidate("Ront", "r", emptyMap(), 0.0, 39, maxHp = 2065),
+            "Shella" to candidate("Shella", "s", emptyMap(), 0.0, 39, maxHp = 1965),
+            "Shuckle" to candidate("Shuckle", "k", emptyMap(), 0.0, 39, maxHp = 1885),
+        )
+        assertEquals("Shuckle", TeamLoadoutAllocator.predictedTarget(team))
+        assertEquals(1, TeamLoadoutAllocator.threatViolation(team, "Ront"))
+        assertEquals(0, TeamLoadoutAllocator.threatViolation(team, "Shuckle"))
+        // More threat still wins regardless of HP.
+        val higher = team + ("Ront" to candidate("Ront", "r", emptyMap(), 0.0, 40, maxHp = 2065))
+        assertEquals("Ront", TeamLoadoutAllocator.predictedTarget(higher))
+    }
+
+    @Test
     fun orderingIsStableWhenCandidateInputIsShuffled() {
         val firstOrder = mapOf(
             "tank" to listOf(
@@ -186,13 +202,15 @@ class TeamLoadoutAllocatorTest {
         value: String,
         demand: Map<String, Int>,
         score: Double,
-        threat: Int
+        threat: Int,
+        maxHp: Int = 0
     ) = TeamLoadoutCandidate(
         characterName = character,
         value = value,
         bankDemand = demand,
         heuristicScore = score,
         threat = threat,
-        stableKey = "$character:$value"
+        stableKey = "$character:$value",
+        maxHp = maxHp
     )
 }

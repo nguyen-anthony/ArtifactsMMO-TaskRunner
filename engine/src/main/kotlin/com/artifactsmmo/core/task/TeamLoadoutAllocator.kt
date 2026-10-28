@@ -10,7 +10,13 @@ internal data class TeamLoadoutCandidate<T>(
     /** Heuristic expected damage per turn of this loadout (see GearOptimizer.evaluateLoadout). */
     val expectedDamage: Double = 0.0,
     /** Heuristic turns this loadout survives being the boss's target. */
-    val effectiveHp: Double = 0.0
+    val effectiveHp: Double = 0.0,
+    /** Projected max HP with this loadout (boss threat ties go to the LOWEST max HP); 0 = unknown. */
+    val maxHp: Int = 0,
+    /** HP this loadout restores to its wearer per turn (self-heal rune, lifesteal). */
+    val selfHealPerTurn: Double = 0.0,
+    /** % of max HP this loadout heals every OTHER participant per turn (healing aura). */
+    val allyHealPercentPerTurn: Double = 0.0
 )
 
 internal data class TeamLoadoutSelection<T>(
@@ -41,20 +47,7 @@ internal object TeamLoadoutAllocator {
             demand: MutableMap<String, Int>
         ) {
             if (index == participantOrder.size) {
-                val tankThreat = selected[tankName]?.threat ?: Int.MIN_VALUE
-                val highestSupport = selected.filterKeys { it != tankName }.values.maxOfOrNull { it.threat }
-                // Only a support with STRICTLY MORE threat than the tank breaks the fight's
-                // targeting assumption — equal threat is fine (ties favor whichever the game
-                // considers the tank; lowest-HP tiebreak still applies, which the tank's higher
-                // HP pool should usually win anyway).
-                val violation = if (highestSupport == null) {
-                    0
-                } else {
-                    (highestSupport.toLong() - tankThreat.toLong())
-                        .coerceAtLeast(0L)
-                        .coerceAtMost(Int.MAX_VALUE.toLong())
-                        .toInt()
-                }
+                val violation = threatViolation(selected, tankName)
                 results += TeamLoadoutSelection(
                     byCharacter = selected.toMap(),
                     bankDemand = demand.toMap(),
@@ -90,6 +83,31 @@ internal object TeamLoadoutAllocator {
                 .thenBy { it.bankDemand.values.sum() }
                 .thenBy { it.stableKey }
         ))
+    }
+
+    /**
+     * The participant the boss attacks: highest threat; on a tie, the LOWEST max HP
+     * (unknown HP = 0 never wins a tie over a known one); then name, for determinism.
+     */
+    fun <T> predictedTarget(team: Map<String, TeamLoadoutCandidate<T>>): String? =
+        team.values.sortedWith(
+            compareByDescending<TeamLoadoutCandidate<T>> { it.threat }
+                .thenBy { if (it.maxHp > 0) it.maxHp else Int.MAX_VALUE }
+                .thenBy { it.characterName }
+        ).firstOrNull()?.characterName
+
+    /**
+     * Threat a support would have to shed so the boss targets the tank instead: a support
+     * with more threat, or EQUAL threat and lower max HP (the tiebreak), is a violation.
+     * 0 = the tank is the predicted target.
+     */
+    fun <T> threatViolation(team: Map<String, TeamLoadoutCandidate<T>>, tankName: String): Int {
+        val tank = team[tankName] ?: return 0
+        return team.filterKeys { it != tankName }.values.maxOfOrNull { support ->
+            val lowerHp = support.maxHp > 0 && tank.maxHp > 0 && support.maxHp < tank.maxHp
+            (support.threat.toLong() - tank.threat.toLong() + (if (lowerHp) 1 else 0))
+                .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        } ?: 0
     }
 
     /**
