@@ -68,6 +68,64 @@ class FightingExecutor(private val helper: ActionHelper) {
     }
 
     /**
+     * Optimize and apply the loadout for [monsterCode]: bank the inventory (keeping what the
+     * plan uses), equip gear and utilities, bank swapped-out gear, then mark it optimized.
+     * Returns the plan (callers pass its utilities to the fight loop for refills), or null if
+     * optimization failed. Individual swap failures are reported and tolerated.
+     */
+    suspend fun prepareLoadoutForMonster(
+        characterName: String,
+        monsterCode: String,
+        onStatus: (String) -> Unit,
+    ): GearOptimizer.OptimizationResult? {
+        onStatus("Optimizing loadout for $monsterCode...")
+        val char = helper.refreshCharacter(characterName)
+        val result = try {
+            optimizeGearForMonster(characterName, char, monsterCode)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            onStatus("Optimization failed: ${e.message}")
+            return null
+        }
+
+        val plannedUtilityCodes = result.utilityActions.filter { it.quantity > 0 }.map { it.itemCode }.toSet()
+        val keep = result.equipActions.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
+            plannedUtilityCodes
+        tolerate(onStatus, "Pre-task deposit") {
+            onStatus("Depositing inventory before $monsterCode...")
+            helper.depositInventoryExcept(characterName, keep, char)
+        }
+
+        if (result.equipActions.isNotEmpty()) {
+            onStatus("Swapping ${result.equipActions.size} equipment piece(s) for $monsterCode...")
+            tolerate(onStatus, "Equip swap") { helper.retrieveAndEquipItems(characterName, result.equipActions) }
+        } else {
+            onStatus("Gear already optimal for $monsterCode")
+        }
+
+        if (result.utilityActions.isNotEmpty()) {
+            onStatus("Applying ${result.utilityActions.size} utility potion(s) for $monsterCode...")
+            tolerate(onStatus, "Utility equip") { helper.retrieveAndEquipUtilities(characterName, result.utilityActions) }
+        }
+
+        // Gear swapped out from inventory lands back in inventory; bank it. The character is
+        // normally still at the bank from the deposit above, so this costs no walk.
+        tolerate(onStatus, "Post-swap deposit") { helper.depositInventoryExcept(characterName, plannedUtilityCodes) }
+
+        gearOptimizer.markOptimized(characterName, monsterCode)
+        return result
+    }
+
+    private suspend fun tolerate(onStatus: (String) -> Unit, what: String, block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            onStatus("$what failed: ${e.message}")
+        }
+    }
+
+    /**
      * Execute a single iteration of the fight loop.
      *
      * [previousChar] may be supplied by the caller when it already holds a fresh

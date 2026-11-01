@@ -223,6 +223,7 @@ class GatheringExecutor(private val helper: ActionHelper) {
 
             onStatus("Withdrawing $withdrawTotal raw fish from bank for ${item.name}...")
             helper.bankWithdrawItems(characterName, withdrawList)
+            helper.ensureCraftingToolEquipped(characterName, "cooking", helper.refreshCharacter(characterName), allowBank = true)
 
             val workshop = helper.findNearestWorkshop(helper.refreshCharacter(characterName), "cooking")
             if (workshop == null) {
@@ -443,7 +444,8 @@ class GatheringExecutor(private val helper: ActionHelper) {
                 helper.navigateWithTeleport(characterName, char, workshop)
 
                 // Re-check after moving
-                val updatedChar = helper.refreshCharacter(characterName)
+                val updatedChar = helper.ensureCraftingToolEquipped(
+                    characterName, workshopSkill, helper.refreshCharacter(characterName), allowBank = false)
                 val actualCraftable = craft.items.minOfOrNull { ingredient ->
                     helper.getItemQuantity(updatedChar, ingredient.code) / ingredient.quantity
                 } ?: 0
@@ -501,7 +503,8 @@ class GatheringExecutor(private val helper: ActionHelper) {
                 helper.navigateWithTeleport(characterName, char, workshop)
 
                 // Re-check after moving
-                val updatedChar = helper.refreshCharacter(characterName)
+                val updatedChar = helper.ensureCraftingToolEquipped(
+                    characterName, "cooking", helper.refreshCharacter(characterName), allowBank = false)
                 val updatedCookable = helper.findCraftableRefinements(updatedChar, "fishing")
                     .filter { (item, _) -> item.craft?.items?.size == 1 }
 

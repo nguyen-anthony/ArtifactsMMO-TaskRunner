@@ -360,6 +360,27 @@ class ContentCache(private val contentService: ContentService) {
         return resources
     }
 
+    private val monstersByDropCache: Cache<String, List<Monster>> = Caffeine.newBuilder()
+        .maximumSize(200)
+        .expireAfterWrite(24, TimeUnit.HOURS)
+        .build()
+
+    /** All monsters that drop [dropCode] (all pages merged), cached for 24h. */
+    suspend fun getMonstersByDrop(dropCode: String): List<Monster> {
+        monstersByDropCache.getIfPresent(dropCode)?.let { return it }
+        val monsters = mutableListOf<Monster>()
+        var page = 1
+        while (true) {
+            val result = contentService.getMonsters(drop = dropCode, page = page, size = 100)
+            monsters.addAll(result.data)
+            if (page >= (result.pages ?: Int.MAX_VALUE) || result.data.size < 100) break
+            page++
+        }
+        monsters.forEach { monsterCache.put(it.code, it) }
+        monstersByDropCache.put(dropCode, monsters)
+        return monsters
+    }
+
     /** Fetch monster by [code], hitting the cache first. Throws on API failure. */
     suspend fun getMonster(code: String): Monster {
         monsterCache.getIfPresent(code)?.let { return it }

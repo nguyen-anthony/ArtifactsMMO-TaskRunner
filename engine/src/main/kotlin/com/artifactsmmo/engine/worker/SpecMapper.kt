@@ -59,6 +59,7 @@ object SpecMapper {
             defaultDropStrategy = LegacyDropStrategy.valueOf(spec.defaultDropStrategy.name),
         )
         is TaskSpec.BossFight -> error("Boss fights need group context; use SpecMapper.bossFight")
+        is TaskSpec.DailyOffering -> error("Daily offerings have a dedicated executor")
     }
 
     /**

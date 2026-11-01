@@ -7,6 +7,7 @@ import com.artifactsmmo.core.task.BankReserver
 import com.artifactsmmo.core.task.BankState
 import com.artifactsmmo.core.task.ContentCache
 import com.artifactsmmo.core.task.CoopOptimizer
+import com.artifactsmmo.core.task.CraftingExecutor
 import com.artifactsmmo.core.task.EventExecutor
 import com.artifactsmmo.core.task.FightingExecutor
 import com.artifactsmmo.core.task.GatheringExecutor
@@ -20,6 +21,7 @@ import com.artifactsmmo.engine.queue.TaskQueue
 import com.artifactsmmo.engine.realtime.EventTaskProducer
 import com.artifactsmmo.engine.realtime.LegacyEventPlanner
 import com.artifactsmmo.engine.realtime.LegacyRaidPlanner
+import com.artifactsmmo.engine.scheduler.OfferingTaskProducer
 import com.artifactsmmo.engine.scheduler.RaidTaskProducer
 import com.artifactsmmo.engine.scheduler.ScheduleRunner
 import com.artifactsmmo.engine.scheduler.ScheduleStore
@@ -27,9 +29,12 @@ import com.artifactsmmo.engine.worker.ApiCharacterView
 import com.artifactsmmo.engine.worker.BossFightExecutor
 import com.artifactsmmo.engine.worker.CharacterSettingsStore
 import com.artifactsmmo.engine.worker.CharacterWorker
+import com.artifactsmmo.engine.worker.DailyOfferingExecutor
 import com.artifactsmmo.engine.worker.GroupCoordinator
 import com.artifactsmmo.engine.worker.LegacyBossOps
 import com.artifactsmmo.engine.worker.LegacyExecutors
+import com.artifactsmmo.engine.worker.LegacyOfferingOps
+import com.artifactsmmo.engine.worker.OfferingBoard
 import com.artifactsmmo.engine.worker.WorkerControl
 import com.artifactsmmo.engine.worker.WorkerPool
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +54,7 @@ class Engine(
     private val schedules: ScheduleStore,
     private val scope: CoroutineScope,
     val logger: TaskLogger = TaskLogger(),
+    realtimeUrl: String = RealtimeClient.PRODUCTION_URL,
 ) {
     val configs = TypedConfigs(configStore)
     val control = WorkerControl()
@@ -58,7 +64,7 @@ class Engine(
     private val fighting = FightingExecutor(helper)
     val gearOptimizer get() = fighting.gearOptimizer
     val coop = CoopOptimizer(helper, fighting.gearOptimizer, client)
-    val webSocket = WebSocketManager(RealtimeClient(token), client.events, scope, bankState, log = { logger.log(it) })
+    val webSocket = WebSocketManager(RealtimeClient(token, realtimeUrl), client.events, scope, bankState, log = { logger.log(it) })
 
     lateinit var characters: List<String>
         private set
@@ -66,7 +72,11 @@ class Engine(
         private set
     lateinit var events: EventTaskProducer
         private set
+    /** Seasonal Altar overview/previews for the API. */
+    lateinit var offerings: OfferingBoard
+        private set
 
+    @OptIn(kotlin.time.ExperimentalTime::class)
     suspend fun start() {
         val achievements = runCatching {
             client.account.getCompletedAchievementCodes(client.account.getMyDetails().username)
@@ -81,11 +91,19 @@ class Engine(
         events = EventTaskProducer(webSocket.messages, queue, configs,
             LegacyEventPlanner(helper, fighting.gearOptimizer, coop, { characters }, log), log, reserver = bankState)
 
+        val gathering = GatheringExecutor(helper)
+        val crafting = CraftingExecutor(helper)
+        val offeringOps = LegacyOfferingOps(
+            helper, client.offerings, gathering, fighting, crafting,
+            findAltars = { client.content.getMaps(contentType = "seasonal_altar").data },
+        )
+        offerings = OfferingBoard(offeringOps, { client.offerings.getDaily() }, { characters })
         val registry = LegacyExecutors(
-            helper, gathering = GatheringExecutor(helper), fighting = fighting,
+            helper, gathering = gathering, fighting = fighting, crafting = crafting,
             event = EventExecutor(helper, fighting),
             eventActive = { events.isActive(it) },
             bossFights = BossFightExecutor(LegacyBossOps(helper, fighting), queue, GroupCoordinator()),
+            offerings = DailyOfferingExecutor(offeringOps),
         )
         val view = ApiCharacterView(helper)
         pool = WorkerPool(queue, characters.map { name ->
@@ -106,6 +124,7 @@ class Engine(
         RaidTaskProducer(queue, configs, { client.raids.getRaids().data }, LegacyRaidPlanner(coop),
             webSocket.messages, log = log, reserver = bankState).start(scope)
         ScheduleRunner(schedules, queue, log = log).start(scope)
+        OfferingTaskProducer(queue, configs, { characters }, log = log).start(scope)
         pool.start(scope)
         webSocket.start()
     }

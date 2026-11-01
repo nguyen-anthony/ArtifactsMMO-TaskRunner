@@ -104,6 +104,9 @@ class ArtifactsMMOClient(
     /** Scheduled raid definitions and active raid state. */
     val raids = RaidService(transport)
 
+    /** Season 9 Seasonal Altar daily offerings. */
+    val offerings = OfferingService(transport)
+
     /** True when this client points at the sandbox server (never production). */
     val isSandbox: Boolean = isSandboxUrl(baseUrl)
 

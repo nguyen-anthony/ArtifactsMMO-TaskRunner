@@ -41,6 +41,7 @@ export type TaskSpec =
   | { kind: 'event_gather'; eventCode: string; resourceCode: string; skill: string; map: EventMap }
   | { kind: 'event_npc'; eventCode: string; npcCode: string; map: EventMap; sell?: ItemQty[]; buy?: ItemQty[] }
   | { kind: 'event_fight'; eventCode: string; monsterCode: string; map: EventMap }
+  | { kind: 'daily_offering'; categories?: string[]; offeringId?: string | null }
 
 export type StopCondition =
   | { kind: 'count'; target: number }
@@ -69,6 +70,31 @@ export interface WorkerStatus {
 }
 
 export interface CharacterSettings { enabled: boolean; allowedTypes?: string[] | null; filler?: TaskSpec | null }
+/** Mirrors engine OfferingConfig (config kind `offering`, keyed by character). Missing = enabled, all categories. */
+export interface OfferingConfig { character: string; enabled?: boolean; categories?: string[]; priority?: number }
+export const OFFERING_CATEGORIES = ['combat', 'mining', 'woodcutting', 'fishing', 'alchemy',
+  'weaponcrafting', 'gearcrafting', 'jewelrycrafting', 'cooking'] as const
+
+/** Mirrors client SeasonalOffering (snake_case from the game API). */
+export interface SeasonalOffering {
+  id: string; category: string; type: string; level_min: number; level_max: number
+  requirement: { code: string; quantity: number }
+  favor: { target_type: string; target_code: string; xp_multiplier: number; drop_multiplier: number }
+}
+/** Mirrors engine OfferingOverview / CharacterOfferingRow / SelectedOfferingRow. */
+export interface OfferingOverview {
+  date: string; expiresAt: string; xpRewardPercent: number
+  offerings: SeasonalOffering[]
+  characters: {
+    name: string; levels: Record<string, number>; completedCategories: string[]; error?: string | null
+    selected: { offeringId: string; category: string; status: 'accepted' | 'completed' | string; rewardXp: number }[]
+  }[]
+}
+/** Mirrors engine OfferingPreview. */
+export interface OfferingPreview {
+  offeringId: string; character: string; kind: 'ready' | 'next' | 'infeasible'
+  nextStep?: string | null; estimatedSeconds?: number | null; reason?: string | null
+}
 export interface CharacterDto { name: string; status?: WorkerStatus; settings: CharacterSettings; level?: number; skills?: Record<string, number> }
 
 export interface LogLine { timestampMillis: number; character?: string; message: string }

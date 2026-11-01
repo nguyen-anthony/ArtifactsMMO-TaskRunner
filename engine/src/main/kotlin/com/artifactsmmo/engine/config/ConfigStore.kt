@@ -1,6 +1,7 @@
 package com.artifactsmmo.engine.config
 
 import com.artifactsmmo.core.task.EventConfig
+import com.artifactsmmo.core.task.OfferingConfig
 import com.artifactsmmo.core.task.RaidConfig
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -19,6 +20,7 @@ interface ConfigStore {
 object ConfigKinds {
     const val EVENT = "event"
     const val RAID = "raid"
+    const val OFFERING = "offering"
 }
 
 private val configJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -27,6 +29,10 @@ private val configJson = Json { ignoreUnknownKeys = true; encodeDefaults = true 
 class TypedConfigs(private val store: ConfigStore) {
     suspend fun events(): List<EventConfig> = decodeAll(ConfigKinds.EVENT, EventConfig.serializer())
     suspend fun raids(): List<RaidConfig> = decodeAll(ConfigKinds.RAID, RaidConfig.serializer())
+    suspend fun offerings(): List<OfferingConfig> = decodeAll(ConfigKinds.OFFERING, OfferingConfig.serializer())
+
+    suspend fun putOffering(c: OfferingConfig) =
+        store.put(ConfigKinds.OFFERING, c.character, configJson.encodeToJsonElement(OfferingConfig.serializer(), c))
 
     suspend fun putEvent(c: EventConfig) =
         store.put(ConfigKinds.EVENT, c.eventCode, configJson.encodeToJsonElement(EventConfig.serializer(), c))

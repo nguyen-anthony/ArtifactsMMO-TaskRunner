@@ -235,6 +235,9 @@ class CraftingExecutor(private val helper: ActionHelper) {
             char = helper.bankWithdrawItems(characterName, toWithdraw)
         }
 
+        // Cooking tools (Season 9): equip the best one, pulling a better one from the bank.
+        char = helper.ensureCraftingToolEquipped(characterName, task.skill, char, allowBank = !useInventoryOnly)
+
         // Move to workshop — use the character we already have (no extra refresh needed).
         val workshop = helper.findNearestWorkshop(char, task.skill)
             ?: return StepResult.Error("No ${task.skill} workshop found")

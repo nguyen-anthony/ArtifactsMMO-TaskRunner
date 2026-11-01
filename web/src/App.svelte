@@ -18,6 +18,7 @@
   import Configs from './pages/Configs.svelte'
   import Bank from './pages/Bank.svelte'
   import Logs from './pages/Logs.svelte'
+  import Offerings from './pages/Offerings.svelte'
 
   // Map of route -> component. The nav bar is generated from this too.
   const pages = {
@@ -26,6 +27,7 @@
     new: { title: 'New task', component: NewTask },
     characters: { title: 'Characters', component: Characters },
     configs: { title: 'Events & raids', component: Configs },
+    offerings: { title: 'Offerings', component: Offerings },
     bank: { title: 'Bank', component: Bank },
     logs: { title: 'Logs', component: Logs },
   } as const

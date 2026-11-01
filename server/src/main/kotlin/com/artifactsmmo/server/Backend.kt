@@ -44,8 +44,11 @@ class Backend(private val config: ServerConfig, private val dataSource: DataSour
                 lock = runCatching { InstanceLock.tryAcquire { Database.sessionConnection(config) } }.getOrNull()
                 if (lock == null) { log.info { "Another instance holds the engine lock; retrying in 15s" }; delay(15_000) }
             }
-            val e = Engine(ArtifactsMMOClient(token = token), token, queue, settings, configStore,
-                JdbcScheduleStore(dataSource), scope)
+            if (config.artifactsApiUrl != ServerConfig.DEFAULT_API_URL) {
+                log.warn { "Using non-production game API ${config.artifactsApiUrl} (realtime ${config.artifactsRealtimeUrl})" }
+            }
+            val e = Engine(ArtifactsMMOClient(token = token, baseUrl = config.artifactsApiUrl), token, queue, settings,
+                configStore, JdbcScheduleStore(dataSource), scope, realtimeUrl = config.artifactsRealtimeUrl)
             e.start()
             engine = e
             log.info { "Engine started for ${e.characters.joinToString()}" }

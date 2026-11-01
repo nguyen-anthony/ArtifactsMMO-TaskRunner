@@ -17,6 +17,9 @@ export function describeSpec(s: TaskSpec): string {
     case 'event_gather': return `Event gather ${s.resourceCode}`
     case 'event_npc': return `Event NPC ${s.npcCode}`
     case 'event_fight': return `Event fight ${s.monsterCode}`
+    case 'daily_offering': return s.offeringId
+      ? `Offering ${s.offeringId}`
+      : `Daily offerings${s.categories?.length ? ` (${s.categories.join(', ')})` : ''}`
   }
 }
 

@@ -34,6 +34,9 @@ object ErrorPolicy {
         486, 499 -> ErrorAction.WaitCooldown                // locked / in cooldown
         // Already true
         490, 485 -> ErrorAction.Benign                      // already on map / already equipped
+        574, 576 -> ErrorAction.Benign                      // offering category already completed / selected today
+        577 -> ErrorAction.Replan(ReplanReason.TASK_STATE)  // offering not accepted yet
+        575 -> ErrorAction.Replan(ReplanReason.NOT_ACTIVE)  // offering rotated out / unavailable
         // Re-plan
         497 -> ErrorAction.Replan(ReplanReason.INVENTORY_FULL)
         478, 480 -> ErrorAction.Replan(ReplanReason.MISSING_ITEM)

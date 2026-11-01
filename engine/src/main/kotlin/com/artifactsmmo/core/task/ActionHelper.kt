@@ -568,12 +568,9 @@ class ActionHelper(
 
         if (item.type !in neverDepositTypes) return true // resource, consumable, etc.
 
-        // Gathering tool: deposit only if a better one for the same skill is already owned
+        // Skill tool: deposit only if a better one for the same skill is already owned
         if (item.type == "weapon" && item.subtype == "tool") {
-            val gatheringSkills = listOf("mining", "woodcutting", "fishing", "alchemy")
-            val toolSkill = gatheringSkills.firstOrNull { skill ->
-                item.effects.any { it.code == skill }
-            } ?: return false // Unknown tool type — keep it to be safe
+            val toolSkill = ToolEffects.skillOf(item) ?: return false // Unknown tool type — keep it to be safe
 
             val bestTool = findBestToolInInventory(char, toolSkill) ?: return false
             // Deposit this tool only if a different (better) tool is the best for this skill
@@ -978,7 +975,7 @@ class ActionHelper(
      * Food items never auto-selected as combat healing, even if no other food is available
      * (e.g. `coconut`: kept for alchemy/potion crafting, not eaten in fights).
      */
-    private val FOOD_EXCLUDED_FROM_COMBAT = setOf("coconut")
+    private val FOOD_EXCLUDED_FROM_COMBAT = setOf("coconut", "lava_fish")
 
     /**
      * Find the best food item in the character's inventory (highest heal amount)
@@ -1300,17 +1297,10 @@ class ActionHelper(
 
     // ── Tool management ──
 
-    /**
-     * Check if a weapon item is a tool for the given gathering skill.
-     * Tools have an effect with the skill name (e.g., "fishing", "mining", "woodcutting")
-     * that reduces gathering cooldown.
-     */
-    private fun isToolForSkill(item: Item, skill: String): Boolean {
-        return item.type == "weapon" && item.effects.any { it.code == skill }
-    }
+    private fun isToolForSkill(item: Item, skill: String): Boolean = ToolEffects.isToolFor(item, skill)
 
     /**
-     * Find the best tool in the character's inventory for a given gathering skill.
+     * Find the best tool in the character's inventory for a given tool skill (see [ToolEffects]).
      * Returns the item, or null if none found.
      */
     suspend fun findBestToolInInventory(char: Character, skill: String): Item? {
@@ -1335,8 +1325,7 @@ class ActionHelper(
         // Filter to items the character actually has (inventory + currently equipped)
         val ownedTools = allTools.filter { it.code in ownedCodes }
 
-        // Return the highest level tool
-        return ownedTools.maxByOrNull { it.level }
+        return ownedTools.maxWithOrNull(ToolEffects.comparator(skill))
     }
 
     /**
@@ -1359,6 +1348,22 @@ class ActionHelper(
         // Equipping over the current weapon unequips it automatically.
         char = equip(name, bestTool.code, "weapon")
         return char
+    }
+
+    /**
+     * Before crafting in [skill], equip its best crafting tool (only cooking has them; see
+     * [ToolEffects.CRAFTING_TOOL_SKILLS]). Inventory/equipped tools are always considered; with
+     * [allowBank] a better tool sitting in the bank is withdrawn first. The weapon it replaces
+     * stays in the inventory, so gathering/fight loops can re-equip it. No-op for other skills.
+     */
+    suspend fun ensureCraftingToolEquipped(name: String, skill: String, char: Character, allowBank: Boolean): Character {
+        if (skill !in ToolEffects.CRAFTING_TOOL_SKILLS) return char
+        var current = char
+        if (allowBank) {
+            val upgrade = runCatching { findReadyMadeToolInBank(current, skill) }.getOrNull()
+            if (upgrade != null) current = bankWithdrawItems(name, listOf(SimpleItem(upgrade.tool.code, 1)))
+        }
+        return ensureToolEquipped(name, skill, existingChar = current)
     }
 
     /**
@@ -1385,26 +1390,22 @@ class ActionHelper(
         val allTools = contentCache.getItemsByType("weapon")
             .filter { it.level <= skillLevel && isToolForSkill(it, skill) }
 
-        // Determine current best tool level (equipped or in inventory)
+        // Determine the current best tool (equipped or in inventory)
+        val cmp = ToolEffects.comparator(skill)
         val currentBest = findBestToolInInventory(char, skill)
-        val currentEquipped = if (char.weaponSlot.isNotEmpty()) {
-            allTools.find { it.code == char.weaponSlot }
-        } else null
-        val currentBestLevel = maxOf(currentBest?.level ?: 0, currentEquipped?.level ?: 0)
 
-        // Early exit: if the character is already using the highest-level tool available
-        // for their current skill level, no upgrade is possible — skip the bank sweep.
-        val highestPossibleLevel = allTools.maxOfOrNull { it.level } ?: 0
-        if (currentBestLevel >= highestPossibleLevel) return null
+        // Early exit: already using the best tool usable at this skill level — skip the bank sweep.
+        val bestPossible = allTools.maxWithOrNull(cmp) ?: return null
+        if (currentBest != null && cmp.compare(currentBest, bestPossible) >= 0) return null
 
         // Read from shared BankState snapshot.
         val bankItems = bankState.snapshot.value
 
         // Find the best tool in the bank that's better than what we have
         val bestInBank = allTools
-            .filter { it.level > currentBestLevel }
+            .filter { currentBest == null || cmp.compare(it, currentBest) > 0 }
             .filter { (bankItems[it.code] ?: 0) >= 1 }
-            .maxByOrNull { it.level }
+            .maxWithOrNull(cmp)
             ?: return null
 
         return ToolUpgradeInfo(

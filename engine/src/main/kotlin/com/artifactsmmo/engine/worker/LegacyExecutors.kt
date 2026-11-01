@@ -34,12 +34,17 @@ class LegacyExecutors(
     private val eventActive: (String) -> Boolean = { true },
     /** Needed for boss/raid groups; null = boss fights unsupported. */
     private val bossFights: BossFightExecutor? = null,
+    /** Seasonal Altar daily offerings; null = unsupported. */
+    private val offerings: TaskExecutor? = null,
 ) : ExecutorRegistry {
 
     private val executor = Adapter()
 
-    override fun forSpec(spec: TaskSpec): TaskExecutor? =
-        if (spec is TaskSpec.BossFight) bossFights else executor
+    override fun forSpec(spec: TaskSpec): TaskExecutor? = when (spec) {
+        is TaskSpec.BossFight -> bossFights
+        is TaskSpec.DailyOffering -> offerings
+        else -> executor
+    }
 
     private inner class Adapter : TaskExecutor {
 

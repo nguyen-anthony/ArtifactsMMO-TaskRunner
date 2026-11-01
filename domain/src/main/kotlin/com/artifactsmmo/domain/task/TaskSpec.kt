@@ -130,6 +130,19 @@ sealed class TaskSpec {
         val defaultDropStrategy: DropStrategy = DropStrategy.BANK_RAW,
     ) : TaskSpec()
 
+    /**
+     * Today's Seasonal Altar offerings: per category, accept a bracket, source the required
+     * items (gather/craft/fight) and complete it. Done when every selected category is
+     * completed or skipped, or the day rolls over.
+     */
+    @Serializable @SerialName("daily_offering")
+    data class DailyOffering(
+        /** Offering categories to do ("combat", "mining", ...); empty = all of today's. */
+        val categories: List<String> = emptyList(),
+        /** A specific offering of today's rotation (manual assignment); overrides [categories]. */
+        val offeringId: String? = null,
+    ) : TaskSpec()
+
     /** The event code if this is an event task (used to stop it when the event ends). */
     fun eventCodeOrNull(): String? = when (this) {
         is EventGather -> eventCode
@@ -153,7 +166,7 @@ sealed class TaskSpec {
             "InventoryDeposit" to "inventory_deposit", "InventoryRecycle" to "inventory_recycle",
             "BulkBankWithdraw" to "bulk_bank_withdraw", "BulkInventoryDeposit" to "bulk_inventory_deposit",
             "BossFight" to "boss_fight", "EventGather" to "event_gather", "EventNpc" to "event_npc",
-            "EventFight" to "event_fight",
+            "EventFight" to "event_fight", "DailyOffering" to "daily_offering",
         )
     }
 }

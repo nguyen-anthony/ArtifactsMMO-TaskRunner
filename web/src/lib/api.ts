@@ -5,6 +5,7 @@
 import type {
   Catalog, CharacterDto, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
   StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult, NpcItem,
+  OfferingOverview, OfferingPreview,
 } from './types'
 
 export class ApiError extends Error {
@@ -33,6 +34,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export interface CreateTask {
   spec: TaskSpec; priority?: number; assignedCharacter?: string
   requirements?: TaskRequirements; stopCondition?: StopCondition
+  dedupeKey?: string; expiresAtMillis?: number
 }
 
 export const api = {
@@ -52,9 +54,13 @@ export const api = {
   characterDetails: (name: string) => request<Record<string, any>>('GET', `/characters/${name}/details`),
   saveSettings: (name: string, s: CharacterSettings) => request<CharacterSettings>('PUT', `/characters/${name}/settings`, s),
 
-  configs: (kind: 'event' | 'raid') => request<Record<string, any>>('GET', `/configs/${kind}`),
+  configs: (kind: 'event' | 'raid' | 'offering') => request<Record<string, any>>('GET', `/configs/${kind}`),
   saveConfig: (kind: string, key: string, value: unknown) => request<void>('PUT', `/configs/${kind}/${key}`, value),
   deleteConfig: (kind: string, key: string) => request<void>('DELETE', `/configs/${kind}/${key}`),
+
+  offerings: () => request<OfferingOverview>('GET', '/offerings'),
+  offeringPreview: (character: string, offeringId: string) =>
+    request<OfferingPreview>('GET', `/offerings/${encodeURIComponent(character)}/plan/${encodeURIComponent(offeringId)}`),
 
   bank: () => request<{ code: string; quantity: number }[]>('GET', '/bank'),
   rates: () => request<{ buckets: Record<string, RateWindow[]> }>('GET', '/rates'),

@@ -1,7 +1,9 @@
 package com.artifactsmmo.server.api
 
 import kotlinx.coroutines.flow.sample
+import com.artifactsmmo.client.ArtifactsApiException
 import com.artifactsmmo.engine.worker.ApiCharacterView
+import com.artifactsmmo.engine.worker.OfferingBoard
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -167,6 +169,28 @@ fun Route.apiRoutes(b: ApiBackend) {
                 filler = dto.filler?.let { NewTask(type = it.typeName, spec = it.toJson()) },
             ))
             call.respond(b.settings.get(name).toDto())
+        }
+    }
+
+    // ── Seasonal Altar offerings (Season 9) ────────────────────────────────
+    route("/offerings") {
+        get {
+            val e = b.engine ?: return@get call.engineDown()
+            try {
+                call.respond(e.offerings.overview())
+            } catch (ex: ArtifactsApiException) {
+                call.respond(HttpStatusCode.BadGateway, ApiError(OfferingBoard.explain(ex)))
+            }
+        }
+        get("/{name}/plan/{offeringId}") {
+            val e = b.engine ?: return@get call.engineDown()
+            val name = call.parameters["name"]!!
+            validateCharacter(b, name)?.let { return@get call.badRequest(it) }
+            try {
+                call.respond(e.offerings.preview(name, call.parameters["offeringId"]!!))
+            } catch (ex: ArtifactsApiException) {
+                call.respond(HttpStatusCode.BadGateway, ApiError(OfferingBoard.explain(ex)))
+            }
         }
     }
 

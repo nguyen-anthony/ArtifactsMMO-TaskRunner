@@ -19,8 +19,15 @@ data class ServerConfig(
     val adminApiKey: String?,
     /** Mark the session cookie Secure (HTTPS only). Disable only for local http testing. */
     val cookieSecure: Boolean = true,
+    /** Game API base URL; override to run against the beta/sandbox servers. */
+    val artifactsApiUrl: String = DEFAULT_API_URL,
+    /** Realtime WebSocket URL matching [artifactsApiUrl]. */
+    val artifactsRealtimeUrl: String = DEFAULT_REALTIME_URL,
 ) {
     companion object {
+        const val DEFAULT_API_URL = "https://api.artifactsmmo.com"
+        const val DEFAULT_REALTIME_URL = "wss://realtime.artifactsmmo.com"
+
         /**
          * Reads `KEY=value` lines from a `.env` file (for local `./gradlew :server:run`).
          * Blank lines and `#` comments are skipped; surrounding quotes are stripped.
@@ -48,6 +55,8 @@ data class ServerConfig(
             artifactsToken = env["ARTIFACTS_TOKEN"]?.takeIf { it.isNotBlank() },
             adminApiKey = env["ADMIN_API_KEY"]?.takeIf { it.isNotBlank() },
             cookieSecure = env["COOKIE_SECURE"]?.lowercase() != "false",
+            artifactsApiUrl = env["ARTIFACTS_API_URL"]?.takeIf { it.isNotBlank() }?.trimEnd('/') ?: DEFAULT_API_URL,
+            artifactsRealtimeUrl = env["ARTIFACTS_REALTIME_URL"]?.takeIf { it.isNotBlank() } ?: DEFAULT_REALTIME_URL,
         )
     }
 }

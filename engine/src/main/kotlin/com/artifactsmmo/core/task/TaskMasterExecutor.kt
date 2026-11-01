@@ -361,57 +361,10 @@ class TaskMasterExecutor(
         monsterCode: String,
         onStatus: (String) -> Unit
     ) {
-        onStatus("Optimizing loadout for $monsterCode...")
-        val char = helper.refreshCharacter(characterName)
-        val result = try {
-            fightingExecutor.optimizeGearForMonster(characterName, char, monsterCode)
-        } catch (e: Exception) {
-            onStatus("Optimization failed: ${e.message}")
-            return
-        }
-
-        // New in-game task = fresh start: bank the previous monster's drops, food and any
-        // loose gear before swapping. Keep what the new plan equips from inventory.
-        val plannedUtilityCodes = result.utilityActions.filter { it.quantity > 0 }.map { it.itemCode }.toSet()
+        // New in-game task = fresh start: the shared prep banks the previous monster's drops,
+        // food and loose gear before swapping.
+        val result = fightingExecutor.prepareLoadoutForMonster(characterName, monsterCode, onStatus) ?: return
         plannedUtilities[characterName] = monsterCode to result.utilityActions
-        val keep = result.equipActions.filter { it.source == "inventory" }.map { it.itemCode }.toSet() +
-            plannedUtilityCodes
-        try {
-            onStatus("Depositing inventory before $monsterCode task...")
-            helper.depositInventoryExcept(characterName, keep, char)
-        } catch (e: Exception) {
-            onStatus("Pre-task deposit failed: ${e.message}")
-        }
-
-        if (result.equipActions.isNotEmpty()) {
-            onStatus("Swapping ${result.equipActions.size} equipment piece(s) for $monsterCode...")
-            try {
-                helper.retrieveAndEquipItems(characterName, result.equipActions)
-            } catch (e: Exception) {
-                onStatus("Equip swap failed: ${e.message}")
-            }
-        } else {
-            onStatus("Gear already optimal for $monsterCode")
-        }
-
-        if (result.utilityActions.isNotEmpty()) {
-            onStatus("Applying ${result.utilityActions.size} utility potion(s) for $monsterCode...")
-            try {
-                helper.retrieveAndEquipUtilities(characterName, result.utilityActions)
-            } catch (e: Exception) {
-                onStatus("Utility equip failed: ${e.message}")
-            }
-        }
-
-        // Gear swapped out from inventory lands back in inventory; bank it. The character is
-        // normally still at the bank from the deposit above, so this costs no walk.
-        try {
-            helper.depositInventoryExcept(characterName, plannedUtilityCodes)
-        } catch (e: Exception) {
-            onStatus("Post-swap deposit failed: ${e.message}")
-        }
-
-        fightingExecutor.gearOptimizer.markOptimized(characterName, monsterCode)
     }
 
     // ── Item Task Fulfillment ──

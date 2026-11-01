@@ -7,6 +7,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 export default defineConfig({
   plugins: [svelte()],
   server: {
-    proxy: { '/api': { target: 'http://localhost:8080', changeOrigin: false } },
+    // VITE_API_TARGET points a second dev UI at another backend (e.g. a beta instance on :8081).
+    proxy: { '/api': { target: process.env.VITE_API_TARGET ?? 'http://localhost:8080', changeOrigin: false } },
   },
 })

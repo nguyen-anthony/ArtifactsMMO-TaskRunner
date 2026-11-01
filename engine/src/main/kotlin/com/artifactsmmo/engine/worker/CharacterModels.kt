@@ -66,7 +66,7 @@ object TaskRules {
         "gather", "event_gather" -> s.gathers
         "fight", "event_fight", "boss_fight" -> s.fightsWon
         "craft" -> s.crafted
-        "task_master" -> s.tasksCompleted
+        "task_master", "daily_offering" -> s.tasksCompleted
         else -> 0
     }
 }
