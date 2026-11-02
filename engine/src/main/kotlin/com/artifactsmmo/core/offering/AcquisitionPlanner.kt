@@ -152,17 +152,22 @@ class AcquisitionPlanner(
     }
 }
 
-/** Hybrid bracket choice: the character's own bracket if feasible, else the cheapest feasible one. */
+/**
+ * Hybrid bracket choice: the character's own bracket if feasible, else the cheapest feasible bracket
+ * at or below its level. Higher brackets are never chosen, even when their requirement happens to be
+ * obtainable at a low level (e.g. algae from a level-1 fishing spot in a level-30 salmon bracket).
+ */
 object BracketChooser {
     data class Candidate<T>(val offering: T, val levelMin: Int, val levelMax: Int, val plan: AcquirePlan)
 
     fun <T> choose(level: Int, candidates: List<Candidate<T>>): Candidate<T>? {
         if (candidates.isEmpty()) return null
         val sorted = candidates.sortedBy { it.levelMin }
-        val matching = sorted.firstOrNull { level in it.levelMin..it.levelMax }
-            ?: if (level < sorted.first().levelMin) sorted.first() else sorted.last()
+        // Below every bracket: the lowest one is the only reasonable choice.
+        val eligible = sorted.filter { it.levelMin <= level }.ifEmpty { sorted.filter { it.levelMin == sorted.first().levelMin } }
+        val matching = eligible.firstOrNull { level in it.levelMin..it.levelMax } ?: eligible.last()
         if (matching.plan !is AcquirePlan.Infeasible) return matching
-        return candidates
+        return eligible
             .filter { it.plan !is AcquirePlan.Infeasible }
             .minByOrNull { it.plan.estimatedSecondsOrNull ?: Double.MAX_VALUE }
     }

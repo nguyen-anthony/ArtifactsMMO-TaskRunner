@@ -151,6 +151,10 @@ class AcquisitionPlannerTest {
         assertEquals("21", BracketChooser.choose(25, listOf(c(10, 20, cheap), c(21, 30, ok)))?.offering)
         assertEquals("10", BracketChooser.choose(25, listOf(c(10, 20, cheap), c(21, 30, no), c(31, 40, ok)))?.offering)
         assertEquals("10", BracketChooser.choose(1, listOf(c(10, 20, ok), c(21, 30, cheap)))?.offering)
+        assertNull(BracketChooser.choose(1, listOf(c(10, 20, no), c(21, 30, cheap))))
+        // Own bracket infeasible: never fall back to a higher bracket, even a cheap one (algae in a salmon bracket).
+        assertNull(BracketChooser.choose(1, listOf(c(1, 10, no), c(30, 40, cheap))))
+        assertEquals("1", BracketChooser.choose(15, listOf(c(1, 10, ok), c(11, 20, no), c(30, 40, cheap)))?.offering)
         assertEquals("41", BracketChooser.choose(50, listOf(c(10, 20, cheap), c(41, 50, ok)))?.offering)
         assertNull(BracketChooser.choose(25, listOf(c(10, 20, no), c(21, 30, no))))
     }

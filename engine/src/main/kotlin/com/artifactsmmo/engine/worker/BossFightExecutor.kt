@@ -114,7 +114,7 @@ class BossFightExecutor(
     private val ops: BossOps,
     private val queue: TaskQueue,
     private val coordinator: GroupCoordinator,
-    private val deathLimit: Int = 3,
+    private val deathLimit: Int = 9,
 ) : TaskExecutor {
 
     override suspend fun start(ctx: ExecContext) {

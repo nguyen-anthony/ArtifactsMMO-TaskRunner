@@ -20,7 +20,7 @@
         },
         {
             "eventCode": "nomadic_merchant",
-            "enabled": true,
+            "enabled": false,
             "itemsToSell": [
                 {
                     "code": "golden_egg",
@@ -73,14 +73,14 @@
         },
         {
             "eventCode": "magic_apparition",
-            "enabled": true,
+            "enabled": false,
             "eligibleCharacters": [
                 "Olivia"
             ]
         },
         {
             "eventCode": "strange_apparition",
-            "enabled": true,
+            "enabled": false,
             "eligibleCharacters": [
                 "Shuckle",
                 "Shella"
@@ -109,7 +109,7 @@
         },
         {
             "eventCode": "corrupted_portal",
-            "enabled": true,
+            "enabled": false,
             "eligibleCharacters": [
                 "Ront",
                 "Shella",
@@ -128,7 +128,7 @@
         },
         {
             "eventCode": "corrupted_owlbear",
-            "enabled": true,
+            "enabled": false,
             "eligibleCharacters": [
                 "Ront",
                 "Shella",
@@ -140,7 +140,7 @@
         },
         {
             "eventCode": "corrupted_ogre",
-            "enabled": true,
+            "enabled": false,
             "eligibleCharacters": [
                 "Ront",
                 "Shella",
@@ -152,7 +152,7 @@
         },
         {
             "eventCode": "cult_of_darkness",
-            "enabled": true,
+            "enabled": false,
             "eligibleCharacters": [
                 "Ront",
                 "Shella",
@@ -165,7 +165,7 @@
         },
         {
             "eventCode": "silent_night",
-            "enabled": true,
+            "enabled": false,
             "eligibleCharacters": [
                 "Ront"
             ]

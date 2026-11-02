@@ -2,7 +2,7 @@
     "raids": [
         {
             "raidCode": "enchanted_fairy",
-            "enabled": true,
+            "enabled": false,
             "initiatorName": "Ront",
             "participantNames": [
                 "Shella",

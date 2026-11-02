@@ -1,6 +1,75 @@
 {
   "data": [
     {
+      "name": "Altar Doll",
+      "code": "altar_doll",
+      "level": 1,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A doll blessed by the seasonal altar.",
+      "conditions": [],
+      "effects": [
+        {
+          "code": "mining_gathering",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character mines a resource."
+        },
+        {
+          "code": "woodcutting_gathering",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character logs a tree."
+        },
+        {
+          "code": "fishing_gathering",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character is fishing."
+        },
+        {
+          "code": "alchemy_gathering",
+          "value": -10,
+          "description": "Reduces cooldown by -10% when a character harvest a plant."
+        },
+        {
+          "code": "weaponcrafting_crafting",
+          "value": -10,
+          "description": "Reduces total weaponcrafting crafting time by -10%."
+        },
+        {
+          "code": "gearcrafting_crafting",
+          "value": -10,
+          "description": "Reduces total gearcrafting crafting time by -10%."
+        },
+        {
+          "code": "jewelrycrafting_crafting",
+          "value": -10,
+          "description": "Reduces total jewelrycrafting crafting time by -10%."
+        },
+        {
+          "code": "cooking_crafting",
+          "value": -10,
+          "description": "Reduces total cooking crafting time by -10%."
+        },
+        {
+          "code": "woodcutting_crafting",
+          "value": -10,
+          "description": "Reduces total woodcutting crafting time by -10%."
+        },
+        {
+          "code": "mining_crafting",
+          "value": -10,
+          "description": "Reduces total mining crafting time by -10%."
+        },
+        {
+          "code": "alchemy_crafting",
+          "value": -10,
+          "description": "Reduces total alchemy crafting time by -10%."
+        }
+      ],
+      "craft": null,
+      "tradeable": false,
+      "recyclable": false
+    },
+    {
       "name": "Novice Guide",
       "code": "novice_guide",
       "level": 10,
@@ -33,76 +102,6 @@
       ],
       "craft": null,
       "tradeable": false,
-      "recyclable": false
-    },
-    {
-      "name": "Lich Race Medal",
-      "code": "lich_race_medal",
-      "level": 10,
-      "type": "artifact",
-      "subtype": "",
-      "description": "These medals were awarded to every competitor in the Lich Race, once the greatest competition in the region. Rumor has it they still hold a mysterious power.",
-      "conditions": [
-        {
-          "code": "level",
-          "operator": "gt",
-          "value": 9
-        }
-      ],
-      "effects": [
-        {
-          "code": "dmg",
-          "value": 5,
-          "description": "Adds 5% Damage to its stats when equipped."
-        },
-        {
-          "code": "initiative",
-          "value": 100,
-          "description": "Adds 100 Initiative to its stats when equipped."
-        },
-        {
-          "code": "prospecting",
-          "value": 25,
-          "description": "Adds 25 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
-        }
-      ],
-      "craft": null,
-      "tradeable": true,
-      "recyclable": false
-    },
-    {
-      "name": "Lich Race Trophy",
-      "code": "lich_race_trophy",
-      "level": 20,
-      "type": "artifact",
-      "subtype": "",
-      "description": "This trophy was awarded to Rosenstjerne after he discovered the first Artifact in history. Long since abandoned by its champion, it still carries the power to turn any adventurer into one.",
-      "conditions": [
-        {
-          "code": "level",
-          "operator": "gt",
-          "value": 19
-        }
-      ],
-      "effects": [
-        {
-          "code": "dmg",
-          "value": 20,
-          "description": "Adds 20% Damage to its stats when equipped."
-        },
-        {
-          "code": "critical_strike",
-          "value": 5,
-          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
-        },
-        {
-          "code": "prospecting",
-          "value": 50,
-          "description": "Adds 50 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
-        }
-      ],
-      "craft": null,
-      "tradeable": true,
       "recyclable": false
     },
     {
@@ -222,8 +221,8 @@
       "effects": [
         {
           "code": "dmg",
-          "value": 6,
-          "description": "Adds 6% Damage to its stats when equipped."
+          "value": 8,
+          "description": "Adds 8% Damage to its stats when equipped."
         }
       ],
       "craft": null,
@@ -231,12 +230,12 @@
       "recyclable": false
     },
     {
-      "name": "Topaz Book",
-      "code": "topaz_book",
+      "name": "Altar Totem",
+      "code": "altar_totem",
       "level": 40,
       "type": "artifact",
       "subtype": "",
-      "description": "A heavy tome adorned with topaz gems that feel as solid as the earth itself. Its pages contain ancient earth magic.",
+      "description": "A totem blessed by the seasonal altar.",
       "conditions": [
         {
           "code": "level",
@@ -246,22 +245,52 @@
       ],
       "effects": [
         {
-          "code": "dmg_earth",
+          "code": "dmg",
           "value": 20,
-          "description": "Adds 20% Earth Damage to its stats when equipped."
+          "description": "Adds 20% Damage to its stats when equipped."
+        },
+        {
+          "code": "prospecting",
+          "value": 50,
+          "description": "Adds 50 Prospecting to its stats when equipped. Each PP increases your chance of obtaining drops in combat and with skills. (1% extra per 10 PP)"
+        },
+        {
+          "code": "critical_strike",
+          "value": 5,
+          "description": "Adds 5% Critical Strike to its stats when equipped. Critical strikes adds 50% extra damage to an attack (1.5x). "
+        },
+        {
+          "code": "res_fire",
+          "value": 5,
+          "description": "Adds 5% Fire Res to its stats when equipped."
+        },
+        {
+          "code": "res_earth",
+          "value": 5,
+          "description": "Adds 5% Earth Res to its stats when equipped."
+        },
+        {
+          "code": "res_water",
+          "value": 5,
+          "description": "Adds 5% Water Res to its stats when equipped."
+        },
+        {
+          "code": "res_air",
+          "value": 5,
+          "description": "Adds 5% Air Res to its stats when equipped."
         }
       ],
       "craft": null,
-      "tradeable": true,
+      "tradeable": false,
       "recyclable": false
     },
     {
-      "name": "Sapphire Book",
-      "code": "sapphire_book",
+      "name": "Ruby Book",
+      "code": "ruby_book",
       "level": 40,
       "type": "artifact",
       "subtype": "",
-      "description": "A book with sapphires that seem to ripple like water on its cover. The pages are always cool to the touch.",
+      "description": "An ancient tome bound in leather with a ruby embedded in its cover. The pages contain fire magic that few can comprehend.",
       "conditions": [
         {
           "code": "level",
@@ -271,9 +300,9 @@
       ],
       "effects": [
         {
-          "code": "dmg_water",
+          "code": "dmg_fire",
           "value": 20,
-          "description": "Adds 20% Water Damage to its stats when equipped."
+          "description": "Adds 20% Fire Damage to its stats when equipped."
         }
       ],
       "craft": null,
@@ -306,12 +335,12 @@
       "recyclable": false
     },
     {
-      "name": "Ruby Book",
-      "code": "ruby_book",
+      "name": "Sapphire Book",
+      "code": "sapphire_book",
       "level": 40,
       "type": "artifact",
       "subtype": "",
-      "description": "An ancient tome bound in leather with a ruby embedded in its cover. The pages contain fire magic that few can comprehend.",
+      "description": "A book with sapphires that seem to ripple like water on its cover. The pages are always cool to the touch.",
       "conditions": [
         {
           "code": "level",
@@ -321,9 +350,34 @@
       ],
       "effects": [
         {
-          "code": "dmg_fire",
+          "code": "dmg_water",
           "value": 20,
-          "description": "Adds 20% Fire Damage to its stats when equipped."
+          "description": "Adds 20% Water Damage to its stats when equipped."
+        }
+      ],
+      "craft": null,
+      "tradeable": true,
+      "recyclable": false
+    },
+    {
+      "name": "Topaz Book",
+      "code": "topaz_book",
+      "level": 40,
+      "type": "artifact",
+      "subtype": "",
+      "description": "A heavy tome adorned with topaz gems that feel as solid as the earth itself. Its pages contain ancient earth magic.",
+      "conditions": [
+        {
+          "code": "level",
+          "operator": "gt",
+          "value": 39
+        }
+      ],
+      "effects": [
+        {
+          "code": "dmg_earth",
+          "value": 20,
+          "description": "Adds 20% Earth Damage to its stats when equipped."
         }
       ],
       "craft": null,
@@ -363,6 +417,6 @@
   ],
   "total": 13,
   "page": 1,
-  "size": 50,
+  "size": 1000,
   "pages": 1
 }
