@@ -143,6 +143,13 @@ sealed class TaskSpec {
         val offeringId: String? = null,
     ) : TaskSpec()
 
+    /**
+     * Bring the character's tool kit in line with the tool-kit allocation: bank tools that are
+     * assigned elsewhere (or spare copies) and withdraw the assigned tools that are in the bank.
+     */
+    @Serializable @SerialName("toolkit_sync")
+    data object ToolKitSync : TaskSpec()
+
     /** The event code if this is an event task (used to stop it when the event ends). */
     fun eventCodeOrNull(): String? = when (this) {
         is EventGather -> eventCode
@@ -167,6 +174,7 @@ sealed class TaskSpec {
             "BulkBankWithdraw" to "bulk_bank_withdraw", "BulkInventoryDeposit" to "bulk_inventory_deposit",
             "BossFight" to "boss_fight", "EventGather" to "event_gather", "EventNpc" to "event_npc",
             "EventFight" to "event_fight", "DailyOffering" to "daily_offering",
+                        "ToolKitSync" to "toolkit_sync",
         )
     }
 }

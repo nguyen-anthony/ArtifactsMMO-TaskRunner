@@ -20,6 +20,7 @@ export function describeSpec(s: TaskSpec): string {
     case 'daily_offering': return s.offeringId
       ? `Offering ${s.offeringId}`
       : `Daily offerings${s.categories?.length ? ` (${s.categories.join(', ')})` : ''}`
+    case 'toolkit_sync': return 'Sync tool kit'
   }
 }
 

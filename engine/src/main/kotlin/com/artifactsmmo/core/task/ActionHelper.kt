@@ -43,6 +43,12 @@ class ActionHelper(
     internal var completedAchievements: Set<String> = emptySet()
     internal val teleportAdvisor = TeleportAdvisor(contentCache, bankState)
 
+    /**
+     * Current tool kit allocation (set by the tool kit producer; null = disabled). When it
+     * manages a skill, [findReadyMadeToolInBank] only hands a character its assigned tool.
+     */
+    @Volatile var toolKitPlan: ToolKitPlan? = null
+
     // ── Cooldown ──
 
     suspend fun waitForCooldown(expiration: Instant) {
@@ -1401,8 +1407,15 @@ class ActionHelper(
         // Read from shared BankState snapshot.
         val bankItems = bankState.snapshot.value
 
+        // With a tool kit, only the tool assigned to this character may be taken (others are
+        // earmarked for higher-priority characters).
+        val plan = toolKitPlan?.takeIf { it.manages(char.name, skill) }
+        val assigned = plan?.assignedTool(char.name, skill)
+        if (plan != null && assigned == null) return null
+
         // Find the best tool in the bank that's better than what we have
         val bestInBank = allTools
+            .filter { assigned == null || it.code == assigned }
             .filter { currentBest == null || cmp.compare(it, currentBest) > 0 }
             .filter { (bankItems[it.code] ?: 0) >= 1 }
             .maxWithOrNull(cmp)

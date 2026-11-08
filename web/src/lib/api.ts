@@ -5,7 +5,7 @@
 import type {
   Catalog, CharacterDto, CharacterProfile, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
   StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult, NpcItem,
-  OfferingOverview, OfferingPreview, KnownLoadout,
+  OfferingOverview, OfferingPreview, KnownLoadout, ToolKitConfig, ToolKitState,
 } from './types'
 
 export class ApiError extends Error {
@@ -72,6 +72,9 @@ export const api = {
     request<{ removed: number }>('DELETE', `/loadouts?${new URLSearchParams(
       Object.entries(filter).map(([k, v]) => [k, String(v)]),
     )}`),
+  toolKit: () => request<ToolKitState>('GET', '/toolkit'),
+  saveToolKit: (c: ToolKitConfig) => request<ToolKitState>('PUT', '/toolkit', c),
+  refreshToolKit: () => request<ToolKitState>('POST', '/toolkit/refresh'),
   rates: () => request<{ buckets: Record<string, RateWindow[]> }>('GET', '/rates'),
   logs: (character?: string) => request<LogLine[]>('GET', `/logs?limit=300${character ? `&character=${character}` : ''}`),
   resume: () => request<void>('POST', '/control/resume'),

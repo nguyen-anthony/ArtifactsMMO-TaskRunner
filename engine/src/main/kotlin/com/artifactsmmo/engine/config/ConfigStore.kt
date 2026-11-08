@@ -3,6 +3,7 @@ package com.artifactsmmo.engine.config
 import com.artifactsmmo.core.task.EventConfig
 import com.artifactsmmo.core.task.OfferingConfig
 import com.artifactsmmo.core.task.RaidConfig
+import com.artifactsmmo.core.task.ToolKitConfig
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -21,6 +22,7 @@ object ConfigKinds {
     const val EVENT = "event"
     const val RAID = "raid"
     const val OFFERING = "offering"
+    const val TOOLKIT = "toolkit"
 }
 
 private val configJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -30,6 +32,15 @@ class TypedConfigs(private val store: ConfigStore) {
     suspend fun events(): List<EventConfig> = decodeAll(ConfigKinds.EVENT, EventConfig.serializer())
     suspend fun raids(): List<RaidConfig> = decodeAll(ConfigKinds.RAID, RaidConfig.serializer())
     suspend fun offerings(): List<OfferingConfig> = decodeAll(ConfigKinds.OFFERING, OfferingConfig.serializer())
+
+    /** The tool kit document; defaults when missing or unreadable. */
+    suspend fun toolKit(): ToolKitConfig =
+        store.list(ConfigKinds.TOOLKIT)[ToolKitConfig.KEY]
+            ?.let { runCatching { configJson.decodeFromJsonElement(ToolKitConfig.serializer(), it) }.getOrNull() }
+            ?: ToolKitConfig()
+
+    suspend fun putToolKit(c: ToolKitConfig) =
+        store.put(ConfigKinds.TOOLKIT, ToolKitConfig.KEY, configJson.encodeToJsonElement(ToolKitConfig.serializer(), c))
 
     suspend fun putOffering(c: OfferingConfig) =
         store.put(ConfigKinds.OFFERING, c.character, configJson.encodeToJsonElement(OfferingConfig.serializer(), c))

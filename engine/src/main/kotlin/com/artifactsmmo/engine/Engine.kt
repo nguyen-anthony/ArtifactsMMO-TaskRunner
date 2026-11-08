@@ -14,6 +14,8 @@ import com.artifactsmmo.core.task.GatheringExecutor
 import com.artifactsmmo.core.task.MonsterProfileStore
 import com.artifactsmmo.core.task.TaskLogger
 import com.artifactsmmo.core.task.TeleportPotionStore
+import com.artifactsmmo.core.task.ToolEffects
+import com.artifactsmmo.core.task.ToolKitPlan
 import com.artifactsmmo.core.task.WebSocketManager
 import com.artifactsmmo.engine.config.ConfigStore
 import com.artifactsmmo.engine.config.TypedConfigs
@@ -25,6 +27,7 @@ import com.artifactsmmo.engine.scheduler.OfferingTaskProducer
 import com.artifactsmmo.engine.scheduler.RaidTaskProducer
 import com.artifactsmmo.engine.scheduler.ScheduleRunner
 import com.artifactsmmo.engine.scheduler.ScheduleStore
+import com.artifactsmmo.engine.scheduler.ToolKitProducer
 import com.artifactsmmo.engine.worker.ApiCharacterView
 import com.artifactsmmo.engine.worker.BossFightExecutor
 import com.artifactsmmo.engine.worker.CharacterSettingsStore
@@ -35,6 +38,8 @@ import com.artifactsmmo.engine.worker.LegacyBossOps
 import com.artifactsmmo.engine.worker.LegacyExecutors
 import com.artifactsmmo.engine.worker.LegacyOfferingOps
 import com.artifactsmmo.engine.worker.OfferingBoard
+import com.artifactsmmo.engine.worker.ToolKitSyncExecutor
+import com.artifactsmmo.engine.worker.toolHolderOf
 import com.artifactsmmo.engine.worker.WorkerControl
 import com.artifactsmmo.engine.worker.WorkerPool
 import kotlinx.coroutines.CoroutineScope
@@ -82,6 +87,21 @@ class Engine(
         legacyExecutors?.forgetLoadout(character)
     }
 
+    /** Recomputes the tool kit plan and queues syncs/recycles (also runs every 2 minutes). */
+    val toolKit = ToolKitProducer(
+        queue, configs,
+        holders = {
+            client.characters.getMyCharacters().map { c -> toolHolderOf(c) { contentCache.getItemOrNull(it) } }
+        },
+        tools = { contentCache.getItemsByType("weapon").filter { ToolEffects.skillOf(it) != null } },
+        bank = { bankState.snapshot.value },
+        onPlan = { helper.toolKitPlan = it },
+        log = { logger.log(it) },
+    )
+
+    /** The tool kit allocation in force (null = disabled or not computed yet). */
+    val toolKitPlan: ToolKitPlan? get() = helper.toolKitPlan
+
     @OptIn(kotlin.time.ExperimentalTime::class)
     suspend fun start() {
         val achievements = runCatching {
@@ -110,6 +130,7 @@ class Engine(
             eventActive = { events.isActive(it) },
             bossFights = BossFightExecutor(LegacyBossOps(helper, fighting), queue, GroupCoordinator()),
             offerings = DailyOfferingExecutor(offeringOps),
+            toolKitSync = ToolKitSyncExecutor(helper),
         )
         legacyExecutors = registry
         val view = ApiCharacterView(helper)
@@ -132,6 +153,7 @@ class Engine(
             webSocket.messages, log = log, reserver = bankState).start(scope)
         ScheduleRunner(schedules, queue, log = log).start(scope)
         OfferingTaskProducer(queue, configs, { characters }, log = log).start(scope)
+        toolKit.start(scope)
         pool.start(scope)
         webSocket.start()
     }

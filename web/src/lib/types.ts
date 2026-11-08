@@ -42,6 +42,7 @@ export type TaskSpec =
   | { kind: 'event_npc'; eventCode: string; npcCode: string; map: EventMap; sell?: ItemQty[]; buy?: ItemQty[] }
   | { kind: 'event_fight'; eventCode: string; monsterCode: string; map: EventMap }
   | { kind: 'daily_offering'; categories?: string[]; offeringId?: string | null }
+  | { kind: 'toolkit_sync' }
 
 export type StopCondition =
   | { kind: 'count'; target: number }
@@ -129,6 +130,30 @@ export interface Catalog {
 
 /** What an NPC trades: `buyPrice` = we can buy it, `sellPrice` = we can sell it to them. */
 export interface NpcItem { code: string; currency: string; buyPrice: number | null; sellPrice: number | null }
+
+export const TOOL_SKILLS = ['mining', 'woodcutting', 'fishing', 'alchemy', 'cooking'] as const
+/** Mirrors engine `ToolKitConfig` (config kind `toolkit`, key `default`). */
+export interface ToolKitConfig {
+  enabled: boolean
+  skills: string[]
+  /** Claim order; unlisted characters follow in roster order. */
+  priority: string[]
+  perSkillPriority: Record<string, string[]>
+  recycleSurplus: boolean
+  spares: number
+  syncPriority: number
+  recyclePriority: number
+}
+/** Mirrors engine `ToolKitPlan`. */
+export interface ToolKitPlan {
+  skills: string[]
+  /** character -> skill -> assigned tool code */
+  assignments: Record<string, Record<string, string>>
+  actions: Record<string, { deposit: Record<string, number>; withdraw: string[] }>
+  surplus: Record<string, number>
+  computedAtMillis: number
+}
+export interface ToolKitState { config: ToolKitConfig; plan: ToolKitPlan | null }
 
 /** Mirrors engine `KnownLoadout` (known_loadouts.json, served by /api/loadouts). */
 export interface KnownLoadout {

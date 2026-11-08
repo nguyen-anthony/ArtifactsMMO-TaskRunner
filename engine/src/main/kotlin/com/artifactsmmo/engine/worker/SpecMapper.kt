@@ -60,6 +60,7 @@ object SpecMapper {
         )
         is TaskSpec.BossFight -> error("Boss fights need group context; use SpecMapper.bossFight")
         is TaskSpec.DailyOffering -> error("Daily offerings have a dedicated executor")
+        is TaskSpec.ToolKitSync -> error("Tool kit sync has a dedicated executor")
     }
 
     /**

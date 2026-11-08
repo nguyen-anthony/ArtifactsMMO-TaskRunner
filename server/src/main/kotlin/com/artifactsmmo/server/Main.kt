@@ -10,6 +10,7 @@ import com.artifactsmmo.server.api.apiRoutes
 import com.artifactsmmo.server.api.contentAndSimRoutes
 import com.artifactsmmo.server.api.craftableRoutes
 import com.artifactsmmo.server.api.loadoutRoutes
+import com.artifactsmmo.server.api.toolKitRoutes
 import com.artifactsmmo.server.api.authRoutes
 import com.artifactsmmo.server.api.installSessions
 import io.ktor.http.HttpStatusCode
@@ -92,6 +93,7 @@ fun Application.module(
                 contentAndSimRoutes(backend)
                 craftableRoutes(backend)
                 loadoutRoutes(backend)
+                toolKitRoutes(backend)
             }
         }
     }

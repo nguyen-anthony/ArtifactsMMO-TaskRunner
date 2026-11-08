@@ -36,6 +36,8 @@ class LegacyExecutors(
     private val bossFights: BossFightExecutor? = null,
     /** Seasonal Altar daily offerings; null = unsupported. */
     private val offerings: TaskExecutor? = null,
+    /** Tool kit sync (see [ToolKitSyncExecutor]); null = unsupported. */
+    private val toolKitSync: TaskExecutor? = null,
 ) : ExecutorRegistry {
 
     private val executor = Adapter()
@@ -46,6 +48,7 @@ class LegacyExecutors(
     override fun forSpec(spec: TaskSpec): TaskExecutor? = when (spec) {
         is TaskSpec.BossFight -> bossFights
         is TaskSpec.DailyOffering -> offerings
+        is TaskSpec.ToolKitSync -> toolKitSync
         else -> executor
     }
 
