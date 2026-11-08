@@ -14,7 +14,7 @@ import com.artifactsmmo.core.task.DropStrategy as LegacyDropStrategy
  * worker and persistence are new.
  */
 object SpecMapper {
-    fun toLegacy(spec: TaskSpec, craftedSoFar: Int = 0): TaskType = when (spec) {
+    fun toLegacy(spec: TaskSpec, craftedSoFar: Int = 0, recycledSoFar: Int = 0): TaskType = when (spec) {
         is TaskSpec.Gather -> TaskType.Gather(
             skill = spec.skill, resourceCode = spec.resourceCode, resourceName = spec.resourceName,
             targetItemCode = spec.targetItemCode, targetItemName = spec.targetItemName,
@@ -35,7 +35,7 @@ object SpecMapper {
         )
         is TaskSpec.TaskMaster -> TaskType.TaskMaster(spec.taskType)
         is TaskSpec.BankWithdraw -> TaskType.BankWithdraw(spec.itemCode, spec.itemName, spec.quantity)
-        is TaskSpec.BankRecycle -> TaskType.BankRecycle(spec.itemCode, spec.itemName, spec.quantity, spec.craftSkill)
+        is TaskSpec.BankRecycle -> TaskType.BankRecycle(spec.itemCode, spec.itemName, spec.quantity, spec.craftSkill, recycledSoFar)
         is TaskSpec.InventoryDeposit -> TaskType.InventoryDeposit(spec.itemCode, spec.itemName, spec.quantity)
         is TaskSpec.InventoryRecycle -> TaskType.InventoryRecycle(spec.itemCode, spec.itemName, spec.quantity, spec.craftSkill)
         is TaskSpec.BulkBankWithdraw -> TaskType.BulkBankWithdraw(spec.items.map { SimpleItem(it.code, it.quantity) })

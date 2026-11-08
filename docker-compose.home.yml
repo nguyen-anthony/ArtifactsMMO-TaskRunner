@@ -1,0 +1,7 @@
+# Home PC overlay (see deploy/HOME.md):
+#   docker compose -f docker-compose.yml -f docker-compose.home.yml up -d --build
+# Publishes the web UI on localhost only; Tailscale `serve` adds HTTPS and remote access.
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:8088:80"

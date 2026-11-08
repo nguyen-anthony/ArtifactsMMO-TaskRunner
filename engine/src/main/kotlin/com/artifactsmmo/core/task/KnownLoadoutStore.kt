@@ -33,31 +33,66 @@ private data class KnownLoadoutData(
     val loadouts: List<KnownLoadout> = emptyList()
 )
 
-/** Persistent, versioned store for API-validated solo fight loadouts. */
+/**
+ * Persistent, versioned store for API-validated solo fight loadouts. Every call reads the file,
+ * so separate instances (each GearOptimizer, the web API) stay consistent; [LOCK] serializes
+ * read-modify-write across them.
+ */
 class KnownLoadoutStore(private val file: File = File("known_loadouts.json")) {
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
     }
 
-    @Synchronized
     fun find(characterName: String, exactLevel: Int, monsterCode: String, optimizerVersion: String): KnownLoadout? =
-        loadAll().firstOrNull {
-            it.characterName == characterName &&
-                it.exactLevel == exactLevel &&
-                it.monsterCode == monsterCode &&
-                it.optimizerVersion == optimizerVersion
+        synchronized(LOCK) {
+            loadAll().firstOrNull {
+                it.characterName == characterName &&
+                    it.exactLevel == exactLevel &&
+                    it.monsterCode == monsterCode &&
+                    it.optimizerVersion == optimizerVersion
+            }
         }
 
-    @Synchronized
-    fun put(loadout: KnownLoadout) {
-        val retained = loadAll().filterNot {
-            it.characterName == loadout.characterName &&
-                it.exactLevel == loadout.exactLevel &&
-                it.monsterCode == loadout.monsterCode &&
-                it.optimizerVersion == loadout.optimizerVersion
-        }
+    fun put(loadout: KnownLoadout) = synchronized(LOCK) {
+        val retained = loadAll().filterNot { it.sameKey(loadout) }
         save(retained + loadout)
+    }
+
+    fun all(): List<KnownLoadout> = synchronized(LOCK) { loadAll() }
+
+    /** Removes every matching loadout; returns how many were removed. */
+    fun removeWhere(predicate: (KnownLoadout) -> Boolean): Int = synchronized(LOCK) {
+        val all = loadAll()
+        val retained = all.filterNot(predicate)
+        if (retained.size != all.size) save(retained)
+        all.size - retained.size
+    }
+
+    /**
+     * Replaces the gear/utilities of the loadout with [edited]'s key, recomputing its required
+     * items. Returns the stored loadout, or null if no loadout has that key. Edited loadouts are
+     * still verified by a fight simulation before the optimizer reuses them.
+     */
+    fun edit(edited: KnownLoadout): KnownLoadout? = synchronized(LOCK) {
+        val all = loadAll()
+        val existing = all.firstOrNull { it.sameKey(edited) } ?: return null
+        val gear = edited.gear.filterValues { it.isNotBlank() }
+        val utilities = edited.utilities.filterValues { it.code.isNotBlank() && it.quantity > 0 }
+        val required = mutableMapOf<String, Int>()
+        gear.values.forEach { required.merge(it, 1, Int::plus) }
+        utilities.values.forEach { required.merge(it.code, it.quantity, Int::plus) }
+        val updated = existing.copy(gear = gear, utilities = utilities, requiredItems = required)
+        save(all.map { if (it.sameKey(edited)) updated else it })
+        updated
+    }
+
+    private fun KnownLoadout.sameKey(o: KnownLoadout) =
+        characterName == o.characterName && exactLevel == o.exactLevel &&
+            monsterCode == o.monsterCode && optimizerVersion == o.optimizerVersion
+
+    private companion object {
+        val LOCK = Any()
     }
 
     private fun loadAll(): List<KnownLoadout> {

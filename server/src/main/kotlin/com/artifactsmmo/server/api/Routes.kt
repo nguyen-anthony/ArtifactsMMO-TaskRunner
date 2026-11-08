@@ -154,6 +154,11 @@ fun Route.apiRoutes(b: ApiBackend) {
                 }.awaitAll()
             })
         }
+        // Full game state of every character in one upstream call (dashboard stats drawer preload).
+        get("/profiles") {
+            val e = b.engine ?: return@get call.engineDown()
+            call.respond(e.client.characters.getMyCharacters().filter { it.name in e.characters })
+        }
         get("/{name}/details") {
             val e = b.engine ?: return@get call.engineDown()
             val name = call.parameters["name"]!!

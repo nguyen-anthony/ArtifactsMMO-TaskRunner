@@ -133,7 +133,7 @@
         return { kind, monsterCode, equip, utilities, loadoutOptimized: equip.length > 0 }
       case 'craft':
         if (!item?.craftSkill) return null
-        return { kind, skill: item.craftSkill, itemCode, itemName: item.name, mode, targetQuantity: mode === 'BANK' ? quantity : 0 }
+        return { kind, skill: item.craftSkill, itemCode, itemName: item.name, mode, targetQuantity: quantity }
       case 'task_master':
         return { kind, taskType }
       case 'bank_withdraw':
@@ -215,11 +215,9 @@
     <label>Mode
       <select bind:value={mode}><option value="BANK">Craft &amp; bank</option><option value="RECYCLE">Craft &amp; recycle (XP)</option></select>
     </label>
-    {#if mode === 'BANK'}
-      <label>Quantity{selectedRecipe ? ` (max ${selectedRecipe.maxCraftable})` : ''}
-        <input type="number" min="1" bind:value={quantity} />
-      </label>
-    {/if}
+    <label>Quantity{selectedRecipe ? ` (max ${selectedRecipe.maxCraftable})` : ''}
+      <input type="number" min="1" bind:value={quantity} />
+    </label>
     <button class="small" onclick={() => refreshNonce++} title="Recount materials" disabled={recipesLoading}>↻</button>
     {#if recipesError}<span class="error">Materials: {recipesError}</span>{/if}
   {:else if kind === 'task_master'}
@@ -242,7 +240,7 @@
 
 {#if kind === 'craft' && selectedRecipe}
   <div class="small ingredients">
-    {#if mode === 'BANK' && quantity > selectedRecipe.maxCraftable}
+    {#if quantity > selectedRecipe.maxCraftable}
       <div class="warn">Only {selectedRecipe.maxCraftable} craftable right now — the task will stop when materials run out.</div>
     {/if}
     {#each selectedRecipe.ingredients as ing}

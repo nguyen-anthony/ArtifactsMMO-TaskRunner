@@ -51,6 +51,14 @@ class FightingExecutor(private val helper: ActionHelper) {
      */
     private val weaponOptimisedForMonster = mutableMapOf<String, String?>()
 
+    /**
+     * Forget the per-character weapon check. Called whenever a task is (re)claimed: anything
+     * that ran in between (e.g. gathering equips a pickaxe as the weapon) may have changed gear.
+     */
+    fun forgetLoadout(characterName: String) {
+        weaponOptimisedForMonster.remove(characterName)
+    }
+
     /** Gear optimizer — used by TaskMaster and the re-optimize button. */
     val gearOptimizer = GearOptimizer(helper)
 

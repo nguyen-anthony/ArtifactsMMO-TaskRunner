@@ -46,6 +46,630 @@
             "validatedWinRate": 1.0,
             "averageWinTurns": 28.66,
             "validatedAtEpochMs": 1793641275984
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 9,
+            "monsterCode": "green_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "wooden_staff",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "wooden_staff": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 16.88,
+            "validatedAtEpochMs": 1793656657653
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 10,
+            "monsterCode": "green_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "wooden_staff",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "wooden_staff": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 16.9,
+            "validatedAtEpochMs": 1793661374537
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 11,
+            "monsterCode": "yellow_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "sticky_sword",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "sticky_sword": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 16.54,
+            "validatedAtEpochMs": 1793677575166
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 11,
+            "monsterCode": "blue_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "copper_dagger",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "copper_dagger": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 28.44,
+            "validatedAtEpochMs": 1793678057121
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 12,
+            "monsterCode": "yellow_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 6.44,
+            "validatedAtEpochMs": 1793686778974
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 12,
+            "monsterCode": "chicken",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 5.68,
+            "validatedAtEpochMs": 1793688507409
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 12,
+            "monsterCode": "sheep",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 12.42,
+            "validatedAtEpochMs": 1793690325713
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 13,
+            "monsterCode": "sheep",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 12.26,
+            "validatedAtEpochMs": 1793700782081
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 13,
+            "monsterCode": "blue_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "sticky_sword",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "sticky_sword": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 14.14,
+            "validatedAtEpochMs": 1793705430805
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 13,
+            "monsterCode": "red_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 11.68,
+            "validatedAtEpochMs": 1793709659563
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 5,
+            "monsterCode": "chicken",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 5.72,
+            "validatedAtEpochMs": 1793731468620
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 6,
+            "monsterCode": "chicken",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 5.6,
+            "validatedAtEpochMs": 1793732518051
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 7,
+            "monsterCode": "chicken",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 5.54,
+            "validatedAtEpochMs": 1793735440086
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 7,
+            "monsterCode": "sheep",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 12.36,
+            "validatedAtEpochMs": 1793735804257
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 8,
+            "monsterCode": "sheep",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 12.16,
+            "validatedAtEpochMs": 1793738675159
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 9,
+            "monsterCode": "sheep",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 12.3,
+            "validatedAtEpochMs": 1793750356584
+        },
+        {
+            "characterName": "Shella",
+            "exactLevel": 10,
+            "monsterCode": "sheep",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "amulet": "life_amulet",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "life_amulet": 1,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 12.5,
+            "validatedAtEpochMs": 1793754496295
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 14,
+            "monsterCode": "blue_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "sticky_sword",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "amulet": "life_amulet",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "sticky_sword": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "life_amulet": 1,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 14.48,
+            "validatedAtEpochMs": 1793755459436
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 14,
+            "monsterCode": "sheep",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "amulet": "life_amulet",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "life_amulet": 1,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 12.28,
+            "validatedAtEpochMs": 1793755827781
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 14,
+            "monsterCode": "red_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "amulet": "life_amulet",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "life_amulet": 1,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 11.46,
+            "validatedAtEpochMs": 1793759467596
+        },
+        {
+            "characterName": "Ront",
+            "exactLevel": 14,
+            "monsterCode": "yellow_slime",
+            "optimizerVersion": "loadout-beam-v3",
+            "gear": {
+                "weapon": "water_bow",
+                "shield": "wooden_shield",
+                "helmet": "copper_helmet",
+                "body_armor": "feather_coat",
+                "leg_armor": "copper_legs_armor",
+                "boots": "copper_boots",
+                "ring1": "copper_ring",
+                "ring2": "copper_ring",
+                "amulet": "life_amulet",
+                "artifact1": "novice_guide"
+            },
+            "requiredItems": {
+                "water_bow": 1,
+                "wooden_shield": 1,
+                "copper_helmet": 1,
+                "feather_coat": 1,
+                "copper_legs_armor": 1,
+                "copper_boots": 1,
+                "copper_ring": 2,
+                "life_amulet": 1,
+                "novice_guide": 1
+            },
+            "validatedWinRate": 1.0,
+            "averageWinTurns": 6.54,
+            "validatedAtEpochMs": 1793938494426
         }
     ]
 }

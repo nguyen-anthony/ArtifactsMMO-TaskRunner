@@ -975,7 +975,7 @@ class ActionHelper(
      * Food items never auto-selected as combat healing, even if no other food is available
      * (e.g. `coconut`: kept for alchemy/potion crafting, not eaten in fights).
      */
-    private val FOOD_EXCLUDED_FROM_COMBAT = setOf("coconut", "lava_fish")
+    private val FOOD_EXCLUDED_FROM_COMBAT = setOf("coconut", "lava_fish", "apple")
 
     /**
      * Find the best food item in the character's inventory (highest heal amount)

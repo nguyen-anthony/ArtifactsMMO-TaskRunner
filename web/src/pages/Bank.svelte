@@ -1,6 +1,7 @@
 <!-- Bank contents with a search box, plus quick "withdraw to character" and API rate usage. -->
 <script lang="ts">
   import { api } from '../lib/api'
+  import { catalog } from '../lib/catalog'
   import { live } from '../lib/live.svelte'
   import type { CharacterDto, RateWindow } from '../lib/types'
 
@@ -34,6 +35,30 @@
     } catch (e: any) { error = e.message }
   }
 
+  // Only weapon/gear/jewelry crafts can be recycled; code -> { name, craftSkill }.
+  const RECYCLABLE = new Set(['weaponcrafting', 'gearcrafting', 'jewelrycrafting'])
+  let recyclable = $state<Record<string, { name: string; craftSkill: string }>>({})
+  catalog().then((c) => {
+    recyclable = Object.fromEntries(
+      c.items.filter((i) => i.craftSkill && RECYCLABLE.has(i.craftSkill))
+        .map((i) => [i.code, { name: i.name, craftSkill: i.craftSkill! }]),
+    )
+  }).catch(() => {})
+
+  async function recycle(code: string, have: number) {
+    const info = recyclable[code]
+    if (!info) return
+    const q = Math.min(Number(prompt(`Recycle how many ${info.name} (bank has ${have}) with ${target}?`, String(have))), have)
+    if (!q || q < 1) return
+    try {
+      const t = await api.createTask({
+        spec: { kind: 'bank_recycle', itemCode: code, itemName: info.name, quantity: q, craftSkill: info.craftSkill },
+        assignedCharacter: target, priority: 60,
+      })
+      message = `Queued recycle task #${t.id} (${q}× ${info.name}, batched to fit ${target}'s inventory)`
+    } catch (e: any) { error = e.message }
+  }
+
   const windowLabel = (ms: number) => (ms >= 3_600_000 ? '/h' : ms >= 60_000 ? '/min' : '/s')
 </script>
 
@@ -48,7 +73,7 @@
 
 <div class="row" style="margin-bottom:12px">
   <label>Search <input bind:value={filter} placeholder="item code" /></label>
-  <label>Withdraw to
+  <label>Character
     <select bind:value={target}>{#each characters as c}<option>{c.name}</option>{/each}</select>
   </label>
   {#if message}<span>{message}</span>{/if}
@@ -60,7 +85,10 @@
     <thead><tr><th>Item</th><th>Quantity</th><th></th></tr></thead>
     <tbody>
       {#each shown as i (i.code)}
-        <tr><td>{i.code}</td><td>{i.quantity}</td><td><button onclick={() => withdraw(i.code)}>Withdraw</button></td></tr>
+        <tr><td>{i.code}</td><td>{i.quantity}</td><td>
+          <button onclick={() => withdraw(i.code)}>Withdraw</button>
+          {#if recyclable[i.code]}<button onclick={() => recycle(i.code, i.quantity)}>Recycle</button>{/if}
+        </td></tr>
       {/each}
     </tbody>
   </table>

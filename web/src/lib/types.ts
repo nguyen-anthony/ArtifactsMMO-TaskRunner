@@ -32,7 +32,7 @@ export type TaskSpec =
   | { kind: 'craft'; skill: string; itemCode: string; itemName?: string; mode: 'RECYCLE' | 'BANK'; targetQuantity?: number }
   | { kind: 'task_master'; taskType: 'items' | 'monsters' }
   | { kind: 'bank_withdraw'; itemCode: string; quantity: number }
-  | { kind: 'bank_recycle'; itemCode: string; quantity: number; craftSkill: string }
+  | { kind: 'bank_recycle'; itemCode: string; quantity: number; craftSkill: string; itemName?: string }
   | { kind: 'inventory_deposit'; itemCode: string; quantity: number }
   | { kind: 'inventory_recycle'; itemCode: string; quantity: number; craftSkill: string }
   | { kind: 'bulk_bank_withdraw'; items: ItemQty[] }
@@ -97,6 +97,21 @@ export interface OfferingPreview {
 }
 export interface CharacterDto { name: string; status?: WorkerStatus; settings: CharacterSettings; level?: number; skills?: Record<string, number> }
 
+/**
+ * Raw game character (client models/Character.kt, snake_case like the game API). Per-skill
+ * fields (`<skill>_level`, `_xp`, `_max_xp`), element fields (`attack_<el>`, `dmg_<el>`,
+ * `res_<el>`) and slots (`<slot>_slot`) are read dynamically via the index signature.
+ */
+export interface CharacterProfile {
+  name: string; skin: string; level: number; xp: number; max_xp: number; gold: number
+  hp: number; max_hp: number; haste: number; critical_strike: number; wisdom: number
+  prospecting: number; initiative: number; threat: number; speed: number; dmg: number
+  effects: { code: string; value: number }[]
+  task: string; task_type: string; task_progress: number; task_total: number
+  inventory_max_items: number; inventory: { slot: number; code: string; quantity: number }[]
+  [key: string]: any
+}
+
 export interface LogLine { timestampMillis: number; character?: string; message: string }
 export interface Me { loggedIn: boolean; engineRunning: boolean; paused?: string }
 export interface RateWindow { limit: number; windowMillis: number; used: number }
@@ -114,6 +129,22 @@ export interface Catalog {
 
 /** What an NPC trades: `buyPrice` = we can buy it, `sellPrice` = we can sell it to them. */
 export interface NpcItem { code: string; currency: string; buyPrice: number | null; sellPrice: number | null }
+
+/** Mirrors engine `KnownLoadout` (known_loadouts.json, served by /api/loadouts). */
+export interface KnownLoadout {
+  characterName: string
+  exactLevel: number
+  monsterCode: string
+  optimizerVersion: string
+  /** slot ('weapon', 'ring1', ...) -> item code */
+  gear: Record<string, string>
+  /** slot ('utility1'/'utility2') -> potion and quantity */
+  utilities: Record<string, { code: string; quantity: number }>
+  requiredItems: Record<string, number>
+  validatedWinRate: number
+  averageWinTurns?: number | null
+  validatedAtEpochMs: number
+}
 
 /** Mirrors engine `EventConfig` / `EventGroupConfig` (stored under /configs/event). */
 export interface EventGroupConfig {

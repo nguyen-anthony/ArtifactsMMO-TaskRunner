@@ -3,9 +3,9 @@
  * HttpOnly session cookie automatically; we never see or store the key/token in JS.
  */
 import type {
-  Catalog, CharacterDto, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
+  Catalog, CharacterDto, CharacterProfile, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
   StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult, NpcItem,
-  OfferingOverview, OfferingPreview,
+  OfferingOverview, OfferingPreview, KnownLoadout,
 } from './types'
 
 export class ApiError extends Error {
@@ -51,7 +51,8 @@ export const api = {
   cancelTask: (id: number) => request<void>('POST', `/tasks/${id}/cancel`, { reason: 'cancelled from web UI' }),
 
   characters: () => request<CharacterDto[]>('GET', '/characters'),
-  characterDetails: (name: string) => request<Record<string, any>>('GET', `/characters/${name}/details`),
+  characterProfiles: () => request<CharacterProfile[]>('GET', '/characters/profiles'),
+  characterDetails: (name: string) => request<CharacterProfile>('GET', `/characters/${name}/details`),
   saveSettings: (name: string, s: CharacterSettings) => request<CharacterSettings>('PUT', `/characters/${name}/settings`, s),
 
   configs: (kind: 'event' | 'raid' | 'offering') => request<Record<string, any>>('GET', `/configs/${kind}`),
@@ -63,6 +64,14 @@ export const api = {
     request<OfferingPreview>('GET', `/offerings/${encodeURIComponent(character)}/plan/${encodeURIComponent(offeringId)}`),
 
   bank: () => request<{ code: string; quantity: number }[]>('GET', '/bank'),
+
+  loadouts: () => request<KnownLoadout[]>('GET', '/loadouts'),
+  saveLoadout: (l: KnownLoadout) => request<KnownLoadout>('PUT', '/loadouts', l),
+  /** Filters: character, monster, level, version (at least one), or { all: 'true' }. */
+  deleteLoadouts: (filter: Record<string, string | number>) =>
+    request<{ removed: number }>('DELETE', `/loadouts?${new URLSearchParams(
+      Object.entries(filter).map(([k, v]) => [k, String(v)]),
+    )}`),
   rates: () => request<{ buckets: Record<string, RateWindow[]> }>('GET', '/rates'),
   logs: (character?: string) => request<LogLine[]>('GET', `/logs?limit=300${character ? `&character=${character}` : ''}`),
   resume: () => request<void>('POST', '/control/resume'),

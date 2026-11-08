@@ -133,7 +133,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
             // Second pass: compute the actual batch size, then buy exactly that much
             val remaining = when (task.mode) {
                 CraftMode.BANK    -> (task.targetQuantity - task.craftedSoFar).coerceAtLeast(1)
-                CraftMode.RECYCLE -> if (task.craftedSoFar == 0) task.targetQuantity else Int.MAX_VALUE
+                CraftMode.RECYCLE -> firstRecycleBatchCap(task)
             }
             val totalIngredientsPerCraft = recipe.items.sumOf { it.quantity }
             val freeSlots = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity } - RESERVED_INVENTORY_HEADROOM).coerceAtLeast(0)
@@ -194,9 +194,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
                 if (r <= 0) return StepResult.CraftTaskComplete
                 r
             }
-            CraftMode.RECYCLE -> {
-                if (task.craftedSoFar == 0) task.targetQuantity else Int.MAX_VALUE
-            }
+            CraftMode.RECYCLE -> firstRecycleBatchCap(task)
         }
 
         // Calculate batch size based on inventory capacity
@@ -277,6 +275,13 @@ class CraftingExecutor(private val helper: ActionHelper) {
      */
     private fun loadBankSnapshot(): Map<String, Int> =
         helper.getBankSnapshot()
+
+    /**
+     * RECYCLE cap: the first batch is limited to the chosen quantity; a quantity of 0 (or less)
+     * means "as many as materials allow". Later batches only use recovered materials.
+     */
+    private fun firstRecycleBatchCap(task: TaskType.Craft): Int =
+        if (task.craftedSoFar == 0 && task.targetQuantity > 0) task.targetQuantity else Int.MAX_VALUE
 
     /**
      * After crafting in RECYCLE mode: recycle the crafted items at the same workshop.

@@ -38,6 +38,12 @@ class TaskMasterExecutor(
 
     /** Character → (monster, utilities planned for it), so monster-task fights keep them topped up. */
     private val plannedUtilities = java.util.concurrent.ConcurrentHashMap<String, Pair<String, List<GearOptimizer.UtilityEquipAction>>>()
+    /**
+     * Character → (monster, combat level) the loadout was last prepared for. A monster task that
+     * was resumed (restart/preemption) or re-accepted after deaths, or a level-up mid-task, is
+     * re-optimized before the next fight.
+     */
+    private val loadoutPreparedFor = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Int>>()
     /** How often to check for tool upgrades (10 minutes). */
     private val upgradeCheckIntervalMs = 10 * 60 * 1000L
 
@@ -56,6 +62,16 @@ class TaskMasterExecutor(
      * low win-rate would be. Session-scoped.
      */
     private val blacklistedMonsterCodes = mutableSetOf<String>()
+
+    /**
+     * Forget which loadout is prepared, so the next monster-task step re-optimizes. Called on
+     * every claim: a preempting task (gathering equips a pickaxe as the weapon, stat gear, …)
+     * may have changed the gear while the monster/level pair stayed the same.
+     */
+    fun forgetLoadout(characterName: String) {
+        loadoutPreparedFor.remove(characterName)
+        fightingExecutor.forgetLoadout(characterName)
+    }
 
     /**
      * Blacklist a monster code so it will be cancelled if assigned as a task again.
@@ -270,7 +286,7 @@ class TaskMasterExecutor(
             // Skip simulation if we already know this monster is beatable
             if (monsterCode in acceptedMonsterCodes) {
                 onStatus("$monsterCode previously verified — skipping simulation")
-                optimiseForMonster(characterName, monsterCode, onStatus)
+                optimiseForMonster(characterName, monsterCode, char.level, onStatus)
                 return StepResult.Waiting
             }
 
@@ -302,7 +318,7 @@ class TaskMasterExecutor(
             } catch (e: Exception) {
                 onStatus("Simulation failed (${e.message}), proceeding with task")
                 acceptedMonsterCodes.add(monsterCode) // treat as viable to avoid retrying
-                optimiseForMonster(characterName, monsterCode, onStatus)
+                optimiseForMonster(characterName, monsterCode, char.level, onStatus)
                 return StepResult.Waiting
             }
 
@@ -314,10 +330,28 @@ class TaskMasterExecutor(
             val sourceLabel = if (isLocalResult) "local sim" else "API sim"
             onStatus("Win rate vs $monsterCode: ${"%.0f".format(winRate * 100)}% ($sourceLabel, threshold: ${"%.0f".format(requiredWinRate * 100)}%)")
 
-            if (winRate >= requiredWinRate) {
+            // The current gear may just be wrong for this monster — check the optimized loadout
+            // (cached in known_loadouts.json) before paying a tasks_coin to cancel.
+            var viable = winRate >= requiredWinRate
+            if (!viable) {
+                onStatus("Checking optimized gear vs $monsterCode...")
+                val optimized = try {
+                    fightingExecutor.optimizeGearForMonster(characterName, char, monsterCode).optimizedScore.winRate
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    onStatus("Gear optimization failed: ${e.message}")
+                    null
+                }
+                if (optimized != null) {
+                    onStatus("Optimized win rate vs $monsterCode: ${"%.0f".format(optimized * 100)}%")
+                    viable = optimized >= OPTIMIZED_MIN_WINRATE
+                }
+            }
+
+            if (viable) {
                 onStatus("Win rate acceptable, proceeding with $monsterCode task")
                 acceptedMonsterCodes.add(monsterCode)
-                optimiseForMonster(characterName, monsterCode, onStatus)
+                optimiseForMonster(characterName, monsterCode, char.level, onStatus)
                 return StepResult.Waiting
             }
 
@@ -359,8 +393,11 @@ class TaskMasterExecutor(
     private suspend fun optimiseForMonster(
         characterName: String,
         monsterCode: String,
+        level: Int,
         onStatus: (String) -> Unit
     ) {
+        // Recorded even on failure so a failing optimizer isn't retried before every fight.
+        loadoutPreparedFor[characterName] = monsterCode to level
         // New in-game task = fresh start: the shared prep banks the previous monster's drops,
         // food and loose gear before swapping.
         val result = fightingExecutor.prepareLoadoutForMonster(characterName, monsterCode, onStatus) ?: return
@@ -792,6 +829,12 @@ class TaskMasterExecutor(
             return completeCurrentTask(characterName, char, onStatus)
         }
 
+        // Resumed task, task re-accepted after deaths, or a level-up: gate and optimize first.
+        if (loadoutPreparedFor[characterName] != (monsterCode to char.level)) {
+            return simulateAndFilterMonsterTask(characterName, "monsters", onStatus)
+                ?: StepResult.TaskMasterNoViableTask
+        }
+
         onStatus("Monster task: ${char.taskProgress}/${char.taskTotal} $monsterCode")
 
         // Create a temporary fight task and delegate to the fighting executor.
@@ -931,5 +974,10 @@ class TaskMasterExecutor(
         }
 
         return currentChar
+    }
+
+    private companion object {
+        /** Optimized-gear win rate that keeps a task the current gear would lose (API sim). */
+        const val OPTIMIZED_MIN_WINRATE = 0.90
     }
 }

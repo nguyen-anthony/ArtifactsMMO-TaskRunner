@@ -40,6 +40,9 @@ class LegacyExecutors(
 
     private val executor = Adapter()
 
+    /** Make the character's running fight/task-master task re-optimize before its next fight. */
+    fun forgetLoadout(character: String) = taskMaster.forgetLoadout(character)
+
     override fun forSpec(spec: TaskSpec): TaskExecutor? = when (spec) {
         is TaskSpec.BossFight -> bossFights
         is TaskSpec.DailyOffering -> offerings
@@ -50,6 +53,11 @@ class LegacyExecutors(
 
         override suspend fun start(ctx: ExecContext) {
             // Runs on every claim, including resumes after preemption.
+            when (legacy(ctx)) {
+                is TaskType.TaskMaster -> taskMaster.forgetLoadout(ctx.character)
+                is TaskType.Fight -> fighting.forgetLoadout(ctx.character)
+                else -> Unit
+            }
             depositForTaskStart(ctx)
             ensureGatheringTool(ctx)
             ensureStatGear(ctx)
@@ -171,7 +179,8 @@ class LegacyExecutors(
                 .onFailure { rethrowCancellation(it); ctx.status("Cleanup error: ${it.message}") }
         }
 
-        private fun legacy(ctx: ExecContext): TaskType = SpecMapper.toLegacy(ctx.spec, craftedSoFar = ctx.state.crafted)
+        private fun legacy(ctx: ExecContext): TaskType =
+            SpecMapper.toLegacy(ctx.spec, craftedSoFar = ctx.state.crafted, recycledSoFar = ctx.state.recycled)
 
         private suspend fun map(ctx: ExecContext, task: TaskType, r: StepResult): StepOutcome {
             val s = ctx.state
@@ -208,6 +217,7 @@ class LegacyExecutors(
                 is StepResult.TooManyDeaths -> { s.consecutiveDeaths = 0; StepOutcome.Continue() }
                 is StepResult.EventExpired -> StepOutcome.Complete("Event ended")
                 is StepResult.NeedsRestock -> StepOutcome.Fail("Restock is only supported for boss fights")
+                is StepResult.Failed -> StepOutcome.Fail(r.reason)
             }
         }
     }

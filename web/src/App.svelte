@@ -19,6 +19,7 @@
   import Bank from './pages/Bank.svelte'
   import Logs from './pages/Logs.svelte'
   import Offerings from './pages/Offerings.svelte'
+  import Loadouts from './pages/Loadouts.svelte'
 
   // Map of route -> component. The nav bar is generated from this too.
   const pages = {
@@ -29,6 +30,7 @@
     configs: { title: 'Events & raids', component: Configs },
     offerings: { title: 'Offerings', component: Offerings },
     bank: { title: 'Bank', component: Bank },
+    loadouts: { title: 'Loadouts', component: Loadouts },
     logs: { title: 'Logs', component: Logs },
   } as const
   type Route = keyof typeof pages

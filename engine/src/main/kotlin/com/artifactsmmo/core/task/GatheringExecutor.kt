@@ -587,4 +587,6 @@ sealed class StepResult {
      * or inventory full of loot). Runner will execute a bank restock trip then resume the loop.
      */
     data object NeedsRestock : StepResult()
+    /** The task can't be done at all (e.g. invalid target) — stop instead of retrying. */
+    data class Failed(val reason: String) : StepResult()
 }

@@ -504,6 +504,9 @@ class GearOptimizer(
 
             for (state in beam) {
                 val oldItem = state.loadout[slotInfo.slot]
+                // An empty slot may stay empty — e.g. artifact2 when the only artifact owned
+                // is already in artifact1 (uniqueness rejects every candidate).
+                if (oldItem == null) expanded += state
                 for (candidate in candidates) {
                     val counts = state.usedQuantities.toMutableMap()
                     oldItem?.let {
@@ -524,11 +527,12 @@ class GearOptimizer(
                 }
             }
 
-            beam = expanded
+            val next = expanded
                 .sortedWith(beamStateComparator)
                 .distinctBy { canonicalLoadoutKey(it.loadout) }
                 .take(BEAM_WIDTH)
-            if (beam.isEmpty()) return listOf(initial)
+            // Never discard the search so far because one slot had no feasible candidate.
+            if (next.isNotEmpty()) beam = next
         }
         return beam.sortedWith(beamStateComparator)
     }
@@ -598,6 +602,7 @@ class GearOptimizer(
             val expanded = mutableListOf<BeamState>()
             for (state in beam) {
                 val oldItem = state.loadout[slotInfo.slot]
+                if (oldItem == null) expanded += state
                 for (candidate in candidates) {
                     val counts = state.usedQuantities.toMutableMap()
                     oldItem?.let {

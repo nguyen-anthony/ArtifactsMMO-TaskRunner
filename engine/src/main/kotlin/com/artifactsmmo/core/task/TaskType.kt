@@ -138,7 +138,9 @@ sealed class TaskType {
         val itemCode: String,
         val itemName: String,
         val quantity: Int,
-        val craftSkill: String
+        val craftSkill: String,
+        /** Items recycled by earlier batches (checkpointed, so resumes continue the count). */
+        val recycledSoFar: Int = 0,
     ) : TaskType()
 
     /** Quick task: deposit a specific item from inventory to the bank. */

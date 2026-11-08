@@ -75,6 +75,12 @@ class Engine(
     /** Seasonal Altar overview/previews for the API. */
     lateinit var offerings: OfferingBoard
         private set
+    private var legacyExecutors: LegacyExecutors? = null
+
+    /** A running fight / task-master task re-optimizes its loadout before the next fight. */
+    fun forgetLoadout(character: String) {
+        legacyExecutors?.forgetLoadout(character)
+    }
 
     @OptIn(kotlin.time.ExperimentalTime::class)
     suspend fun start() {
@@ -105,6 +111,7 @@ class Engine(
             bossFights = BossFightExecutor(LegacyBossOps(helper, fighting), queue, GroupCoordinator()),
             offerings = DailyOfferingExecutor(offeringOps),
         )
+        legacyExecutors = registry
         val view = ApiCharacterView(helper)
         pool = WorkerPool(queue, characters.map { name ->
             CharacterWorker(
