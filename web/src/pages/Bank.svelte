@@ -3,7 +3,10 @@
   import { api } from '../lib/api'
   import { catalog } from '../lib/catalog'
   import { live } from '../lib/live.svelte'
+  import BankThresholds from '../components/BankThresholds.svelte'
   import type { CharacterDto, RateWindow } from '../lib/types'
+
+  let thresholdEdit = $state<string | null>(null)
 
   let items = $state<{ code: string; quantity: number }[]>([])
   let rates = $state<Record<string, RateWindow[]>>({})
@@ -71,6 +74,8 @@
   </div>
 </div>
 
+<BankThresholds bind:editCode={thresholdEdit} characters={characters.map((c) => c.name)} />
+
 <div class="row" style="margin-bottom:12px">
   <label>Search <input bind:value={filter} placeholder="item code" /></label>
   <label>Character
@@ -88,6 +93,7 @@
         <tr><td>{i.code}</td><td>{i.quantity}</td><td>
           <button onclick={() => withdraw(i.code)}>Withdraw</button>
           {#if recyclable[i.code]}<button onclick={() => recycle(i.code, i.quantity)}>Recycle</button>{/if}
+          <button onclick={() => { thresholdEdit = i.code; window.scrollTo({ top: 0, behavior: 'smooth' }) }}>Threshold</button>
         </td></tr>
       {/each}
     </tbody>

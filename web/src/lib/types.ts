@@ -155,6 +155,36 @@ export interface ToolKitPlan {
 }
 export interface ToolKitState { config: ToolKitConfig; plan: ToolKitPlan | null }
 
+/** Mirrors engine `BankThreshold` (config kind `threshold`, keyed by item code). */
+export interface BankThreshold {
+  itemCode: string
+  minQuantity: number
+  action: 'craft' | 'gather'
+  /** Crafts (craft) or gathers (gather) per queued task. */
+  batch: number
+  /** null = settings.defaultPriority */
+  priority: number | null
+  enabled: boolean
+  resourceCode: string | null
+  allowedCharacters: string[]
+  /** Task Master won't take the item from the bank below minQuantity. */
+  reserve: boolean
+}
+export interface ThresholdSettings { enabled: boolean; defaultPriority: number; failureBackoffMinutes: number }
+export interface ThresholdStatus {
+  itemCode: string
+  bankQuantity: number
+  state: 'ok' | 'queued' | 'blocked' | 'backoff' | 'disabled'
+  detail: string | null
+  taskId: number | null
+  checkedAtMillis: number
+}
+export interface ThresholdsState {
+  settings: ThresholdSettings
+  rules: BankThreshold[]
+  statuses: Record<string, ThresholdStatus>
+}
+
 /** Mirrors engine `KnownLoadout` (known_loadouts.json, served by /api/loadouts). */
 export interface KnownLoadout {
   characterName: string

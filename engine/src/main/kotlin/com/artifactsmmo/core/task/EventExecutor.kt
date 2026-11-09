@@ -131,7 +131,9 @@ class EventExecutor(
             char = helper.refreshCharacter(characterName)
             // Stock already carried (e.g. a previous trip's unsold leftovers) counts toward the batch.
             val carried = toSell.mapValues { (code, qty) -> minOf(qty, helper.getItemQuantity(char, code)) }
-            val batch = packBatch(toSell.mapValues { (code, qty) -> qty - carried.getValue(code) }, freeQuantity(char), freeSlots(char))
+            // Keep room for an outbound + return teleport potion when there's space to spare.
+            val batch = packBatch(toSell.mapValues { (code, qty) -> qty - carried.getValue(code) },
+                withPotionRoom(freeQuantity(char)), withPotionRoom(freeSlots(char)))
             if (batch.isEmpty() && carried.values.all { it == 0 }) {
                 if (++failedTrips > 2) break
                 char = helper.depositInventoryExcept(characterName, buyCurrencies, char)
@@ -225,8 +227,12 @@ class EventExecutor(
 
     private fun freeQuantity(char: Character): Int = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity }).coerceAtLeast(0)
     private fun freeSlots(char: Character): Int = char.inventory.count { it.code.isEmpty() || it.quantity == 0 }
+    private fun withPotionRoom(free: Int): Int = if (free > POTION_ROOM) free - POTION_ROOM else free
 
     companion object {
+        /** Inventory slots/units left free on sell trips for teleport potions (outbound + return). */
+        const val POTION_ROOM = 2
+
         /** How many to sell so that [keep] remain; a keep of 0 (or less) sells everything. */
         fun sellDownTo(owned: Int, keep: Int): Int = (owned - keep.coerceAtLeast(0)).coerceAtLeast(0)
 

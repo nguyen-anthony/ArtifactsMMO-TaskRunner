@@ -425,9 +425,9 @@ class TaskMasterExecutor(
             return completeCurrentTask(characterName, char, onStatus)
         }
 
-        // Check how many we already have (inventory + bank)
+        // Check how many we already have (inventory + bank above its restock reserve)
         val inInventory = helper.getItemQuantity(char, taskItemCode)
-        val inBank = helper.getBankItemQuantity(taskItemCode)
+        val inBank = helper.bankQuantityAboveReserve(taskItemCode)
         val totalOnHand = inInventory + inBank
 
         if (totalOnHand >= remaining) {
@@ -445,9 +445,19 @@ class TaskMasterExecutor(
             return cancelAndRetry(characterName, "items", onStatus)
         }
 
+        // Banked raw ingredients cover every craft still needed: no gathering, so the gathering
+        // level and resource reachability don't matter (e.g. cook banked shrimp).
+        val bankCoversCrafts = source.needsCrafting && source.allIngredients.isNotEmpty() && run {
+            val crafts = (remaining - totalOnHand + source.outputPerCraft - 1) / source.outputPerCraft
+            source.allIngredients.all { ing ->
+                helper.getItemQuantity(char, ing.rawItemCode) + helper.bankQuantityAboveReserve(ing.rawItemCode) >=
+                    ing.rawPerCraft * crafts
+            }
+        }
+
         // Check if character has the required gathering skill level
         val charSkillLevel = CharacterUtils.getSkillLevel(char, source.gatherSkill) ?: 0
-        if (charSkillLevel < source.gatherLevel) {
+        if (!bankCoversCrafts && charSkillLevel < source.gatherLevel) {
             onStatus("${source.gatherSkill} level too low (have $charSkillLevel, need ${source.gatherLevel}), cancelling task...")
             return cancelAndRetry(characterName, "items", onStatus)
         }
@@ -463,7 +473,7 @@ class TaskMasterExecutor(
 
         // Can we actually get to every resource? (e.g. Lava Underground behind a key gate)
         val ingredientResources = source.allIngredients.map { it.resourceCode }.ifEmpty { listOf(source.resourceCode) }
-        ingredientResources.firstOrNull { !helper.canReach(char, "resource", it) }?.let { code ->
+        if (!bankCoversCrafts) ingredientResources.firstOrNull { !helper.canReach(char, "resource", it) }?.let { code ->
             onStatus("Can't reach $code (missing key/achievement for a gate), cancelling task...")
             return cancelAndRetry(characterName, "items", onStatus)
         }
@@ -546,7 +556,7 @@ class TaskMasterExecutor(
             ingredients.mapNotNull { ing ->
                 val have    = helper.getItemQuantity(currentChar, ing.rawItemCode)
                 val need    = ing.rawPerCraft * craftsTarget
-                val inBank  = helper.getBankItemQuantity(ing.rawItemCode)
+                val inBank  = helper.bankQuantityAboveReserve(ing.rawItemCode)
                 val deficit = (need - have).coerceAtLeast(0)
                 val qty     = deficit.coerceAtMost(inBank)
                 if (qty > 0) SimpleItem(ing.rawItemCode, qty) else null
@@ -767,14 +777,16 @@ class TaskMasterExecutor(
                 val newInInv = helper.getItemQuantity(currentChar, taskItemCode)
                 val newFreeSpace = currentChar.inventoryMaxItems - newTotal
 
-                // Cap withdrawal to what fits
+                // Cap withdrawal to what fits (and to the bank stock above its restock reserve)
                 val canWithdraw = (tradeQty - newInInv).coerceAtMost(newFreeSpace)
+                    .coerceAtMost(helper.bankQuantityAboveReserve(taskItemCode))
                 if (canWithdraw > 0) {
                     onStatus("Withdrawing ${canWithdraw}x $taskItemCode from bank...")
                     helper.bankWithdrawItems(characterName, listOf(SimpleItem(taskItemCode, canWithdraw)))
                 }
             } else {
                 val deficit = (tradeQty - inInventory).coerceAtMost(freeSpace)
+                    .coerceAtMost(helper.bankQuantityAboveReserve(taskItemCode))
                 if (deficit > 0) {
                     onStatus("Withdrawing ${deficit}x $taskItemCode from bank...")
                     helper.bankWithdrawItems(characterName, listOf(SimpleItem(taskItemCode, deficit)))

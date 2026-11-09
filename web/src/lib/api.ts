@@ -6,6 +6,7 @@ import type {
   Catalog, CharacterDto, CharacterProfile, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
   StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult, NpcItem,
   OfferingOverview, OfferingPreview, KnownLoadout, ToolKitConfig, ToolKitState,
+  BankThreshold, ThresholdSettings, ThresholdsState,
 } from './types'
 
 export class ApiError extends Error {
@@ -75,6 +76,13 @@ export const api = {
   toolKit: () => request<ToolKitState>('GET', '/toolkit'),
   saveToolKit: (c: ToolKitConfig) => request<ToolKitState>('PUT', '/toolkit', c),
   refreshToolKit: () => request<ToolKitState>('POST', '/toolkit/refresh'),
+  thresholds: () => request<ThresholdsState>('GET', '/thresholds'),
+  refreshThresholds: () => request<ThresholdsState>('POST', '/thresholds/refresh'),
+  saveThresholdSettings: (s: ThresholdSettings) => request<ThresholdsState>('PUT', '/thresholds/settings', s),
+  saveThreshold: (t: BankThreshold) =>
+    request<ThresholdsState>('PUT', `/thresholds/${encodeURIComponent(t.itemCode)}`, t),
+  deleteThreshold: (itemCode: string) =>
+    request<ThresholdsState>('DELETE', `/thresholds/${encodeURIComponent(itemCode)}`),
   rates: () => request<{ buckets: Record<string, RateWindow[]> }>('GET', '/rates'),
   logs: (character?: string) => request<LogLine[]>('GET', `/logs?limit=300${character ? `&character=${character}` : ''}`),
   resume: () => request<void>('POST', '/control/resume'),

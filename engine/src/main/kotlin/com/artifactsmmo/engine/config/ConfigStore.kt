@@ -1,8 +1,10 @@
 package com.artifactsmmo.engine.config
 
+import com.artifactsmmo.core.task.BankThreshold
 import com.artifactsmmo.core.task.EventConfig
 import com.artifactsmmo.core.task.OfferingConfig
 import com.artifactsmmo.core.task.RaidConfig
+import com.artifactsmmo.core.task.ThresholdSettings
 import com.artifactsmmo.core.task.ToolKitConfig
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
@@ -23,6 +25,8 @@ object ConfigKinds {
     const val RAID = "raid"
     const val OFFERING = "offering"
     const val TOOLKIT = "toolkit"
+    const val THRESHOLD = "threshold"
+    const val THRESHOLD_SETTINGS = "threshold_settings"
 }
 
 private val configJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -41,6 +45,23 @@ class TypedConfigs(private val store: ConfigStore) {
 
     suspend fun putToolKit(c: ToolKitConfig) =
         store.put(ConfigKinds.TOOLKIT, ToolKitConfig.KEY, configJson.encodeToJsonElement(ToolKitConfig.serializer(), c))
+
+    suspend fun thresholds(): List<BankThreshold> =
+        decodeAll(ConfigKinds.THRESHOLD, BankThreshold.serializer()).sortedBy { it.itemCode }
+
+    suspend fun putThreshold(t: BankThreshold) =
+        store.put(ConfigKinds.THRESHOLD, t.itemCode, configJson.encodeToJsonElement(BankThreshold.serializer(), t))
+
+    suspend fun deleteThreshold(itemCode: String) = store.delete(ConfigKinds.THRESHOLD, itemCode)
+
+    /** Threshold settings; defaults when missing or unreadable. */
+    suspend fun thresholdSettings(): ThresholdSettings =
+        store.list(ConfigKinds.THRESHOLD_SETTINGS)[ThresholdSettings.KEY]
+            ?.let { runCatching { configJson.decodeFromJsonElement(ThresholdSettings.serializer(), it) }.getOrNull() }
+            ?: ThresholdSettings()
+
+    suspend fun putThresholdSettings(s: ThresholdSettings) =
+        store.put(ConfigKinds.THRESHOLD_SETTINGS, ThresholdSettings.KEY, configJson.encodeToJsonElement(ThresholdSettings.serializer(), s))
 
     suspend fun putOffering(c: OfferingConfig) =
         store.put(ConfigKinds.OFFERING, c.character, configJson.encodeToJsonElement(OfferingConfig.serializer(), c))

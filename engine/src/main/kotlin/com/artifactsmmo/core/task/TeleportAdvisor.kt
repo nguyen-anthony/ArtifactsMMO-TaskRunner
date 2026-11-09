@@ -59,13 +59,15 @@ class TeleportAdvisor(
         completedAchievements: Set<String>,
         bankDetourCost: Int? = null,
         onlyCodes: Collection<String>? = null,
+        excludeCodes: Collection<String> = emptySet(),
     ): List<PotionOption> = TeleportPotionStore.getPotions().mapNotNull { potion ->
         if (onlyCodes != null && potion.code !in onlyCodes) return@mapNotNull null
+        if (potion.code in excludeCodes) return@mapNotNull null
         if (!canUsePotion(char, potion, completedAchievements)) return@mapNotNull null
         val landing = contentCache.getTileById(potion.destinationMapId)?.pos ?: return@mapNotNull null
         when {
             inInventory(char, potion.code) -> PotionOption(potion.code, landing, fromBank = false)
-            bankDetourCost != null && bankState.getQuantity(potion.code) > 0 ->
+            bankDetourCost != null && canHoldOneMore(char) && bankState.getQuantity(potion.code) > 0 ->
                 PotionOption(potion.code, landing, fromBank = true, extraCost = bankDetourCost)
             else -> null
         }
@@ -95,6 +97,11 @@ class TeleportAdvisor(
         }
         return null
     }
+
+    /** A bank potion (not yet carried) needs a free slot and one unit of item capacity. */
+    private fun canHoldOneMore(char: Character): Boolean =
+        char.inventory.sumOf { it.quantity } < char.inventoryMaxItems &&
+            char.inventory.any { it.code.isEmpty() || it.quantity == 0 }
 
     private fun inInventory(char: Character, code: String): Boolean =
         char.inventory.any { it.code == code && it.quantity > 0 }

@@ -23,6 +23,7 @@ import com.artifactsmmo.engine.queue.TaskQueue
 import com.artifactsmmo.engine.realtime.EventTaskProducer
 import com.artifactsmmo.engine.realtime.LegacyEventPlanner
 import com.artifactsmmo.engine.realtime.LegacyRaidPlanner
+import com.artifactsmmo.engine.scheduler.BankThresholdProducer
 import com.artifactsmmo.engine.scheduler.OfferingTaskProducer
 import com.artifactsmmo.engine.scheduler.RaidTaskProducer
 import com.artifactsmmo.engine.scheduler.ScheduleRunner
@@ -102,6 +103,16 @@ class Engine(
     /** The tool kit allocation in force (null = disabled or not computed yet). */
     val toolKitPlan: ToolKitPlan? get() = helper.toolKitPlan
 
+    /** Bank restock rules -> unassigned craft/gather tasks (every 3 minutes). */
+    val thresholds = BankThresholdProducer(
+        queue, configs,
+        bank = { bankState.snapshot.value },
+        itemOf = { contentCache.getItemOrNull(it) },
+        resourcesDropping = { runCatching { contentCache.getResourcesByDrop(it) }.getOrDefault(emptyList()) },
+        onReserves = { helper.bankReserves = it },
+        log = { logger.log(it) },
+    )
+
     @OptIn(kotlin.time.ExperimentalTime::class)
     suspend fun start() {
         val achievements = runCatching {
@@ -154,6 +165,7 @@ class Engine(
         ScheduleRunner(schedules, queue, log = log).start(scope)
         OfferingTaskProducer(queue, configs, { characters }, log = log).start(scope)
         toolKit.start(scope)
+        thresholds.start(scope)
         pool.start(scope)
         webSocket.start()
     }

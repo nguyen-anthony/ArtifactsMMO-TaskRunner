@@ -49,6 +49,16 @@ class ActionHelper(
      */
     @Volatile var toolKitPlan: ToolKitPlan? = null
 
+    /**
+     * Item code -> quantity Task Master must leave in the bank (bank threshold reserves, set
+     * by the threshold producer). Restock tasks themselves ignore it.
+     */
+    @Volatile var bankReserves: Map<String, Int> = emptyMap()
+
+    /** Bank quantity of [itemCode] that Task Master may use (above its reserve). */
+    fun bankQuantityAboveReserve(itemCode: String): Int =
+        (bankState.getQuantity(itemCode) - (bankReserves[itemCode] ?: 0)).coerceAtLeast(0)
+
     // ── Cooldown ──
 
     suspend fun waitForCooldown(expiration: Instant) {
@@ -163,14 +173,16 @@ class ActionHelper(
      *  2. gold gates paid with bank gold (bank detour added to the cost).
      * [bankTrip] = this navigation IS a bank trip: only carried gates and held potions.
      */
-    private suspend fun planNavigation(char: Character, target: MapInfo, bankTrip: Boolean): Route? {
+    private suspend fun planNavigation(
+        char: Character, target: MapInfo, bankTrip: Boolean, unusablePotions: Set<String> = emptySet(),
+    ): Route? {
         if (bankTrip) {
             return contentCache.planRoute(char.pos, target, carriedGates(char),
-                teleportAdvisor.potionOptions(char, completedAchievements))
+                teleportAdvisor.potionOptions(char, completedAchievements, excludeCodes = unusablePotions))
         }
         val detour = bankTripRoute(char)?.cost
         val withPotions = contentCache.planRoute(char.pos, target, gateSatisfiable(char),
-            teleportAdvisor.potionOptions(char, completedAchievements, detour))
+            teleportAdvisor.potionOptions(char, completedAchievements, detour, excludeCodes = unusablePotions))
         if (detour == null) return withPotions
         // Would bank gold open a cheaper route? Only worth a bank lookup if gold gates exist on it.
         val richGates = gateSatisfiable(char, goldAvailable = Int.MAX_VALUE)
@@ -206,13 +218,15 @@ class ActionHelper(
         }
         var char = refreshCharacter(name)
         var replans = 0
+        // Potions whose withdrawal failed this navigation (e.g. inventory full): never re-planned.
+        val unusablePotions = mutableSetOf<String>()
         while (!(isAt(char, targetMap.x, targetMap.y) && char.layer == targetMap.layer)) {
             if (replans++ > MAX_REPLANS) {
                 throw TransitionConditionUnsatisfiableException(
                     "Navigation to ${targetMap.pos} gave up after $MAX_REPLANS re-plans (at ${char.pos})"
                 )
             }
-            val route = planNavigation(char, targetMap, bankTrip)
+            val route = planNavigation(char, targetMap, bankTrip, unusablePotions)
                 ?: throw TransitionConditionUnsatisfiableException(
                     "No route from ${char.pos} to ${targetMap.pos} (missing key/achievement/gold for a required gate?)"
                 )
@@ -222,7 +236,7 @@ class ActionHelper(
             for (step in route.steps) {
                 when (step) {
                     is RouteStep.Potion -> {
-                        char = usePotion(name, char, step, depth)
+                        char = usePotion(name, char, step, depth, unusablePotions)
                         replan = true  // position changed (or potion failed): plan again from here
                     }
                     is RouteStep.Transition -> {
@@ -242,16 +256,30 @@ class ActionHelper(
         return char
     }
 
-    /** Withdraw (if needed) and drink a teleport potion. Returns the refreshed character. */
-    private suspend fun usePotion(name: String, current: Character, step: RouteStep.Potion, depth: Int): Character {
+    /**
+     * Withdraw (if needed) and drink a teleport potion. Returns the refreshed character. If the
+     * withdrawal fails (inventory full, potion gone), the potion is added to [unusable] and the
+     * caller re-plans without it (walk/gates) instead of failing the whole task.
+     */
+    private suspend fun usePotion(
+        name: String, current: Character, step: RouteStep.Potion, depth: Int, unusable: MutableSet<String>,
+    ): Character {
         var char = current
         if (getItemQuantity(char, step.code) <= 0) {
             val bank = bankTripRoute(char)?.target
                 ?: throw TransitionConditionUnsatisfiableException("Need ${step.code} from the bank, but no bank is reachable")
             char = navigateToTile(name, bank, bankTrip = true, depth = depth + 1)
-            val result = client.bank.withdrawItems(name, listOf(SimpleItem(step.code, 1)))
-            waitForCooldown(result.cooldown.expiration)
-            char = result.character
+            try {
+                val result = client.bank.withdrawItems(name, listOf(SimpleItem(step.code, 1)))
+                waitForCooldown(result.cooldown.expiration)
+                char = result.character
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                println("[$name] Could not withdraw ${step.code} (${e.message}) — re-planning without it")
+                unusable += step.code
+                return refreshCharacter(name)
+            }
         }
         println("[$name] Teleporting with ${step.code} to ${step.landing}")
         useItem(name, step.code, 1)
