@@ -121,7 +121,8 @@ class BankThresholdProducer(
             val skill = craft?.skill
             if (item == null || craft == null || skill == null) Plan.Blocked("${rule.itemCode} is not craftable")
             else {
-                val crafts = minOf(rule.batch, ThresholdPlanner.craftableFromBank(item, bank()))
+                val yieldPerCraft = (craft.quantity ?: 1).coerceAtLeast(1)
+                val crafts = minOf(rule.batch, ThresholdPlanner.craftableFromBank(item, bank()) * yieldPerCraft)
                 if (crafts <= 0) Plan.Blocked("not enough ingredients in the bank")
                 else Plan.Ready(
                     TaskSpec.Craft(skill, item.code, item.name, CraftMode.BANK, crafts),

@@ -2,8 +2,10 @@ package com.artifactsmmo.engine.worker
 
 import com.artifactsmmo.core.task.ActionHelper
 import com.artifactsmmo.core.task.GearOptimizer
+import com.artifactsmmo.core.task.StatGearOptimizer
 import com.artifactsmmo.core.task.TaskType
 import com.artifactsmmo.client.models.SimpleItem
+import com.artifactsmmo.domain.task.GearFocus
 import com.artifactsmmo.domain.task.TaskSpec
 import com.artifactsmmo.core.task.CraftMode as LegacyCraftMode
 import com.artifactsmmo.core.task.DropStrategy as LegacyDropStrategy
@@ -19,6 +21,11 @@ object SpecMapper {
             skill = spec.skill, resourceCode = spec.resourceCode, resourceName = spec.resourceName,
             targetItemCode = spec.targetItemCode, targetItemName = spec.targetItemName,
             cookBeforeDeposit = spec.cookBeforeDeposit,
+            gearFocus = when (spec.gearFocus) {
+                GearFocus.AUTO -> null
+                GearFocus.PROSPECTING -> StatGearOptimizer.Focus.PROSPECTING
+                GearFocus.WISDOM -> StatGearOptimizer.Focus.WISDOM
+            },
         )
         is TaskSpec.Fight -> TaskType.Fight(
             monsterCode = spec.monsterCode, monsterName = spec.monsterName,
@@ -36,10 +43,14 @@ object SpecMapper {
         is TaskSpec.TaskMaster -> TaskType.TaskMaster(spec.taskType)
         is TaskSpec.BankWithdraw -> TaskType.BankWithdraw(spec.itemCode, spec.itemName, spec.quantity)
         is TaskSpec.BankRecycle -> TaskType.BankRecycle(spec.itemCode, spec.itemName, spec.quantity, spec.craftSkill, recycledSoFar)
+        is TaskSpec.BankDelete -> TaskType.BankDelete(spec.itemCode, spec.itemName, spec.quantity, recycledSoFar)
         is TaskSpec.InventoryDeposit -> TaskType.InventoryDeposit(spec.itemCode, spec.itemName, spec.quantity)
         is TaskSpec.InventoryRecycle -> TaskType.InventoryRecycle(spec.itemCode, spec.itemName, spec.quantity, spec.craftSkill)
         is TaskSpec.BulkBankWithdraw -> TaskType.BulkBankWithdraw(spec.items.map { SimpleItem(it.code, it.quantity) })
         is TaskSpec.BulkInventoryDeposit -> TaskType.BulkInventoryDeposit(spec.items.map { SimpleItem(it.code, it.quantity) })
+        is TaskSpec.GoldDeposit -> TaskType.GoldTransfer(deposit = true, quantity = spec.quantity)
+        is TaskSpec.GoldWithdraw -> TaskType.GoldTransfer(deposit = false, quantity = spec.quantity)
+        is TaskSpec.NpcBuy -> TaskType.NpcBuy(spec.npcCode, spec.npcName, spec.items.map { SimpleItem(it.code, it.quantity) })
         is TaskSpec.EventGather -> TaskType.EventGather(
             eventCode = spec.eventCode, resourceCode = spec.resourceCode, resourceName = spec.resourceName,
             skill = spec.skill, eventMapX = spec.map.x, eventMapY = spec.map.y, eventMapLayer = spec.map.layer,

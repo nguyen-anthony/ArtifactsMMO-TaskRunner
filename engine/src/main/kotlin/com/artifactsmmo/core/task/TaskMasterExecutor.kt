@@ -33,8 +33,8 @@ class TaskMasterExecutor(
 ) {
     /** Track last upgrade check time per character (epoch millis). */
     private val lastUpgradeCheck = mutableMapOf<String, Long>()
-    /** Last skill [ensureStatGear] optimized for, per character — re-run only on change. */
-    private val lastStatGearSkill = mutableMapOf<String, String>()
+    /** Last goal [ensureStatGear] optimized for, per character — re-run only on change. */
+    private val lastStatGearGoal = mutableMapOf<String, StatGearOptimizer.Goal>()
 
     /** Character → (monster, utilities planned for it), so monster-task fights keep them topped up. */
     private val plannedUtilities = java.util.concurrent.ConcurrentHashMap<String, Pair<String, List<GearOptimizer.UtilityEquipAction>>>()
@@ -615,8 +615,10 @@ class TaskMasterExecutor(
         onStatus("Checking tool for ${ing.gatherSkill}...")
         currentChar = helper.ensureToolEquipped(characterName, ing.gatherSkill)
 
-        // ── Prospecting gear for this gathering skill (see StatGearOptimizer) ──
-        currentChar = ensureStatGear(characterName, currentChar, ing.gatherSkill, StatGearOptimizer.Priority.GATHERING, onStatus)
+        // ── Speed/prospecting/wisdom gear for this ingredient's resource (see StatGearOptimizer) ──
+        currentChar = ensureStatGear(characterName, currentChar, onStatus) {
+            StatGearOptimizer.gatheringGoal(currentChar, helper, ing.gatherSkill, dropCode = ing.rawItemCode)
+        }
 
         // Tool upgrade check from the bank: immediately the first time, then every
         // [upgradeCheckIntervalMs] — otherwise a tool that only exists in the bank goes
@@ -714,8 +716,8 @@ class TaskMasterExecutor(
         val workshop = helper.findNearestWorkshop(char, craftSkill)
             ?: return StepResult.Error("No $craftSkill workshop found")
 
-        // ── Wisdom gear for this crafting skill (see StatGearOptimizer) ──
-        char = ensureStatGear(characterName, char, craftSkill, StatGearOptimizer.Priority.CRAFTING, onStatus)
+        // ── Speed/wisdom gear for this crafting skill (see StatGearOptimizer) ──
+        char = ensureStatGear(characterName, char, onStatus) { StatGearOptimizer.Goal.crafting(craftSkill) }
 
         onStatus("Moving to $craftSkill workshop...")
         char = helper.navigateWithTeleport(characterName, helper.refreshCharacter(characterName), workshop)
@@ -921,27 +923,27 @@ class TaskMasterExecutor(
     }
 
     /**
-     * Non-combat stat gear for [skill] (prospecting for gathering, wisdom for crafting) —
-     * see [StatGearOptimizer]. Re-optimizes only when [skill] changes for this character
+     * Non-combat gear for the goal [goalOf] computes (skill speed, then prospecting/wisdom) —
+     * see [StatGearOptimizer]. Re-optimizes only when the goal changes for this character
      * (an items task can cycle through several ingredients/skills per run). Best-effort.
      */
     private suspend fun ensureStatGear(
         characterName: String,
         char: Character,
-        skill: String,
-        priority: StatGearOptimizer.Priority,
         onStatus: (String) -> Unit,
+        goalOf: suspend () -> StatGearOptimizer.Goal,
     ): Character {
-        if (lastStatGearSkill[characterName] == skill) return char
-        lastStatGearSkill[characterName] = skill
         return try {
-            val actions = StatGearOptimizer.planFor(char, helper, helper.completedAchievements, priority)
+            val goal = goalOf()
+            if (lastStatGearGoal[characterName] == goal) return char
+            lastStatGearGoal[characterName] = goal
+            val actions = StatGearOptimizer.planFor(char, helper, helper.completedAchievements, goal)
             if (actions.isEmpty()) return char
-            onStatus("Optimizing gear for ${priority.name.lowercase()}...")
+            onStatus("Optimizing gear for ${goal.label}...")
             var updated = helper.retrieveAndEquipItems(characterName, actions)
             // A competing character may have taken an item first (FCFS): re-plan once.
             if (actions.any { helper.getEquippedInSlot(updated, it.slot) != it.itemCode }) {
-                val retry = StatGearOptimizer.planFor(updated, helper, helper.completedAchievements, priority)
+                val retry = StatGearOptimizer.planFor(updated, helper, helper.completedAchievements, goal)
                 if (retry.isNotEmpty()) updated = helper.retrieveAndEquipItems(characterName, retry)
             }
             updated

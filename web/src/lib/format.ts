@@ -9,14 +9,18 @@ export function describeSpec(s: TaskSpec): string {
     case 'task_master': return `Task master (${s.taskType})`
     case 'bank_withdraw': return `Withdraw ${s.quantity}× ${s.itemCode}`
     case 'bank_recycle': return `Recycle ${s.quantity}× ${s.itemCode} from bank`
+    case 'bank_delete': return `Delete ${s.quantity}× ${s.itemCode} from bank`
     case 'inventory_deposit': return `Deposit ${s.quantity}× ${s.itemCode}`
     case 'inventory_recycle': return `Recycle ${s.quantity}× ${s.itemCode}`
     case 'bulk_bank_withdraw': return `Withdraw ${s.items.length} items`
     case 'bulk_inventory_deposit': return `Deposit ${s.items.length} items`
+    case 'gold_deposit': return `Deposit ${s.quantity > 0 ? s.quantity : 'all'} gold`
+    case 'gold_withdraw': return `Withdraw ${s.quantity > 0 ? s.quantity : 'all'} gold`
+    case 'npc_buy': return `Buy ${s.items.map((i) => `${i.quantity}× ${i.code}`).join(', ')} from ${s.npcName ?? s.npcCode}`
     case 'boss_fight': return `${s.raidCode ? 'Raid' : s.eventCode ? 'Event boss' : 'Boss'} ${s.monsterCode}`
     case 'event_gather': return `Event gather ${s.resourceCode}`
-    case 'event_npc': return `Event NPC ${s.npcCode}`
-    case 'event_fight': return `Event fight ${s.monsterCode}`
+    case 'event_npc': return `Event NPC ${s.npcName ?? s.npcCode}${s.buy?.length ? `: buy ${s.buy.map((b) => `${b.quantity}× ${b.code}`).join(', ')}` : ''}`
+    case 'event_fight': return `Event fight ${s.monsterName ?? s.monsterCode}`
     case 'daily_offering': return s.offeringId
       ? `Offering ${s.offeringId}`
       : `Daily offerings${s.categories?.length ? ` (${s.categories.join(', ')})` : ''}`

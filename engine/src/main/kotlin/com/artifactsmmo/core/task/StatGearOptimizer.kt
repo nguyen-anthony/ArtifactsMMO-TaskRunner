@@ -2,39 +2,73 @@ package com.artifactsmmo.core.task
 
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.Item
+import com.artifactsmmo.client.models.Resource
+import com.artifactsmmo.client.utils.CharacterUtils
 
 /**
- * Picks gear to maximize a stat total (prospecting and/or wisdom) rather than combat
- * performance — used for gathering and crafting tasks, where there's no fight to simulate.
+ * Picks gear for a gathering or crafting task rather than combat performance — there's no
+ * fight to simulate, so items are ranked lexicographically by a [Goal]:
  *
- * Pure and synchronous (no API calls): callers pass in the items the character can equip
- * (usually its inventory + the bank, already loaded). Never touches the weapon slot — for
- * gathering the best tool is chosen elsewhere ([ActionHelper.ensureToolEquipped]; voidstone
- * tools already carry +100 prospecting themselves), and crafting doesn't use a weapon at all.
+ * 1. cooldown reduction for the task's skill (`<skill>_gathering` / `<skill>_crafting`, e.g. the
+ *    Season 9 altar doll: -10% time is ~+11% XP *and* drops per hour, which beats any stat);
+ * 2. the focus stat (prospecting for rare drops, or wisdom for XP — see [resolveFocus]);
+ * 3. the other stat as the tie-breaker (gathering only; prospecting does nothing for crafting).
+ *
+ * [plan] is pure; [candidatesFor]/[planFor] load the inventory + bank items. Never touches the
+ * weapon slot — the gathering/cooking tool is chosen elsewhere ([ActionHelper.ensureToolEquipped]).
  */
 object StatGearOptimizer {
 
-    /**
-     * What to maximize, and in what order ties are broken.
-     *
-     * Follow-up: next season is expected to add cooking-speed gear (cooldown reduction).
-     * When it does, add a COOKING priority here (that stat first, wisdom as tie-breaker) and
-     * route cooking tasks to it instead of CRAFTING — see FOLLOW_UPS.md.
-     */
-    enum class Priority(val weights: List<String>) {
-        /** Gathering: prospecting for more/rarer drops, wisdom as the tie-breaker (gathering XP too). */
-        GATHERING(listOf("prospecting", "wisdom")),
-        /** Crafting (all skills): only wisdom affects crafting XP; prospecting does nothing here. */
-        CRAFTING(listOf("wisdom")),
+    /** Which stat a gathering task maximizes after speed. */
+    enum class Focus(val stats: List<String>) {
+        /** More/rarer secondary drops (gems, pearls...); wisdom breaks ties. */
+        PROSPECTING(listOf("prospecting", "wisdom")),
+        /** Faster skill levels; prospecting breaks ties. */
+        WISDOM(listOf("wisdom", "prospecting")),
     }
+
+    /** What to maximize: [speedCodes] cooldown reduction first, then [stats] in order. */
+    data class Goal(val label: String, val speedCodes: Set<String>, val stats: List<String>) {
+        companion object {
+            fun gathering(skill: String, focus: Focus) =
+                Goal("gathering (${focus.name.lowercase()})", setOf("${skill}_gathering"), focus.stats)
+
+            /** Only wisdom affects crafting XP; prospecting does nothing here. */
+            fun crafting(skill: String) = Goal("crafting", setOf("${skill}_crafting"), listOf("wisdom"))
+        }
+    }
+
+    /**
+     * The stat a gathering task should favour. [requested] (from the task) wins; otherwise:
+     * prospecting when [resource] can drop something on the [prospectFor] list (a secondary drop,
+     * rate > 1 — the main drop is guaranteed so prospecting can't improve it), or when the
+     * character earns no XP there anyway (skill 50, or more than 10 levels above the resource);
+     * wisdom otherwise. An unknown resource keeps the old behaviour (prospecting).
+     */
+    fun resolveFocus(requested: Focus?, resource: Resource?, skillLevel: Int, prospectFor: Set<String>): Focus {
+        if (requested != null) return requested
+        if (resource == null) return Focus.PROSPECTING
+        if (skillLevel >= MAX_SKILL_LEVEL || skillLevel - resource.level > XP_LEVEL_GAP) return Focus.PROSPECTING
+        return if (resource.drops.any { it.rate > 1 && it.code in prospectFor }) Focus.PROSPECTING else Focus.WISDOM
+    }
+
+    private const val MAX_SKILL_LEVEL = 50
+    private const val XP_LEVEL_GAP = 10
 
     /** Slots this optimizer ever touches — every combat slot except the weapon. */
     val STAT_SLOTS = ActionHelper.COMBAT_SLOTS.filter { it.slot != "weapon" }
 
-    private fun score(item: Item, weights: List<String>): List<Int> =
-        weights.map { stat -> item.effects.firstOrNull { it.code == stat }?.value ?: 0 }
+    /** Cooldown reduction in percent (10 for `-10`) [item] gives [goal]'s skill. */
+    private fun speed(item: Item, goal: Goal): Int =
+        item.effects.filter { it.code in goal.speedCodes }.maxOfOrNull { -it.value }?.coerceAtLeast(0) ?: 0
 
-    private val zeroScore = { weights: List<String> -> List(weights.size) { 0 } }
+    private fun score(item: Item, goal: Goal): List<Int> =
+        listOf(speed(item, goal)) + goal.stats.map { stat -> item.effects.firstOrNull { it.code == stat }?.value ?: 0 }
+
+    private fun zeroScore(goal: Goal) = List(goal.stats.size + 1) { 0 }
+
+    /** True if [item] helps [goal] at all (faster, or any positive goal stat). */
+    private fun useful(item: Item, goal: Goal): Boolean = score(item, goal).any { it > 0 }
 
     private fun compareScores(a: List<Int>, b: List<Int>): Int {
         for (i in a.indices) { val c = a[i].compareTo(b[i]); if (c != 0) return c }
@@ -54,7 +88,7 @@ object StatGearOptimizer {
     }
 
     /**
-     * Build the swap plan to maximize [priority] across [STAT_SLOTS].
+     * Build the swap plan to maximize [goal] across [STAT_SLOTS].
      *
      * Keeping the current item in a slot is always free (no copy consumed). Swapping a slot
      * to a NEW code draws one copy from that code's inventory+bank pool ([inventoryQty] /
@@ -67,12 +101,11 @@ object StatGearOptimizer {
      */
     internal fun plan(
         char: Character,
-        priority: Priority,
+        goal: Goal,
         candidatesByType: Map<String, List<Item>>,
         inventoryQty: (String) -> Int,
         bankQty: (String) -> Int,
     ): List<ActionHelper.EquipAction> {
-        val weights = priority.weights
         val invLeft = mutableMapOf<String, Int>()
         val bankLeft = mutableMapOf<String, Int>()
         fun invRemaining(code: String) = invLeft.getOrPut(code) { inventoryQty(code) }
@@ -86,42 +119,54 @@ object StatGearOptimizer {
         }
 
         val actions = mutableListOf<ActionHelper.EquipAction>()
-        val usedArtifacts = mutableSetOf<String>()
 
-        for (slotInfo in STAT_SLOTS) {
-            val current = getEquipped(char, slotInfo.slot)
-            val isArtifact = slotInfo.itemType == "artifact"
-            val currentUsable = current.isNotEmpty() && (!isArtifact || current !in usedArtifacts)
+        // Slots sharing an item type (ring1/ring2, artifact1-3) are chosen together: pick the
+        // best N items overall, keep the ones already equipped, and put new ones only in the
+        // slots that lose theirs — so a better item replaces the *weakest* one, not slot 1's.
+        for ((type, slots) in STAT_SLOTS.groupBy { it.itemType }) {
+            val unique = type == "artifact"
+            val byCode = candidatesByType[type].orEmpty().associateBy { it.code }
+            fun scoreOf(code: String) = byCode[code]?.let { score(it, goal) } ?: zeroScore(goal)
 
-            val candidates = candidatesByType[slotInfo.itemType].orEmpty()
-                .filter { it.code != current }                     // "keep current" handled below
-                .filter { !isArtifact || it.code !in usedArtifacts }
-                .filter { poolAvailable(it.code) > 0 }
+            data class Pick(val code: String, val slot: String?)   // slot != null: already equipped there
+            val units = mutableListOf<Pick>()
+            val equipped = slots.map { it.slot to getEquipped(char, it.slot) }.filter { it.second.isNotEmpty() }
+            equipped.forEach { (slot, code) -> units += Pick(code, slot) }
+            for (item in byCode.values) {
+                if (unique && equipped.any { it.second == item.code }) continue
+                if (!useful(item, goal)) continue
+                val copies = minOf(poolAvailable(item.code), if (unique) 1 else slots.size)
+                repeat(copies) { units += Pick(item.code, null) }
+            }
 
-            val currentScore = candidatesByType[slotInfo.itemType].orEmpty()
-                .find { it.code == current }?.let { score(it, weights) } ?: zeroScore(weights)
-            val best = candidates.maxWithOrNull(Comparator { a, b -> compareScores(score(a, weights), score(b, weights)) })
+            val chosen = units
+                .sortedWith(Comparator<Pick> { a, b -> compareScores(scoreOf(b.code), scoreOf(a.code)) }
+                    .thenBy { if (it.slot != null) 0 else 1 })
+                .let { sorted -> if (unique) sorted.distinctBy { it.code } else sorted }
+                .take(slots.size)
 
-            if (best != null && compareScores(score(best, weights), currentScore) > 0) {
-                actions += ActionHelper.EquipAction(slotInfo.slot, best.code, source = draw(best.code))
-                if (isArtifact) usedArtifacts += best.code
-            } else if (isArtifact && currentUsable) {
-                usedArtifacts += current
+            val kept = chosen.mapNotNull { it.slot }.toSet()
+            val freeSlots = slots.map { it.slot }.filter { it !in kept }.iterator()
+            for (unit in chosen.filter { it.slot == null }) {
+                val slot = freeSlots.next()
+                actions += ActionHelper.EquipAction(slot, unit.code, source = draw(unit.code))
             }
         }
-        return actions
+        // Keep the documented slot order (STAT_SLOTS) for callers and tests.
+        val order = STAT_SLOTS.map { it.slot }
+        return actions.sortedBy { order.indexOf(it.slot) }
     }
 
     /**
      * Look up every item [char] could equip in one of [STAT_SLOTS] (currently equipped +
      * inventory + bank), grouped by equip-item type, filtered to what's actually usable
-     * ([equippable]) and gives at least one point of [priority]'s stats.
+     * ([equippable]) and helps [goal] ([useful]: faster, or at least one point of a goal stat).
      */
     suspend fun candidatesFor(
         char: Character,
         helper: ActionHelper,
         achievements: Set<String>,
-        priority: Priority,
+        goal: Goal,
     ): Map<String, List<Item>> {
         val types = STAT_SLOTS.map { it.itemType }.toSet()
         val codes = mutableSetOf<String>()
@@ -133,14 +178,37 @@ object StatGearOptimizer {
         return items
             .filter { it.type in types }
             .filter { equippable(char, it, achievements) }
-            .filter { priority.weights.any { stat -> it.effects.any { e -> e.code == stat && e.value > 0 } } }
+            .filter { useful(it, goal) }
             .groupBy { it.type }
     }
 
+    /**
+     * The goal for gathering [skill] at [resourceCode] (or, when only the wanted item is known,
+     * the first [skill] resource dropping [dropCode]), honouring a [requested] focus.
+     */
+    suspend fun gatheringGoal(
+        char: Character,
+        helper: ActionHelper,
+        skill: String,
+        resourceCode: String? = null,
+        dropCode: String? = null,
+        requested: Focus? = null,
+    ): Goal {
+        val resource = runCatching {
+            when {
+                resourceCode != null -> helper.contentCache.getResource(resourceCode)
+                dropCode != null -> helper.contentCache.getResourcesByDrop(dropCode).firstOrNull { it.skill == skill }
+                else -> null
+            }
+        }.getOrNull()
+        val level = CharacterUtils.getSkillLevel(char, skill) ?: 0
+        return Goal.gathering(skill, resolveFocus(requested, resource, level, helper.gearFocus.prospectFor.toSet()))
+    }
+
     /** Convenience wrapper: plan gear for [char] using live inventory/bank state via [helper]. */
-    suspend fun planFor(char: Character, helper: ActionHelper, achievements: Set<String>, priority: Priority): List<ActionHelper.EquipAction> {
-        val candidates = candidatesFor(char, helper, achievements, priority)
-        return plan(char, priority, candidates,
+    suspend fun planFor(char: Character, helper: ActionHelper, achievements: Set<String>, goal: Goal): List<ActionHelper.EquipAction> {
+        val candidates = candidatesFor(char, helper, achievements, goal)
+        return plan(char, goal, candidates,
             inventoryQty = { helper.getItemQuantity(char, it) },
             bankQty = { helper.bankState.getQuantity(it) })
     }

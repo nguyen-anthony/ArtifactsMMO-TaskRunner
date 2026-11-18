@@ -3,16 +3,23 @@ package com.artifactsmmo.core.task
 import com.artifactsmmo.client.ArtifactsMMOClient
 import com.artifactsmmo.client.models.Character
 import com.artifactsmmo.client.models.CraftInfo
+import com.artifactsmmo.client.models.InventorySlot
 import com.artifactsmmo.client.models.Item
+import com.artifactsmmo.client.models.MapAccess
+import com.artifactsmmo.client.models.MapContent
+import com.artifactsmmo.client.models.MapInfo
+import com.artifactsmmo.client.models.MapInteraction
 import com.artifactsmmo.client.models.SimpleItem
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Instant
@@ -56,6 +63,45 @@ class CraftingRecycleTest {
             CraftingExecutor(helper).executeStep("Shuckle", task, {}, previousChar = char)
         }
         assertTrue(error.message.orEmpty().contains("bank"), error.message)
+    }
+
+    /** 20 items of a 4-per-craft recipe is 5 craft actions, and those 20 items complete the task. */
+    @Test
+    fun bankCraftQuantityIsInItemsNotCraftActions() = runTest {
+        val potion = Item(
+            name = "Small Health Potion", code = "small_health_potion", level = 1, type = "utility",
+            subtype = "", description = "", tradeable = true,
+            craft = CraftInfo(skill = "alchemy", level = 1, items = listOf(SimpleItem("sunflower", 3)), quantity = 4)
+        )
+        val char = character().copy(inventory = listOf(InventorySlot(1, "sunflower", 30)))
+        val json = headersOf(HttpHeaders.ContentType, "application/json")
+        var craftBody = ""
+        val engine = MockEngine { req ->
+            when (req.url.encodedPath) {
+                "/items/small_health_potion" ->
+                    respond("""{"data":${Json.encodeToString(Item.serializer(), potion)}}""", HttpStatusCode.OK, json)
+                "/my/Shuckle/action/crafting" -> {
+                    craftBody = (req.body as TextContent).text
+                    // Potions omitted from the returned inventory so no bank deposit is attempted.
+                    respond("""{"data":{"cooldown":{"total_seconds":0,"remaining_seconds":0,"started_at":"2026-01-01T00:00:00Z",
+                        "expiration":"2026-01-01T00:00:00Z","reason":"crafting"},"details":{"xp":0,"items":[]},
+                        "character":${Json.encodeToString(Character.serializer(), character())}}}""", HttpStatusCode.OK, json)
+                }
+                else -> respond("""{"error":{"code":404,"message":"not found"}}""", HttpStatusCode.NotFound, json)
+            }
+        }
+        val client = ArtifactsMMOClient(token = "t", baseUrl = "http://test", engine = engine)
+        val workshop = MapInfo(
+            mapId = 1, name = "Lab", skin = "", x = 0, y = 0, layer = "overworld",
+            access = MapAccess(type = "standard"), interactions = MapInteraction(content = MapContent("workshop", "alchemy")),
+        )
+        val helper = ActionHelper(client, ContentCache(client.content).apply { setMaps(listOf(workshop)) }, BankState(client, this))
+        val task = TaskType.Craft("alchemy", "small_health_potion", "Small Health Potion", CraftMode.BANK, targetQuantity = 20)
+
+        val result = CraftingExecutor(helper).executeStep("Shuckle", task, {}, previousChar = char)
+
+        assertTrue(craftBody.contains("\"quantity\":5"), craftBody)
+        assertEquals(StepResult.CraftTaskComplete, result)
     }
 
     private fun character() = Character(

@@ -95,6 +95,43 @@ class BankExecutor(private val helper: ActionHelper) {
         return StepResult.Crafted(count = 0, recycled = batch)
     }
 
+    /**
+     * One batch of a bank delete: bank everything else, withdraw as many copies as fit, delete
+     * them. Returns [StepResult.Crafted] with `recycled = batch` (the progress counter) until
+     * [TaskType.BankDelete.quantity] is reached or the bank runs out.
+     */
+    suspend fun executeBankDelete(
+        characterName: String,
+        task: TaskType.BankDelete,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        val left = task.quantity - task.deletedSoFar
+        if (left <= 0) {
+            onStatus("Delete complete: ${task.deletedSoFar}x ${task.itemName}")
+            return StepResult.QuickTaskComplete
+        }
+        var char = helper.depositInventoryExcept(characterName, setOf(task.itemCode))
+        val held = helper.getItemQuantity(char, task.itemCode)
+        val otherUsed = char.inventory.sumOf { it.quantity } - held
+        val inBank = helper.getBankItemQuantity(task.itemCode)
+        val batch = deleteBatchSize(left, held + inBank, char.inventoryMaxItems - otherUsed)
+        if (batch <= 0) {
+            if (held + inBank <= 0) {
+                onStatus("No ${task.itemName} left in the bank (deleted ${task.deletedSoFar}/${task.quantity})")
+                return StepResult.OutOfMaterials
+            }
+            return StepResult.Failed("Not enough inventory space to delete ${task.itemName}")
+        }
+        val withdraw = batch - held
+        if (withdraw > 0) {
+            onStatus("Withdrawing ${withdraw}x ${task.itemName} from bank...")
+            char = helper.bankWithdrawItems(characterName, listOf(SimpleItem(task.itemCode, withdraw)))
+        }
+        onStatus("Deleting ${batch}x ${task.itemName} (${task.deletedSoFar + batch}/${task.quantity})...")
+        helper.deleteItem(characterName, task.itemCode, batch)
+        return StepResult.Crafted(count = 0, recycled = batch)
+    }
+
     companion object {
         /** Only these crafts can be recycled (per the game docs). */
         val RECYCLABLE_SKILLS = setOf("weaponcrafting", "gearcrafting", "jewelrycrafting")
@@ -104,6 +141,10 @@ class BankExecutor(private val helper: ActionHelper) {
 
         /** Resources returned per recycled item: floor((recipe total − 1) / 5) + 1. */
         fun recycleReturnPerItem(recipeTotal: Int): Int = (recipeTotal - 1).coerceAtLeast(0) / 5 + 1
+
+        /** Gold to move: [requested] (0 or less = all) capped by what's [available]. */
+        fun goldAmount(requested: Int, available: Int): Int =
+            (if (requested <= 0) available else minOf(requested, available)).coerceAtLeast(0)
 
         /**
          * Copies to recycle in one batch: limited by what's [left] to do, what's [available]
@@ -116,6 +157,10 @@ class BankExecutor(private val helper: ActionHelper) {
             val byInventory = space / maxOf(1, perItem)
             return minOf(left, available, byInventory).coerceAtLeast(0)
         }
+
+        /** Copies to delete in one batch: what's [left], what's [available], what fits in [freeCapacity]. */
+        fun deleteBatchSize(left: Int, available: Int, freeCapacity: Int): Int =
+            minOf(left, available, freeCapacity).coerceAtLeast(0)
     }
 
     /**
@@ -194,6 +239,30 @@ class BankExecutor(private val helper: ActionHelper) {
         onStatus("Depositing ${task.items.size} items to bank...")
         helper.bankDepositItems(characterName, task.items)
         onStatus("Deposited ${task.items.size} items to bank")
+        return StepResult.QuickTaskComplete
+    }
+
+    /** Move to bank and deposit/withdraw gold; quantity 0 = everything available. */
+    suspend fun executeGoldTransfer(
+        characterName: String,
+        task: TaskType.GoldTransfer,
+        onStatus: (String) -> Unit
+    ): StepResult {
+        if (task.deposit) {
+            val carried = helper.refreshCharacter(characterName).gold
+            val amount = goldAmount(task.quantity, carried)
+            if (amount <= 0) { onStatus("No gold to deposit"); return StepResult.QuickTaskComplete }
+            onStatus("Depositing $amount gold to bank...")
+            helper.bankDepositGold(characterName, amount)
+            onStatus("Deposited $amount gold")
+        } else {
+            val inBank = helper.getBankGold()
+            val amount = goldAmount(task.quantity, inBank)
+            if (amount <= 0) return StepResult.Failed("No gold in the bank")
+            onStatus("Withdrawing $amount gold from bank...")
+            helper.bankWithdrawGold(characterName, amount)
+            onStatus("Withdrew $amount gold")
+        }
         return StepResult.QuickTaskComplete
     }
 }

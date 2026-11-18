@@ -32,8 +32,9 @@ object TaskStartDeposit {
         is TaskType.TaskMaster ->
             if (char.taskType == "items" && char.task.isNotEmpty()) setOf(char.task) else emptySet()
         is TaskType.Gather, is TaskType.Craft, is TaskType.EventGather -> emptySet()
-        is TaskType.BankWithdraw, is TaskType.BankRecycle, is TaskType.InventoryDeposit,
+        is TaskType.BankWithdraw, is TaskType.BankRecycle, is TaskType.BankDelete, is TaskType.InventoryDeposit,
         is TaskType.InventoryRecycle, is TaskType.BulkBankWithdraw, is TaskType.BulkInventoryDeposit,
+        is TaskType.GoldTransfer, is TaskType.NpcBuy,
         is TaskType.EventNpc, is TaskType.BossFight, TaskType.Idle -> null
     }
 }

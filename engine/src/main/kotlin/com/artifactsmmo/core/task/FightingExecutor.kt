@@ -62,6 +62,14 @@ class FightingExecutor(private val helper: ActionHelper) {
     /** Gear optimizer — used by TaskMaster and the re-optimize button. */
     val gearOptimizer = GearOptimizer(helper)
 
+    /** Learned food-eaten / loot-gained per fight, used to size food loads ([FoodPlanner]). */
+    val fightRates = FightRateTracker()
+
+    private companion object {
+        /** Cooked COOK_AND_USE food kept per item on a bank visit before rates are learned. */
+        const val LEGACY_FOOD_TO_KEEP = 25
+    }
+
     /**
      * Run a full gear+weapon+utility optimization for TaskMaster use.
      * Delegates to [GearOptimizer.optimizeWithCacheHint] which reuses cached results
@@ -179,32 +187,20 @@ class FightingExecutor(private val helper: ActionHelper) {
             }
         }
 
-        // Discover cookable drops for this monster (cached after first call)
-        val allCookableDrops = getCookableDrops(task.monsterCode, char)
-
-        // Split drops by strategy
-        val cookAndUseDrops = allCookableDrops.filter {
-            getDropStrategy(task, it.rawCode) == DropStrategy.COOK_AND_USE
-        }
-        val cookAndBankDrops = allCookableDrops.filter {
-            getDropStrategy(task, it.rawCode) == DropStrategy.COOK_AND_BANK
-        }
-        val bankRawDrops = allCookableDrops.filter {
-            getDropStrategy(task, it.rawCode) == DropStrategy.BANK_RAW
-        }
-
-        // Food codes: only COOK_AND_USE drops are considered "food" to keep on hand
-        val foodCodes = buildFoodCodes(cookAndUseDrops)
+        // Discover cookable drops for this monster (cached after first call), split by strategy
+        val drops = dropLists(task, getCookableDrops(task.monsterCode, char))
 
         // Check if inventory is full
         if (helper.isInventoryFull(char)) {
             onStatus("Inventory full, handling...")
-            return handleFullInventory(characterName, cookAndUseDrops, cookAndBankDrops, bankRawDrops, foodCodes, onStatus)
+            return handleFullInventory(characterName, task.monsterCode, drops, onStatus)
         }
 
-        // Check HP - heal if below 75%
-        if (!CharacterUtils.hasEnoughHP(char, 0.90)) {
-            return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
+        // Heal once HP is down to what the next fight could cost (legacy: below 90%).
+        val healNow = FoodPlanner.shouldHeal(char.hp, char.maxHp, fightRates.get(characterName, task.monsterCode), helper.foodConfig)
+            ?: !CharacterUtils.hasEnoughHP(char, FoodPlanner.LEGACY_HEAL_BELOW)
+        if (healNow) {
+            return handleHealing(characterName, char, task.monsterCode, drops, onStatus)
         }
 
         char = refillPlannedUtilities(characterName, char, task.utilityActions, onStatus)
@@ -229,11 +225,17 @@ class FightingExecutor(private val helper: ActionHelper) {
 
             if (fight.result == "win") {
                 val drops = charResult?.drops?.joinToString(", ") { "${it.quantity}x ${it.code}" } ?: ""
+                fightRates.recordFight(
+                    characterName, task.monsterCode,
+                    lootUnits = charResult?.drops?.sumOf { it.quantity } ?: 0,
+                    hpLost = (char.hp - (updatedChar?.hp ?: char.hp)).coerceAtLeast(0),
+                )
                 val xp = charResult?.xp ?: 0
                 val gold = charResult?.gold ?: 0
                 onStatus("Won! +${xp} XP, +${gold} gold${if (drops.isNotEmpty()) ", drops: $drops" else ""}")
                 StepResult.FightWon(xp, gold, updatedChar)
             } else {
+                fightRates.recordLoss(characterName, task.monsterCode)
                 onStatus("Lost fight against ${task.monsterName}")
                 StepResult.FightLost("Lost to ${task.monsterName}")
             }
@@ -335,6 +337,25 @@ class FightingExecutor(private val helper: ActionHelper) {
         return codes
     }
 
+    /** Drops for the current monster, split by drop strategy. */
+    private data class DropLists(
+        val cookAndUse: List<ActionHelper.CookableDropInfo>,
+        val cookAndBank: List<ActionHelper.CookableDropInfo>,
+        val bankRaw: List<ActionHelper.CookableDropInfo>,
+        val foodCodes: Set<String>,
+    )
+
+    private fun dropLists(task: TaskType.Fight, allCookableDrops: List<ActionHelper.CookableDropInfo>): DropLists {
+        val byStrategy = allCookableDrops.groupBy { getDropStrategy(task, it.rawCode) }
+        val cookAndUse = byStrategy[DropStrategy.COOK_AND_USE].orEmpty()
+        return DropLists(
+            cookAndUse,
+            byStrategy[DropStrategy.COOK_AND_BANK].orEmpty(),
+            byStrategy[DropStrategy.BANK_RAW].orEmpty(),
+            buildFoodCodes(cookAndUse),
+        )
+    }
+
     /**
      * Internal entry point for [EventExecutor] to invoke the healing logic without
      * going through the full [executeStep] (which requires a map-cache monster lookup).
@@ -345,40 +366,75 @@ class FightingExecutor(private val helper: ActionHelper) {
         task: TaskType.Fight,
         onStatus: (String) -> Unit
     ): StepResult {
-        val allCookableDrops = getCookableDrops(task.monsterCode, char)
-        val cookAndUseDrops = allCookableDrops.filter {
-            getDropStrategy(task, it.rawCode) == DropStrategy.COOK_AND_USE
-        }
-        val foodCodes = buildFoodCodes(cookAndUseDrops)
-        return handleHealing(characterName, char, cookAndUseDrops, foodCodes, onStatus)
+        val drops = dropLists(task, getCookableDrops(task.monsterCode, char))
+        return handleHealing(characterName, char, task.monsterCode, drops, onStatus)
+    }
+
+    /** Heal per unit when [code] is food this character may eat in combat, else null. */
+    private suspend fun combatHeal(char: com.artifactsmmo.client.models.Character, code: String): Int? {
+        if (code in ActionHelper.FOOD_EXCLUDED_FROM_COMBAT) return null
+        val item = try { helper.contentCache.getItemOrNull(code) } catch (_: Exception) { null } ?: return null
+        if (item.type != "consumable" || item.level > char.level) return null
+        return item.effects.firstOrNull { it.code == "heal" }?.value?.takeIf { it > 0 }
+    }
+
+    /** Units of inventory treated as loot room: [ActionHelper.isInventoryFull] trips at 90%. */
+    private fun usableUnits(char: com.artifactsmmo.client.models.Character) = (char.inventoryMaxItems * 0.9).toInt()
+
+    /**
+     * Food units to carry from the bank for this character and monster ([FoodPlanner]), given
+     * [nonFoodKept] units of inventory that stay after the bank visit. Null until rates are learned.
+     */
+    private fun foodTarget(
+        characterName: String,
+        monsterCode: String,
+        char: com.artifactsmmo.client.models.Character,
+        nonFoodKept: Int,
+    ): Int? = FoodPlanner.target(usableUnits(char) - nonFoodKept, fightRates.get(characterName, monsterCode), helper.foodConfig)
+
+    /** Eat enough of the best inventory food to cover [hpMissing]; null when there's none. */
+    private suspend fun eatFromInventory(
+        characterName: String,
+        char: com.artifactsmmo.client.models.Character,
+        monsterCode: String,
+        onStatus: (String) -> Unit,
+    ): StepResult? {
+        val (foodCode, healAmount, available) = helper.findBestFoodInInventory(char) ?: return null
+        val qty = minOf(available, maxOf(1, (char.maxHp - char.hp) / healAmount))
+        onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
+        val useResult = helper.useItem(characterName, foodCode, qty)
+        fightRates.recordFoodEaten(characterName, monsterCode, qty)
+        onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
+        return StepResult.Rested
     }
 
     /**
      * Handle healing when HP is low.
-     * Priority: eat cooked food > cook raw food then eat (COOK_AND_USE only) > withdraw from bank > rest
+     * Priority: eat inventory food > cook raw food then eat (COOK_AND_USE only) >
+     * bank visit (deposit loot + restock food) then eat > rest
      */
     private suspend fun handleHealing(
         characterName: String,
         char: com.artifactsmmo.client.models.Character,
-        cookAndUseDrops: List<ActionHelper.CookableDropInfo>,
-        foodCodes: Set<String>,
+        monsterCode: String,
+        drops: DropLists,
         onStatus: (String) -> Unit
     ): StepResult {
         val hpMissing = char.maxHp - char.hp
+        val cfg = helper.foodConfig
 
-        // 1. Try to eat cooked food from inventory
-        val bestFood = helper.findBestFoodInInventory(char)
-        if (bestFood != null) {
-            val (foodCode, healAmount, available) = bestFood
-            val qty = minOf(available, maxOf(1, hpMissing / healAmount))
-            onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
-            val useResult = helper.useItem(characterName, foodCode, qty)
-            onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
+        // 0. Resting off a small wound costs no more time than eating, and saves the food.
+        if (cfg.restWhenCheaper && FoodPlanner.restIsCheaper(hpMissing, foodUnits = 1)) {
+            onStatus("Resting off $hpMissing HP (cheaper than eating)...")
+            helper.rest(characterName)
             return StepResult.Rested
         }
 
+        // 1. Try to eat cooked food from inventory
+        eatFromInventory(characterName, char, monsterCode, onStatus)?.let { return it }
+
         // 2. Try to cook raw food from inventory (only COOK_AND_USE drops)
-        for (info in cookAndUseDrops) {
+        for (info in drops.cookAndUse) {
             val rawQty = helper.getItemQuantity(char, info.rawCode)
             if (rawQty >= info.rawPerCraft) {
                 val craftQty = rawQty / info.rawPerCraft
@@ -392,64 +448,47 @@ class FightingExecutor(private val helper: ActionHelper) {
                     val qty = minOf(craftQty, maxOf(1, hpMissing / info.healAmount))
                     onStatus("Eating ${qty}x ${info.cookedCode}...")
                     val useResult = helper.useItem(characterName, info.cookedCode, qty)
+                    fightRates.recordFoodEaten(characterName, monsterCode, qty)
                     onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
                     return StepResult.Rested
                 }
             }
         }
 
-        // 3. Try to withdraw cooked food from bank — first check this monster's COOK_AND_USE drops,
-        //    then fall back to ANY usable food in the bank.
-        //    Withdraw only enough to heal + a small carry buffer (10 extra), NOT the entire
-        //    free inventory. Over-withdrawing fills inventory → triggers handleFullInventory →
-        //    deposits the food → next heal trip re-withdraws → infinite cycle.
-        for (info in cookAndUseDrops) {
-            val bankQty = helper.getBankItemQuantity(info.cookedCode)
-            if (bankQty > 0) {
-                val freeCapacity = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity })
-                    .coerceAtLeast(0)
-                if (freeCapacity == 0) break  // no room — skip to rest
-                val qtyToHeal = maxOf(1, hpMissing / info.healAmount)
-                val withdrawQty = minOf(bankQty, freeCapacity, qtyToHeal + 25)
-                onStatus("Withdrawing ${withdrawQty}x ${info.cookedCode} from bank...")
-                helper.bankWithdrawItems(characterName, listOf(SimpleItem(info.cookedCode, withdrawQty)))
-
-                val qty = minOf(withdrawQty, qtyToHeal)
-                onStatus("Eating ${qty}x ${info.cookedCode}...")
-                val useResult = helper.useItem(characterName, info.cookedCode, qty)
-                onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
-                return StepResult.Rested
-            }
-        }
-
-        // 4. Search the entire bank for ANY usable food
+        // 3. Out of food: one bank visit deposits the loot and restocks food, then eat — unless
+        //    the bank has no food, or resting costs less than this heal's share of the trip.
         val bankFood = helper.findBestFoodInBank(char)
-        if (bankFood != null) {
-            val (foodCode, healAmount, bankQty) = bankFood
-            val freeCapacity = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity })
-                .coerceAtLeast(0)
-            if (freeCapacity > 0) {
-                val qtyToHeal = maxOf(1, hpMissing / healAmount)
-                val withdrawQty = minOf(bankQty, freeCapacity, qtyToHeal + 25)
-                onStatus("Withdrawing ${withdrawQty}x $foodCode from bank...")
-                helper.bankWithdrawItems(characterName, listOf(SimpleItem(foodCode, withdrawQty)))
-
-                val qty = minOf(withdrawQty, qtyToHeal)
-                onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
-                val useResult = helper.useItem(characterName, foodCode, qty)
-                onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
-                return StepResult.Rested
+        if (bankFood == null) {
+            onStatus("HP low (${char.hp}/${char.maxHp}), no food available, resting...")
+            helper.rest(characterName)
+            return StepResult.Rested
+        }
+        if (cfg.restWhenCheaper) {
+            val unitsPerTrip = foodTarget(characterName, monsterCode, char, nonFoodKept = 0)
+            val bank = helper.findNearestBank(char)
+            if (unitsPerTrip != null && bank != null) {
+                val tiles = kotlin.math.abs(bank.x - char.x) + kotlin.math.abs(bank.y - char.y)
+                val tripSeconds = 2 * tiles * TeleportAdvisor.SECONDS_PER_TILE + 2 * FoodPlanner.USE_SECONDS
+                val units = maxOf(1, kotlin.math.ceil(hpMissing.toDouble() / bankFood.second).toInt())
+                if (FoodPlanner.restIsCheaper(hpMissing, units, tripSeconds, unitsPerTrip)) {
+                    onStatus("Out of food; resting off $hpMissing HP (cheaper than a bank trip)...")
+                    helper.rest(characterName)
+                    return StepResult.Rested
+                }
             }
         }
+        val restocked = bankVisit(characterName, monsterCode, drops, hpMissing, onStatus)
+        eatFromInventory(characterName, restocked, monsterCode, onStatus)?.let { return it }
 
-        // 5. Last resort: rest
-        onStatus("HP low (${char.hp}/${char.maxHp}), no food available, resting...")
+        // 4. Last resort: rest
+        onStatus("HP low (${restocked.hp}/${restocked.maxHp}), no food available, resting...")
         helper.rest(characterName)
         return StepResult.Rested
     }
 
     /**
-     * Handle full inventory during fighting.
+     * Handle full inventory during fighting: cook drops, then a bank visit that deposits loot
+     * and tops food back up.
      * - COOK_AND_USE drops: cook, keep on hand for healing
      * - COOK_AND_BANK drops: cook, then deposit to bank
      * - BANK_RAW drops: deposit raw to bank
@@ -457,111 +496,162 @@ class FightingExecutor(private val helper: ActionHelper) {
      */
     private suspend fun handleFullInventory(
         characterName: String,
-        cookAndUseDrops: List<ActionHelper.CookableDropInfo>,
-        cookAndBankDrops: List<ActionHelper.CookableDropInfo>,
-        bankRawDrops: List<ActionHelper.CookableDropInfo>,
-        foodCodes: Set<String>,
+        monsterCode: String,
+        drops: DropLists,
         onStatus: (String) -> Unit
     ): StepResult {
         var char = helper.refreshCharacter(characterName)
         var totalCrafted = 0
 
         // Collect all drops that need cooking (COOK_AND_USE + COOK_AND_BANK)
-        val dropsToCook = cookAndUseDrops + cookAndBankDrops
+        val dropsToCook = drops.cookAndUse + drops.cookAndBank
 
-        if (dropsToCook.isNotEmpty()) {
-            var needsWorkshop = false
-            for (info in dropsToCook) {
-                val rawQty = helper.getItemQuantity(char, info.rawCode)
-                if (rawQty >= info.rawPerCraft) needsWorkshop = true
-            }
+        if (dropsToCook.any { helper.getItemQuantity(char, it.rawCode) >= it.rawPerCraft }) {
+            val workshop = helper.findNearestWorkshop(char, "cooking")
+            if (workshop != null) {
+                onStatus("Moving to cooking workshop...")
+                helper.navigateWithTeleport(characterName, char, workshop)
+                char = helper.refreshCharacter(characterName)
 
-            if (needsWorkshop) {
-                val workshop = helper.findNearestWorkshop(char, "cooking")
-                if (workshop != null) {
-                    onStatus("Moving to cooking workshop...")
-                    helper.navigateWithTeleport(characterName, char, workshop)
-                    char = helper.refreshCharacter(characterName)
-
-                    for (info in dropsToCook) {
-                        val rawQty = helper.getItemQuantity(char, info.rawCode)
-                        val craftQty = rawQty / info.rawPerCraft
-                        if (craftQty > 0) {
-                            onStatus("Cooking ${craftQty}x ${info.cookedCode} (from ${craftQty * info.rawPerCraft}x ${info.rawCode})...")
-                            helper.craft(characterName, info.cookedCode, craftQty)
-                            totalCrafted += craftQty
-                        }
-                    }
-                    char = helper.refreshCharacter(characterName)
-                }
-            }
-        }
-
-        // Build the set of cooked item codes from COOK_AND_BANK drops — these get deposited
-        val cookAndBankCookedCodes = cookAndBankDrops.map { it.cookedCode }.toSet()
-
-        // Build the set of raw item codes from BANK_RAW drops — these get deposited raw
-        val bankRawCodes = bankRawDrops.map { it.rawCode }.toSet()
-
-        // Build deposit list
-        val itemsToDeposit = mutableListOf<SimpleItem>()
-        val foodToKeep = 25 // Keep up to this many cooked food items (COOK_AND_USE only)
-
-        for (slot in char.inventory) {
-            if (slot.quantity <= 0) continue
-
-            when {
-                // COOK_AND_BANK cooked items: always deposit all
-                slot.code in cookAndBankCookedCodes -> {
-                    itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
-                }
-                // BANK_RAW items: always deposit all
-                slot.code in bankRawCodes -> {
-                    itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
-                }
-                // COOK_AND_USE food: keep some, bank excess
-                slot.code in foodCodes -> {
-                    val cookableInfo = cookAndUseDrops.find { it.cookedCode == slot.code }
-                    if (cookableInfo != null) {
-                        // Cooked food from COOK_AND_USE — keep up to foodToKeep
-                        if (slot.quantity > foodToKeep) {
-                            itemsToDeposit.add(SimpleItem(slot.code, slot.quantity - foodToKeep))
-                        }
-                    } else {
-                        // Raw food that we couldn't cook — bank it
-                        itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
+                for (info in dropsToCook) {
+                    val rawQty = helper.getItemQuantity(char, info.rawCode)
+                    val craftQty = rawQty / info.rawPerCraft
+                    if (craftQty > 0) {
+                        onStatus("Cooking ${craftQty}x ${info.cookedCode} (from ${craftQty * info.rawPerCraft}x ${info.rawCode})...")
+                        helper.craft(characterName, info.cookedCode, craftQty)
+                        totalCrafted += craftQty
                     }
                 }
-                // Everything else: deposit per standard rules
-                else -> {
-                    // Protect any usable food the character is carrying for healing.
-                    // Without this guard, bank-withdrawn healing food (e.g. cooked_salmon
-                    // fetched during handleHealing) gets deposited right back on the next
-                    // handleFullInventory call, creating an endless bank-trip cycle.
-                    val isHealingFood = try {
-                        val item = helper.contentCache.getItemOrNull(slot.code)
-                        item != null &&
-                        item.type == "consumable" &&
-                        item.level <= char.level &&
-                        item.effects.any { it.code == "heal" && it.value > 0 }
-                    } catch (_: Exception) { false }
-                    if (isHealingFood) continue
-
-                    val shouldDeposit = try { helper.shouldDepositItem(char, slot.code) } catch (_: Exception) { true }
-                    if (!shouldDeposit) continue
-                    itemsToDeposit.add(SimpleItem(slot.code, slot.quantity))
-                }
             }
         }
 
-        if (itemsToDeposit.isNotEmpty()) {
-            onStatus("Banking ${itemsToDeposit.sumOf { it.quantity }} items...")
-            helper.bankDepositItems(characterName, itemsToDeposit)
-        }
-
+        bankVisit(characterName, monsterCode, drops, hpMissing = null, onStatus)
         return if (totalCrafted > 0) StepResult.CraftedAndBanked(totalCrafted) else StepResult.Banked
     }
 
+    /**
+     * One bank visit = full resupply: deposit loot (keeping food up to the learned target) and,
+     * once rates are learned, top food back up to that target so the next trip is needed only
+     * when food and loot room run out together. [hpMissing] is set when the visit is for
+     * healing: without learned rates it withdraws enough to heal plus a 25-unit buffer (legacy).
+     * Returns the refreshed character.
+     */
+    private suspend fun bankVisit(
+        characterName: String,
+        monsterCode: String,
+        drops: DropLists,
+        hpMissing: Int?,
+        onStatus: (String) -> Unit,
+    ): com.artifactsmmo.client.models.Character {
+        var char = helper.refreshCharacter(characterName)
+        val plan = planDeposit(characterName, monsterCode, char, drops)
+        if (plan.deposits.isNotEmpty()) {
+            onStatus("Banking ${plan.deposits.sumOf { it.quantity }} items...")
+            helper.bankDepositItems(characterName, plan.deposits)
+            char = helper.refreshCharacter(characterName)
+        }
+
+        val carried = mutableMapOf<String, Int>()
+        for (slot in char.inventory) {
+            if (slot.quantity > 0 && combatHeal(char, slot.code) != null) carried.merge(slot.code, slot.quantity, Int::plus)
+        }
+        val target = plan.foodTarget
+        // Healing visits must leave with at least enough to heal; before rates are learned they
+        // add the legacy 25-unit carry buffer.
+        val healBuffer = if (target == null) 25 else 0
+        var need: Int? = when {
+            target != null && target > carried.values.sum() -> target - carried.values.sum()
+            hpMissing != null -> null // sized per chosen food below
+            else -> return char
+        }
+
+        var free = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity }).coerceAtLeast(0)
+        if (free == 0) return char
+
+        // Same food as carried first (fewer slots), then this monster's cooked drops, then the best in the bank.
+        val candidates = linkedSetOf<String>()
+        carried.keys.sortedByDescending { carried[it] }.forEach { candidates += it }
+        drops.cookAndUse.forEach { candidates += it.cookedCode }
+        helper.findBestFoodInBank(char)?.let { candidates += it.first }
+
+        val withdraw = mutableListOf<SimpleItem>()
+        for (code in candidates) {
+            if (free <= 0) break
+            val heal = combatHeal(char, code) ?: continue
+            val bankQty = helper.getBankItemQuantity(code)
+            if (bankQty <= 0) continue
+            val left = need ?: (maxOf(1, hpMissing!! / heal) + healBuffer)
+            val qty = minOf(bankQty, left, free)
+            if (qty <= 0) continue
+            withdraw += SimpleItem(code, qty)
+            need = left - qty
+            free -= qty
+            if (need <= 0) break
+        }
+        if (withdraw.isEmpty()) return char
+        onStatus("Restocking food: ${withdraw.joinToString { "${it.quantity}x ${it.code}" }}" +
+            (target?.let { " (target $it)" } ?: "") + "...")
+        helper.bankWithdrawItems(characterName, withdraw)
+        return helper.refreshCharacter(characterName)
+    }
+
+    private data class DepositPlan(val deposits: List<SimpleItem>, val foodTarget: Int?)
+
+    /**
+     * Decide what a bank visit deposits. Food is kept up to [foodTarget] units total (best heal
+     * first); before rates are learned, COOK_AND_USE cooked food is kept up to 25 per item and
+     * other usable food is kept in full (legacy behaviour).
+     */
+    private suspend fun planDeposit(
+        characterName: String,
+        monsterCode: String,
+        char: com.artifactsmmo.client.models.Character,
+        drops: DropLists,
+    ): DepositPlan {
+        val cookAndBankCookedCodes = drops.cookAndBank.map { it.cookedCode }.toSet()
+        val bankRawCodes = drops.bankRaw.map { it.rawCode }.toSet()
+        val cookedUseCodes = drops.cookAndUse.map { it.cookedCode }.toSet()
+
+        val deposits = mutableListOf<SimpleItem>()
+        val food = mutableListOf<Triple<String, Int, Int>>() // code, heal, qty
+        var nonFoodKept = 0
+        for (slot in char.inventory) {
+            if (slot.quantity <= 0) continue
+            when {
+                slot.code in cookAndBankCookedCodes || slot.code in bankRawCodes ->
+                    deposits += SimpleItem(slot.code, slot.quantity)
+                // Raw COOK_AND_USE food that couldn't be cooked: bank it.
+                slot.code in drops.foodCodes && slot.code !in cookedUseCodes ->
+                    deposits += SimpleItem(slot.code, slot.quantity)
+                else -> {
+                    // Protect usable food so bank-withdrawn healing food isn't deposited straight back.
+                    val heal = combatHeal(char, slot.code)
+                        ?: drops.cookAndUse.firstOrNull { it.cookedCode == slot.code }?.healAmount
+                    if (heal != null) {
+                        food += Triple(slot.code, heal, slot.quantity)
+                        continue
+                    }
+                    val shouldDeposit = try { helper.shouldDepositItem(char, slot.code) } catch (_: Exception) { true }
+                    if (shouldDeposit) deposits += SimpleItem(slot.code, slot.quantity) else nonFoodKept += slot.quantity
+                }
+            }
+        }
+
+        val target = foodTarget(characterName, monsterCode, char, nonFoodKept)
+        if (target == null) {
+            for ((code, _, qty) in food) {
+                if (code in cookedUseCodes && qty > LEGACY_FOOD_TO_KEEP) deposits += SimpleItem(code, qty - LEGACY_FOOD_TO_KEEP)
+            }
+        } else {
+            var keep = target
+            for ((code, _, qty) in food.sortedByDescending { it.second }) {
+                val kept = minOf(qty, keep)
+                keep -= kept
+                if (qty > kept) deposits += SimpleItem(code, qty - kept)
+            }
+        }
+        return DepositPlan(deposits, target)
+    }
     /**
      * Execute a single boss-fight iteration.
      *
@@ -659,6 +749,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 val qty = minOf(available, maxOf(1, hpMissing / healAmount))
                 onStatus("Eating ${qty}x $foodCode (heals $healAmount each)...")
                 val useResult = helper.useItem(characterName, foodCode, qty)
+                fightRates.recordFoodEaten(characterName, task.monsterCode, qty)
                 onStatus("Healed! HP: ${useResult.character.hp}/${useResult.character.maxHp}")
                 return StepResult.Rested
             }
@@ -733,6 +824,10 @@ class FightingExecutor(private val helper: ActionHelper) {
 
                 if (fight.result == "win") {
                     val drops = charResult?.drops?.joinToString(", ") { "${it.quantity}x ${it.code}" } ?: ""
+                    // The initiator sees everyone's drops; record them for each member's food sizing.
+                    for (c in fight.characters) {
+                        fightRates.recordFight(c.characterName, task.monsterCode, c.drops.sumOf { it.quantity })
+                    }
                     val xp = charResult?.xp ?: 0
                     val gold = charResult?.gold ?: 0
                     onStatus("Won! +${xp} XP, +${gold} gold${if (drops.isNotEmpty()) ", drops: $drops" else ""}")
@@ -789,8 +884,9 @@ class FightingExecutor(private val helper: ActionHelper) {
      *  1. Deposits all loot (keeps reserve potions, food, and dungeon keys)
      *  2. Refills reserve potions to their target quantities
      *  3. Re-equips utility slots to 100
-     *  4. Withdraws food up to [CoopOptimizer.FOOD_BUFFER]
-     *  5. Withdraws transition costs + spare keys for re-entry
+     *  4. Withdraws transition costs + spare keys for re-entry
+     *  5. Withdraws food: the learned load ([FoodPlanner]) once fights were observed, else
+     *     the planned [CoopOptimizer.FOOD_BUFFER]
      *  6. Heals (food, then rest) if HP is still below 75%
      *  7. Returns; the next boss step navigates back to the tile (consuming keys at the transition)
      */
@@ -864,22 +960,7 @@ class FightingExecutor(private val helper: ActionHelper) {
             onStatus("Utility potion unavailable after restock: $expected — continuing without it")
         }
 
-        // 4. Restock food
-        if (task.foodCode != null && task.foodQuantity > 0) {
-            val currentFood = helper.getItemQuantity(char, task.foodCode)
-            val foodDeficit = task.foodQuantity - currentFood
-            if (foodDeficit > 0) {
-                val bankQty = helper.getBankItemQuantity(task.foodCode)
-                val toWithdraw = foodDeficit.coerceAtMost(bankQty)
-                if (toWithdraw > 0) {
-                    onStatus("Restocking food (${toWithdraw}x ${task.foodCode})...")
-                    helper.bankWithdrawItems(characterName, listOf(com.artifactsmmo.client.models.SimpleItem(task.foodCode, toWithdraw)))
-                    char = helper.refreshCharacter(characterName)
-                }
-            }
-        }
-
-        // 5. Restock transition keys (entry cost + spare).
+        // 4. Transition keys (entry cost + spare).
         //    Gold costs are NOT stocked from bank — gold is on the character and deducted
         //    automatically by the server at transition time. Only item costs are restocked.
         val allKeys = (task.transitionCosts.entries + task.spareKeys.entries)
@@ -903,6 +984,24 @@ class FightingExecutor(private val helper: ActionHelper) {
             }
         }
 
+        // 5. Food: the learned load (food and loot room run out together), else the planned buffer.
+        if (task.foodCode != null && task.foodQuantity > 0) {
+            char = helper.refreshCharacter(characterName)
+            val currentFood = helper.getItemQuantity(char, task.foodCode)
+            val otherUnits = char.inventory.filter { it.code != task.foodCode }.sumOf { it.quantity }
+            val learned = FoodPlanner.target(
+                char.inventoryMaxItems - otherUnits, fightRates.get(characterName, task.monsterCode), helper.foodConfig,
+            )
+            val wanted = learned ?: task.foodQuantity
+            val toWithdraw = (wanted - currentFood)
+                .coerceAtMost(helper.getBankItemQuantity(task.foodCode))
+                .coerceAtMost(char.inventoryMaxItems - char.inventory.sumOf { it.quantity })
+            if (toWithdraw > 0) {
+                onStatus("Restocking food (${toWithdraw}x ${task.foodCode}${learned?.let { ", target $it" } ?: ""})...")
+                helper.bankWithdrawItems(characterName, listOf(com.artifactsmmo.client.models.SimpleItem(task.foodCode, toWithdraw)))
+            }
+        }
+
         // 6. Heal before returning. A restock triggered by low HP must not hand the character
         // back to the encounter still wounded, or the next step would trigger it again.
         char = helper.refreshCharacter(characterName)
@@ -913,6 +1012,7 @@ class FightingExecutor(private val helper: ActionHelper) {
                 val qty = minOf(available, maxOf(1, (char.maxHp - char.hp) / healAmount))
                 onStatus("Eating ${qty}x $foodCode before returning (HP: ${char.hp}/${char.maxHp})...")
                 char = helper.useItem(characterName, foodCode, qty).character
+                fightRates.recordFoodEaten(characterName, task.monsterCode, qty)
             }
             if (!CharacterUtils.hasEnoughHP(char, 0.75)) {
                 onStatus("Resting before returning (HP: ${char.hp}/${char.maxHp})...")

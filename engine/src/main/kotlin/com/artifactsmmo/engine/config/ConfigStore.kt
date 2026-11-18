@@ -1,7 +1,10 @@
 package com.artifactsmmo.engine.config
 
 import com.artifactsmmo.core.task.BankThreshold
+import com.artifactsmmo.core.task.CleanupConfig
 import com.artifactsmmo.core.task.EventConfig
+import com.artifactsmmo.core.task.FoodConfig
+import com.artifactsmmo.core.task.GearFocusConfig
 import com.artifactsmmo.core.task.OfferingConfig
 import com.artifactsmmo.core.task.RaidConfig
 import com.artifactsmmo.core.task.ThresholdSettings
@@ -27,6 +30,9 @@ object ConfigKinds {
     const val TOOLKIT = "toolkit"
     const val THRESHOLD = "threshold"
     const val THRESHOLD_SETTINGS = "threshold_settings"
+    const val GEAR_FOCUS = "gear_focus"
+    const val FOOD = "food"
+    const val CLEANUP = "cleanup"
 }
 
 private val configJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -62,6 +68,33 @@ class TypedConfigs(private val store: ConfigStore) {
 
     suspend fun putThresholdSettings(s: ThresholdSettings) =
         store.put(ConfigKinds.THRESHOLD_SETTINGS, ThresholdSettings.KEY, configJson.encodeToJsonElement(ThresholdSettings.serializer(), s))
+
+    /** Gathering gear focus settings; defaults when missing or unreadable. */
+    suspend fun gearFocus(): GearFocusConfig =
+        store.list(ConfigKinds.GEAR_FOCUS)[GearFocusConfig.KEY]
+            ?.let { runCatching { configJson.decodeFromJsonElement(GearFocusConfig.serializer(), it) }.getOrNull() }
+            ?: GearFocusConfig()
+
+    suspend fun putGearFocus(c: GearFocusConfig) =
+        store.put(ConfigKinds.GEAR_FOCUS, GearFocusConfig.KEY, configJson.encodeToJsonElement(GearFocusConfig.serializer(), c))
+
+    /** Fight food settings; defaults when missing or unreadable. */
+    suspend fun food(): FoodConfig =
+        store.list(ConfigKinds.FOOD)[FoodConfig.KEY]
+            ?.let { runCatching { configJson.decodeFromJsonElement(FoodConfig.serializer(), it) }.getOrNull() }
+            ?: FoodConfig()
+
+    suspend fun putFood(c: FoodConfig) =
+        store.put(ConfigKinds.FOOD, FoodConfig.KEY, configJson.encodeToJsonElement(FoodConfig.serializer(), c.sanitized()))
+
+    /** Bank cleanup settings; defaults when missing or unreadable. */
+    suspend fun cleanup(): CleanupConfig =
+        store.list(ConfigKinds.CLEANUP)[CleanupConfig.KEY]
+            ?.let { runCatching { configJson.decodeFromJsonElement(CleanupConfig.serializer(), it) }.getOrNull() }
+            ?: CleanupConfig()
+
+    suspend fun putCleanup(c: CleanupConfig) =
+        store.put(ConfigKinds.CLEANUP, CleanupConfig.KEY, configJson.encodeToJsonElement(CleanupConfig.serializer(), c.sanitized()))
 
     suspend fun putOffering(c: OfferingConfig) =
         store.put(ConfigKinds.OFFERING, c.character, configJson.encodeToJsonElement(OfferingConfig.serializer(), c))

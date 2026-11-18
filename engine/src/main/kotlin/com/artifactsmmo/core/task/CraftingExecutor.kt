@@ -54,6 +54,9 @@ class CraftingExecutor(private val helper: ActionHelper) {
         }
         val recipe = targetItem.craft
             ?: return StepResult.Error("Item ${task.itemCode} has no crafting recipe")
+        // Items produced per craft action (e.g. 4 cookies). Task quantities and progress are
+        // in items; the game's craft quantity is in actions.
+        val yieldPerCraft = (recipe.quantity ?: 1).coerceAtLeast(1)
 
         // Calculate how many we can craft from available materials.
         // RECYCLE subsequent batches (craftedSoFar > 0): only inventory — no bank access.
@@ -132,12 +135,12 @@ class CraftingExecutor(private val helper: ActionHelper) {
 
             // Second pass: compute the actual batch size, then buy exactly that much
             val remaining = when (task.mode) {
-                CraftMode.BANK    -> (task.targetQuantity - task.craftedSoFar).coerceAtLeast(1)
-                CraftMode.RECYCLE -> firstRecycleBatchCap(task)
+                CraftMode.BANK    -> craftsFor((task.targetQuantity - task.craftedSoFar).coerceAtLeast(1), yieldPerCraft)
+                CraftMode.RECYCLE -> firstRecycleBatchCap(task, yieldPerCraft)
             }
-            val totalIngredientsPerCraft = recipe.items.sumOf { it.quantity }
+            val spacePerCraft = maxOf(recipe.items.sumOf { it.quantity }, yieldPerCraft)
             val freeSlots = (char.inventoryMaxItems - char.inventory.sumOf { it.quantity } - RESERVED_INVENTORY_HEADROOM).coerceAtLeast(0)
-            val batchByInventory = if (totalIngredientsPerCraft > 0) maxOf(1, freeSlots / totalIngredientsPerCraft) else 1
+            val batchByInventory = maxOf(1, freeSlots / spacePerCraft)
             val batchSize = minOf(maxCraftableTotal, remaining, batchByInventory)
 
             for (candidate in npcCandidates) {
@@ -192,13 +195,14 @@ class CraftingExecutor(private val helper: ActionHelper) {
             CraftMode.BANK -> {
                 val r = task.targetQuantity - task.craftedSoFar
                 if (r <= 0) return StepResult.CraftTaskComplete
-                r
+                craftsFor(r, yieldPerCraft)
             }
-            CraftMode.RECYCLE -> firstRecycleBatchCap(task)
+            CraftMode.RECYCLE -> firstRecycleBatchCap(task, yieldPerCraft)
         }
 
-        // Calculate batch size based on inventory capacity
-        val totalIngredientsPerCraft = recipe.items.sumOf { it.quantity }
+        // Calculate batch size based on inventory capacity. Each craft needs room for its
+        // ingredients, and for its output when that is larger (4 cookies from 3 ingredients).
+        val spacePerCraft = maxOf(recipe.items.sumOf { it.quantity }, yieldPerCraft)
         val currentInvItems = char.inventory.sumOf { it.quantity }
         // Leave a little headroom below full capacity: if the workshop turns out to need a
         // bank trip on the way (a teleport potion, or a gold/key gate), that trip withdraws
@@ -206,9 +210,7 @@ class CraftingExecutor(private val helper: ActionHelper) {
         // the whole task dies stuck ("full inventory, can't reach the workshop"). See
         // RESERVED_INVENTORY_HEADROOM.
         val freeSlots = (char.inventoryMaxItems - currentInvItems - RESERVED_INVENTORY_HEADROOM).coerceAtLeast(0)
-        val batchByInventory = if (totalIngredientsPerCraft > 0) {
-            maxOf(1, freeSlots / totalIngredientsPerCraft)
-        } else 1
+        val batchByInventory = maxOf(1, freeSlots / spacePerCraft)
 
         val batchSize = minOf(maxCraftableTotal, remaining, batchByInventory)
 
@@ -260,14 +262,19 @@ class CraftingExecutor(private val helper: ActionHelper) {
 
         // Craft the batch — the response character is threaded forward to avoid
         // a redundant refreshCharacter in handleBankPostCraft.
-        onStatus("Crafting ${actualBatch}x ${task.itemName}...")
+        val producedItems = actualBatch * yieldPerCraft
+        onStatus(if (yieldPerCraft > 1) "Crafting ${actualBatch}x ${task.itemName} (${producedItems} items)..."
+                 else "Crafting ${actualBatch}x ${task.itemName}...")
         val craftResult = helper.craft(characterName, task.itemCode, actualBatch)
 
         return when (task.mode) {
-            CraftMode.RECYCLE -> handleRecyclePostCraft(characterName, task, actualBatch, onStatus)
-            CraftMode.BANK    -> handleBankPostCraft(characterName, task, actualBatch, craftResult.character, onStatus)
+            CraftMode.RECYCLE -> handleRecyclePostCraft(characterName, task, producedItems, onStatus)
+            CraftMode.BANK    -> handleBankPostCraft(characterName, task, producedItems, craftResult.character, onStatus)
         }
     }
+
+    /** Craft actions needed to produce [items] when each action yields [yieldPerCraft]. */
+    private fun craftsFor(items: Int, yieldPerCraft: Int): Int = (items + yieldPerCraft - 1) / yieldPerCraft
 
     /**
      * Return the current bank snapshot from [BankState] via the shared [ActionHelper].
@@ -277,11 +284,12 @@ class CraftingExecutor(private val helper: ActionHelper) {
         helper.getBankSnapshot()
 
     /**
-     * RECYCLE cap: the first batch is limited to the chosen quantity; a quantity of 0 (or less)
-     * means "as many as materials allow". Later batches only use recovered materials.
+     * RECYCLE cap (in craft actions): the first batch is limited to the chosen item quantity; a
+     * quantity of 0 (or less) means "as many as materials allow". Later batches only use
+     * recovered materials.
      */
-    private fun firstRecycleBatchCap(task: TaskType.Craft): Int =
-        if (task.craftedSoFar == 0 && task.targetQuantity > 0) task.targetQuantity else Int.MAX_VALUE
+    private fun firstRecycleBatchCap(task: TaskType.Craft, yieldPerCraft: Int): Int =
+        if (task.craftedSoFar == 0 && task.targetQuantity > 0) craftsFor(task.targetQuantity, yieldPerCraft) else Int.MAX_VALUE
 
     /**
      * After crafting in RECYCLE mode: recycle the crafted items at the same workshop.

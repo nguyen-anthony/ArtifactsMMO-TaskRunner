@@ -7,7 +7,7 @@
 <script lang="ts">
   import { api } from '../lib/api'
   import { ago } from '../lib/format'
-  import { TOOL_SKILLS, type ToolKitConfig, type ToolKitPlan } from '../lib/types'
+  import { TOOL_SKILLS, type FoodConfig, type GearFocusConfig, type ToolKitConfig, type ToolKitPlan } from '../lib/types'
 
   let config = $state<ToolKitConfig | null>(null)
   let plan = $state<ToolKitPlan | null>(null)
@@ -15,6 +15,41 @@
   let message = $state('')
   let error = $state('')
   let busy = $state(false)
+
+  // Gathering gear focus: one item code per line.
+  let focus = $state<GearFocusConfig | null>(null)
+  let prospectText = $state('')
+  let focusMessage = $state('')
+  api.gearFocus()
+    .then((f) => { focus = f; prospectText = f.prospectFor.join('\n') })
+    .catch((e) => (error = e.message))
+
+  // Fight food sizing / heal timing.
+  let food = $state<FoodConfig | null>(null)
+  let foodMessage = $state('')
+  api.foodConfig().then((f) => (food = f)).catch((e) => (error = e.message))
+
+  async function saveFood() {
+    if (!food) return
+    busy = true; error = ''; foodMessage = ''
+    try {
+      food = await api.saveFoodConfig({
+        ...food,
+        lootReserveFights: Number(food.lootReserveFights), minFood: Number(food.minFood),
+        maxFood: Number(food.maxFood), healSafety: Number(food.healSafety),
+      })
+      foodMessage = 'Saved.'
+    } catch (e: any) { error = e.message } finally { busy = false }
+  }
+
+  async function saveFocus() {
+    busy = true; error = ''; focusMessage = ''
+    try {
+      focus = await api.saveGearFocus({ prospectFor: prospectText.split(/[\s,]+/).filter(Boolean) })
+      prospectText = focus.prospectFor.join('\n')
+      focusMessage = 'Saved.'
+    } catch (e: any) { error = e.message } finally { busy = false }
+  }
 
   function apply(s: { config: ToolKitConfig; plan: ToolKitPlan | null }) {
     config = s.config
@@ -174,6 +209,50 @@
   </section>
 {/if}
 
+{#if focus}
+  <section class="card">
+    <h3>Gathering gear focus</h3>
+    <p class="muted">
+      Gathering and crafting gear always takes skill speed first (e.g. the altar doll). After that, gathering
+      favours <b>prospecting</b> when the resource can drop one of these items as a rare drop (or the character
+      no longer earns XP there), and <b>wisdom</b> otherwise. Individual gather tasks can override this.
+    </p>
+    <label>Prospect for (item codes, one per line)
+      <textarea rows="8" bind:value={prospectText}></textarea>
+    </label>
+    <div class="row">
+      <button disabled={busy} onclick={saveFocus}>Save</button>
+      {#if focusMessage}<span class="muted">{focusMessage}</span>{/if}
+    </div>
+  </section>
+{/if}
+
+{#if food}
+  <section class="card">
+    <h3>Fight food</h3>
+    <p class="muted">
+      Characters learn, per monster, how much food they eat, how much loot drops and how much damage they take per
+      fight. Every bank visit deposits loot and tops food up so food and inventory room run out together; they heal
+      only when HP gets close to what the next fight could cost, and rest when that is quicker than eating or
+      fetching food. Until a few fights are seen (or with learning off) they heal below 90% and carry heal + 25 food.
+    </p>
+    <div class="row">
+      <label><input type="checkbox" bind:checked={food.adaptive} /> Learn food load and heal timing</label>
+      <label><input type="checkbox" bind:checked={food.restWhenCheaper} /> Rest when cheaper</label>
+    </div>
+    <div class="row">
+      <label title="Inventory kept free for this many fights' worth of drops">Loot room (fights) <input type="number" min="0" max="20" bind:value={food.lootReserveFights} /></label>
+      <label>Min food <input type="number" min="0" bind:value={food.minFood} /></label>
+      <label title="0 = no cap besides inventory room">Max food <input type="number" min="0" bind:value={food.maxFood} /></label>
+      <label title="Heal once HP is at or below this × the worst recent damage taken in one fight">Heal safety × <input type="number" min="1" max="5" step="0.1" bind:value={food.healSafety} /></label>
+    </div>
+    <div class="row">
+      <button disabled={busy} onclick={saveFood}>Save</button>
+      {#if foodMessage}<span class="muted">{foodMessage}</span>{/if}
+    </div>
+  </section>
+{/if}
+
 <style>
   .card { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }
   .row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
@@ -182,6 +261,7 @@
   .order li span { min-width: 120px; }
   .overrides { display: flex; gap: 24px; flex-wrap: wrap; }
   input[type='number'] { width: 70px; }
+  textarea { display: block; width: 280px; margin-top: 4px; font-family: monospace; }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); }
 </style>

@@ -9,7 +9,7 @@
   import { catalog } from '../lib/catalog'
   import { api } from '../lib/api'
   import { live } from '../lib/live.svelte'
-  import { SKILLS, type Catalog, type CharacterDto, type Craftable, type TaskSpec, type EquipPlan, type UtilityPlan } from '../lib/types'
+  import { SKILLS, type Catalog, type CharacterDto, type Craftable, type TaskSpec, type EquipPlan, type UtilityPlan, type GearFocus, type NpcItem, type ActiveEvent } from '../lib/types'
 
   // `who` = the assigned character's levels. When set, pickers only offer what that
   // character can do (unless "Show all" is ticked).
@@ -25,6 +25,8 @@
     gather: 'Gather', fight: 'Fight', craft: 'Craft', task_master: 'Task master',
     bank_withdraw: 'Withdraw from bank', inventory_deposit: 'Deposit to bank',
     bank_recycle: 'Recycle from bank', inventory_recycle: 'Recycle from inventory',
+    gold_deposit: 'Deposit gold', gold_withdraw: 'Withdraw gold', npc_buy: 'Buy from NPC',
+    event_npc: 'Buy from event NPC', event_fight: 'Fight event monster',
   } as const
   type Kind = keyof typeof kinds
 
@@ -34,14 +36,48 @@
   let resourceCode = $state(init?.resourceCode ?? '')
   let targetItemCode = $state(init?.targetItemCode ?? '')
   let cookBeforeDeposit = $state(init?.cookBeforeDeposit ?? false)
+  let gearFocus = $state<GearFocus>(init?.gearFocus ?? 'AUTO')
   let monsterCode = $state(init?.monsterCode ?? '')
   let itemCode = $state(init?.itemCode ?? '')
   let mode = $state<'BANK' | 'RECYCLE'>(init?.mode ?? 'BANK')
   let quantity = $state<number>(init?.targetQuantity ?? init?.quantity ?? 1)
+  /** Gold tasks: 0 = all of it. */
+  let goldQuantity = $state<number>(init?.kind?.startsWith('gold_') ? init.quantity : 0)
   let taskType = $state<'items' | 'monsters'>(init?.taskType ?? 'monsters')
   let craftSkill = $state(init?.craftSkill ?? 'weaponcrafting')
   let equip = $state<EquipPlan[]>(init?.equip ?? [])
   let utilities = $state<UtilityPlan[]>(init?.utilities ?? [])
+  // ── Buy from NPC ──
+  let npcCode = $state<string>(init?.kind === 'npc_buy' || init?.kind === 'event_npc' ? init.npcCode : '')
+  let buyRows = $state<{ code: string; quantity: number }[]>(
+    init?.kind === 'npc_buy' ? init.items.map((i: any) => ({ ...i }))
+      : init?.kind === 'event_npc' && init.buy?.length ? init.buy.map((i: any) => ({ ...i })) : [{ code: '', quantity: 1 }])
+  // ── Active events (one-off tasks at an event's tile while it lasts) ──
+  let eventCode = $state<string>(init?.eventCode ?? '')
+  let activeEvents = $state<ActiveEvent[]>([])
+  let eventsError = $state('')
+  const isEventKind = $derived(kind === 'event_npc' || kind === 'event_fight')
+  const eventType = $derived(kind === 'event_npc' ? 'npc' : 'monster')
+  const eventChoices = $derived(activeEvents.filter((e) => e.type === eventType))
+  const activeEvent = $derived(eventChoices.find((e) => e.code === eventCode))
+  const isBuyKind = $derived(kind === 'npc_buy' || kind === 'event_npc')
+  function loadEvents() {
+    eventsError = ''
+    api.activeEvents().then((l) => (activeEvents = l)).catch((e) => (eventsError = e.message))
+  }
+  $effect(() => { if (isEventKind) loadEvents() })
+  function pickEvent(code: string) {
+    eventCode = code
+    const ev = activeEvents.find((e) => e.code === code)
+    if (kind === 'event_npc') pickNpc(ev?.contentCode ?? '')
+    else { monsterCode = ev?.contentCode ?? ''; equip = []; utilities = []; optResult = '' }
+  }
+  const eventMonster = $derived.by(() => kind === 'event_fight' ? cat?.monsters.find((m) => m.code === activeEvent?.contentCode) : undefined)
+  const minutesLeft = (e: ActiveEvent) => e.expiresAtMillis ? Math.max(0, Math.round((e.expiresAtMillis - Date.now()) / 60_000)) : null
+  let npcStock = $state<NpcItem[]>([])
+  let npcError = $state('')
+  let bankQty = $state<Record<string, number>>({})
+  let bankGold = $state<number | null>(null)
 
   let cat = $state<Catalog | null>(null)
   let catError = $state('')
@@ -68,12 +104,21 @@
   function keep<T extends { code: string }>(list: T[], ok: (x: T) => boolean, selected: string): T[] {
     return list.filter((x) => ok(x) || x.code === selected)
   }
+  // Skill filter for the resource / craft item pickers ('' = all skills).
+  let skillFilter = $state('')
+  const bySkill = (skill?: string) => !skillFilter || skill === skillFilter
+  const gatherSkills = $derived([...new Set((cat?.resources ?? []).map((r) => r.skill))].sort())
+  const craftSkills = $derived([...new Set((cat?.items ?? []).flatMap((i) => (i.craftSkill ? [i.craftSkill] : [])))].sort())
+  const skillOptions = $derived(kind === 'gather' ? gatherSkills : kind === 'craft' ? craftSkills : [])
+  $effect(() => {
+    if (skillFilter && cat && !skillOptions.includes(skillFilter)) skillFilter = ''
+  })
   const resources = $derived(keep(cat?.resources ?? [],
-    (r) => !why(r.level, skillOf(r.skill), r.reachable), resourceCode))
+    (r) => bySkill(r.skill) && !why(r.level, skillOf(r.skill), r.reachable), resourceCode))
   const monsters = $derived(keep(cat?.monsters ?? [],
     (m) => !why(m.level, (who?.level ?? 0) + FIGHT_LEVEL_MARGIN, m.reachable), monsterCode))
   const craftables = $derived(byRecipeOrder(keep((cat?.items ?? []).filter((i) => i.craftSkill),
-    (i) => !why(i.level, skillOf(i.craftSkill)), itemCode)))
+    (i) => bySkill(i.craftSkill) && !why(i.level, skillOf(i.craftSkill)), itemCode)))
   // ── Craftable quantities ──
   // Fetched when a craft picker is visible; re-fetched when the character, "Show all" or the
   // bank changes (live.bankTick, ≤1/s from the server; we additionally wait 2 s so bursts of
@@ -122,12 +167,45 @@
   const gatherTargets = $derived(keep((cat?.items ?? []).filter((i) => i.craftSkill === resource?.skill || i.craftSkill === 'cooking'),
     (i) => !why(i.level, skillOf(i.craftSkill)), targetItemCode))
 
+  // "Buy from NPC" lists NPCs with a fixed map tile; event merchants use "Buy from event NPC".
+  const permanentNpcs = $derived((cat?.npcs ?? []).filter((n) => n.permanent))
+  const npc = $derived(permanentNpcs.find((n) => n.code === npcCode))
+  const itemName = (code: string) => cat?.items.find((i) => i.code === code)?.name ?? code
+  $effect(() => {
+    if (!isBuyKind || !npcCode) { npcStock = []; return }
+    const code = npcCode
+    npcError = ''
+    api.npcItems(code)
+      .then((list) => { if (code === npcCode) npcStock = list.filter((i) => i.buyPrice != null) })
+      .catch((e) => (npcError = e.message))
+  })
+  $effect(() => {
+    if (!isBuyKind) return
+    live.bankTick
+    api.bank().then((b) => (bankQty = Object.fromEntries(b.map((i) => [i.code, i.quantity])))).catch(() => {})
+    api.bankGold().then((g) => (bankGold = g.gold)).catch(() => {})
+  })
+  function pickNpc(code: string) {
+    npcCode = code
+    buyRows = [{ code: '', quantity: 1 }]
+  }
+  /** Affordable count from the bank (+ the assigned character's carried gold). */
+  function maxBuy(code: string): number | null {
+    const e = npcStock.find((i) => i.code === code)
+    if (!e?.buyPrice) return null
+    const funds = e.currency === 'gold'
+      ? (bankGold == null ? null : bankGold + (who?.gold ?? 0))
+      : (bankQty[e.currency] ?? 0)
+    return funds == null ? null : Math.floor(funds / e.buyPrice)
+  }
+
   function build(): TaskSpec | null {
     switch (kind) {
       case 'gather':
         if (!resource) return null
         return { kind, skill: resource.skill, resourceCode, resourceName: resource.name,
-                 targetItemCode: targetItemCode || undefined, cookBeforeDeposit }
+                 targetItemCode: targetItemCode || undefined, cookBeforeDeposit,
+                 ...(gearFocus !== 'AUTO' ? { gearFocus } : {}) }
       case 'fight':
         if (!monsterCode) return null
         return { kind, monsterCode, equip, utilities, loadoutOptimized: equip.length > 0 }
@@ -142,6 +220,26 @@
       case 'bank_recycle':
       case 'inventory_recycle':
         return itemCode ? { kind, itemCode, quantity, craftSkill: item?.craftSkill ?? craftSkill } : null
+      case 'gold_deposit':
+      case 'gold_withdraw':
+        return { kind, quantity: Math.max(0, Math.floor(Number(goldQuantity) || 0)) }
+      case 'npc_buy': {
+        const items = buyRows.filter((r) => r.code && Number(r.quantity) > 0)
+          .map((r) => ({ code: r.code, quantity: Math.floor(Number(r.quantity)) }))
+        return npcCode && items.length ? { kind, npcCode, npcName: npc?.name ?? npcCode, items } : null
+      }
+      case 'event_npc': {
+        const ev = activeEvent
+        const buy = buyRows.filter((r) => r.code && Number(r.quantity) > 0)
+          .map((r) => ({ code: r.code, quantity: Math.floor(Number(r.quantity)) }))
+        return ev && buy.length ? { kind, eventCode: ev.code, npcCode: ev.contentCode, npcName: ev.name,
+          map: { x: ev.x, y: ev.y, layer: ev.layer }, sell: [], buy } : null
+      }
+      case 'event_fight': {
+        const ev = activeEvent
+        return ev ? { kind, eventCode: ev.code, monsterCode: ev.contentCode, monsterName: eventMonster?.name ?? ev.name,
+          map: { x: ev.x, y: ev.y, layer: ev.layer }, equip, utilities } : null
+      }
     }
   }
 
@@ -173,6 +271,15 @@
     </label>
   {/if}
 
+  {#if kind === 'gather' || kind === 'craft'}
+    <label>Skill
+      <select bind:value={skillFilter}>
+        <option value="">All skills</option>
+        {#each skillOptions as s}<option value={s}>{s}</option>{/each}
+      </select>
+    </label>
+  {/if}
+
   {#if kind === 'gather'}
     <label>Resource
       <select bind:value={resourceCode}>
@@ -191,6 +298,13 @@
     {#if resource?.skill === 'fishing'}
       <label class="check"><input type="checkbox" bind:checked={cookBeforeDeposit} /> Cook before deposit</label>
     {/if}
+    <label title="Which stat the gathering gear favours after speed. Auto: prospecting if the resource can drop an item from the Tool kit page's prospect list (or the character earns no XP there), otherwise wisdom.">Gear focus
+      <select bind:value={gearFocus}>
+        <option value="AUTO">Auto</option>
+        <option value="PROSPECTING">Prospecting (drops)</option>
+        <option value="WISDOM">Wisdom (XP)</option>
+      </select>
+    </label>
   {:else if kind === 'fight'}
     <label>Monster
       <select bind:value={monsterCode}>
@@ -215,15 +329,53 @@
     <label>Mode
       <select bind:value={mode}><option value="BANK">Craft &amp; bank</option><option value="RECYCLE">Craft &amp; recycle (XP)</option></select>
     </label>
-    <label>Quantity{selectedRecipe ? ` (max ${selectedRecipe.maxCraftable})` : ''}
+    <label title="Number of items to end up with. Recipes that make several items per craft (e.g. 4 cookies) need fewer craft actions.">Quantity (items){selectedRecipe ? ` (max ${selectedRecipe.maxCraftable})` : ''}
       <input type="number" min="1" bind:value={quantity} />
     </label>
+    {#if (selectedRecipe?.yield ?? 1) > 1}
+      <span class="muted">{selectedRecipe!.yield} per craft → {Math.ceil(quantity / selectedRecipe!.yield!)} craft{Math.ceil(quantity / selectedRecipe!.yield!) === 1 ? '' : 's'}</span>
+    {/if}
     <button class="small" onclick={() => refreshNonce++} title="Recount materials" disabled={recipesLoading}>↻</button>
     {#if recipesError}<span class="error">Materials: {recipesError}</span>{/if}
   {:else if kind === 'task_master'}
     <label>Task type
       <select bind:value={taskType}><option value="monsters">Monsters</option><option value="items">Items</option></select>
     </label>
+  {:else if kind === 'gold_deposit' || kind === 'gold_withdraw'}
+    <label>Gold <input type="number" min="0" bind:value={goldQuantity} /></label>
+    <span class="muted">0 = all{kind === 'gold_deposit'
+      ? (who?.gold != null ? ` (${who.gold} carried)` : ' the character carries')
+      : ' in the bank'}</span>
+  {:else if kind === 'npc_buy'}
+    <label>NPC
+      <select value={npcCode} onchange={(e) => pickNpc((e.target as HTMLSelectElement).value)}>
+        <option value="">— choose —</option>
+        {#each permanentNpcs as n}<option value={n.code}>{n.name} ({n.type}){n.reachable ? '' : ' — locked'}</option>{/each}
+      </select>
+    </label>
+    {#if npc && !npc.reachable}<span class="warn-inline">Tile not accessible yet (needs an achievement)</span>{/if}
+    {#if npcError}<span class="error">NPC items: {npcError}</span>{/if}
+  {:else if kind === 'event_npc' || kind === 'event_fight'}
+    <label>Active event
+      <select value={eventCode} onchange={(e) => pickEvent((e.target as HTMLSelectElement).value)}>
+        <option value="">{eventChoices.length ? '— choose —' : `— no active ${eventType} event —`}</option>
+        {#each eventChoices as e}<option value={e.code}>{e.name}{minutesLeft(e) != null ? ` (${minutesLeft(e)} min left)` : ''}</option>{/each}
+      </select>
+    </label>
+    <button class="small" onclick={loadEvents} title="Refresh active events">↻</button>
+    {#if kind === 'event_fight' && activeEvent}
+      <button onclick={optimize} disabled={!character || optimizing}
+              title={character ? '' : 'Assign a character first (otherwise it fights in its current gear)'}>
+        {optimizing ? 'Optimizing…' : 'Optimize gear'}
+      </button>
+      {#if optResult}<span class="muted">{optResult}</span>{/if}
+      {#if eventMonster?.type === 'boss'}
+        <span class="warn-inline">Boss monsters need a party: use the Boss group tab instead.</span>
+      {/if}
+    {/if}
+    {#if eventsError}<span class="error">Events: {eventsError}</span>{/if}
+    {#if eventCode && !activeEvent && activeEvents.length}<span class="warn-inline">That event has ended</span>{/if}
+    <span class="muted">The task ends when the event does.</span>
   {:else}
     <label>Item
       <select bind:value={itemCode}>
@@ -237,6 +389,34 @@
     {/if}
   {/if}
 </div>
+
+{#if isBuyKind && npcCode}
+  <div class="small buy-rows">
+    {#each buyRows as row, idx}
+      {@const entry = npcStock.find((i) => i.code === row.code)}
+      {@const max = maxBuy(row.code)}
+      <div class="row">
+        <label>Item
+          <select bind:value={row.code}>
+            <option value="">— choose —</option>
+            {#each npcStock as s}<option value={s.code}>{itemName(s.code)} — {s.buyPrice} {s.currency}</option>{/each}
+          </select>
+        </label>
+        <label>Quantity <input type="number" min="1" bind:value={row.quantity} /></label>
+        {#if entry && max != null}
+          <span class="muted" class:missing={row.quantity > max}>
+            can afford {max} ({row.quantity * (entry.buyPrice ?? 0)} {entry.currency} needed)
+          </span>
+          {#if max > 0}<button class="small" onclick={() => (row.quantity = max)}>max</button>{/if}
+        {/if}
+        <button class="small" onclick={() => (buyRows = buyRows.filter((_, i) => i !== idx))}
+                disabled={buyRows.length === 1}>✕</button>
+      </div>
+    {/each}
+    <button class="small" onclick={() => (buyRows = [...buyRows, { code: '', quantity: 1 }])}>+ item</button>
+    <span class="muted">Affordability counts the bank{who?.gold != null ? ` + ${character}'s gold` : ''}; purchases are banked.</span>
+  </div>
+{/if}
 
 {#if kind === 'craft' && selectedRecipe}
   <div class="small ingredients">
@@ -255,7 +435,7 @@
   </div>
 {/if}
 
-{#if kind === 'fight' && (equip.length || utilities.length)}
+{#if (kind === 'fight' || kind === 'event_fight') && (equip.length || utilities.length)}
   <div class="muted small">
     Loadout: {equip.map((e) => `${e.slot}=${e.itemCode}`).join(', ')}
     {utilities.map((u) => u.quantity > 0 ? `${u.slot}=${u.quantity}×${u.itemCode}` : `${u.slot}=unequip ${u.itemCode}`).join(', ')}
@@ -270,4 +450,6 @@
   .missing { color: #d9822b; }
   .warn { flex-basis: 100%; color: #d9822b; }
   option.dim { color: #888; }
+  .buy-rows { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+  .warn-inline { color: #d9822b; align-self: center; }
 </style>

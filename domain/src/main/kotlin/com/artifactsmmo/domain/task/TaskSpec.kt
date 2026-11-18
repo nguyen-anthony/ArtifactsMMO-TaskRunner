@@ -28,6 +28,8 @@ sealed class TaskSpec {
         val targetItemName: String? = null,
         /** Fishing only: cook fish before depositing. */
         val cookBeforeDeposit: Boolean = false,
+        /** Which stat the non-tool gear favours (AUTO = decided from the resource's drops). */
+        val gearFocus: GearFocus = GearFocus.AUTO,
     ) : TaskSpec()
 
     @Serializable @SerialName("fight")
@@ -64,6 +66,10 @@ sealed class TaskSpec {
     @Serializable @SerialName("bank_recycle")
     data class BankRecycle(val itemCode: String, val quantity: Int, val craftSkill: String, val itemName: String = itemCode) : TaskSpec()
 
+    /** Withdraw from the bank and permanently delete, in inventory-sized batches. */
+    @Serializable @SerialName("bank_delete")
+    data class BankDelete(val itemCode: String, val quantity: Int, val itemName: String = itemCode) : TaskSpec()
+
     @Serializable @SerialName("inventory_deposit")
     data class InventoryDeposit(val itemCode: String, val quantity: Int, val itemName: String = itemCode) : TaskSpec()
 
@@ -75,6 +81,25 @@ sealed class TaskSpec {
 
     @Serializable @SerialName("bulk_inventory_deposit")
     data class BulkInventoryDeposit(val items: List<ItemQty>) : TaskSpec()
+
+    /** Deposit the character's gold into the bank; [quantity] 0 = all of it. */
+    @Serializable @SerialName("gold_deposit")
+    data class GoldDeposit(val quantity: Int = 0) : TaskSpec()
+
+    /** Withdraw gold from the bank to the character; [quantity] 0 = all of it. */
+    @Serializable @SerialName("gold_withdraw")
+    data class GoldWithdraw(val quantity: Int = 0) : TaskSpec()
+
+    /**
+     * Buy items from a permanent NPC (fixed map tile, not an event merchant). Gold or item
+     * currencies come from the character and the bank; purchases are banked.
+     */
+    @Serializable @SerialName("npc_buy")
+    data class NpcBuy(
+        val npcCode: String,
+        val items: List<ItemQty>,
+        val npcName: String = npcCode,
+    ) : TaskSpec()
 
     /**
      * Multi-character boss or raid fight. Enqueued as a group (see `GroupRole`): every slot
@@ -169,9 +194,10 @@ sealed class TaskSpec {
 
         private val TYPE_NAMES = mapOf(
             "Gather" to "gather", "Fight" to "fight", "Craft" to "craft", "TaskMaster" to "task_master",
-            "BankWithdraw" to "bank_withdraw", "BankRecycle" to "bank_recycle",
+            "BankWithdraw" to "bank_withdraw", "BankRecycle" to "bank_recycle", "BankDelete" to "bank_delete",
             "InventoryDeposit" to "inventory_deposit", "InventoryRecycle" to "inventory_recycle",
             "BulkBankWithdraw" to "bulk_bank_withdraw", "BulkInventoryDeposit" to "bulk_inventory_deposit",
+            "GoldDeposit" to "gold_deposit", "GoldWithdraw" to "gold_withdraw", "NpcBuy" to "npc_buy",
             "BossFight" to "boss_fight", "EventGather" to "event_gather", "EventNpc" to "event_npc",
             "EventFight" to "event_fight", "DailyOffering" to "daily_offering",
                         "ToolKitSync" to "toolkit_sync",
@@ -219,3 +245,6 @@ enum class CraftMode {
 
 @Serializable
 enum class DropStrategy { COOK_AND_USE, COOK_AND_BANK, BANK_RAW }
+
+/** Gathering gear stat preference: AUTO picks prospecting for valuable rare drops, else wisdom. */
+enum class GearFocus { AUTO, PROSPECTING, WISDOM }

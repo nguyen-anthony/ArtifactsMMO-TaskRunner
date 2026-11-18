@@ -11,8 +11,8 @@ sealed interface AcquireStep {
     data class Gather(val resourceCode: String, val skill: String, val itemCode: String) : AcquireStep
     /** Fight [monsterCode] until enough [itemCode] has dropped. */
     data class Fight(val monsterCode: String, val itemCode: String) : AcquireStep
-    /** Craft [crafts] batches of [itemCode]; every ingredient is already owned. */
-    data class Craft(val itemCode: String, val skill: String, val crafts: Int) : AcquireStep
+    /** Craft [crafts] batches of [itemCode] ([items] items in total); every ingredient is already owned. */
+    data class Craft(val itemCode: String, val skill: String, val crafts: Int, val items: Int = crafts) : AcquireStep
 }
 
 sealed interface AcquirePlan {
@@ -96,7 +96,8 @@ class AcquisitionPlanner(
             if (skillLevel < level) {
                 lastReason = "$craftSkill level $skillLevel < $level for $code"
             } else {
-                val crafts = ceil(deficit.toDouble() / (craft.quantity ?: 1).coerceAtLeast(1)).toInt()
+                val yieldPerCraft = (craft.quantity ?: 1).coerceAtLeast(1)
+                val crafts = ceil(deficit.toDouble() / yieldPerCraft).toInt()
                 val branch = HashMap(pool)
                 var seconds = CRAFT_OVERHEAD_SECONDS + crafts * CRAFT_SECONDS
                 var next: AcquireStep? = null
@@ -107,7 +108,7 @@ class AcquisitionPlanner(
                     seconds += sub.seconds
                     if (next == null) next = sub.next
                 }
-                if (feasible) offer(Node(seconds, next ?: AcquireStep.Craft(code, craftSkill, crafts)), branch)
+                if (feasible) offer(Node(seconds, next ?: AcquireStep.Craft(code, craftSkill, crafts, crafts * yieldPerCraft)), branch)
             }
         }
 

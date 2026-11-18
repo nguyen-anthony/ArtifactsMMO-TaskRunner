@@ -2,7 +2,7 @@ package com.artifactsmmo.server.api
 
 import kotlinx.coroutines.flow.sample
 import com.artifactsmmo.client.ArtifactsApiException
-import com.artifactsmmo.engine.worker.ApiCharacterView
+import com.artifactsmmo.engine.worker.CharacterWorker
 import com.artifactsmmo.engine.worker.OfferingBoard
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -143,13 +143,13 @@ fun Route.apiRoutes(b: ApiBackend) {
         get {
             val engine = b.engine
             val names = engine?.characters.orEmpty()
-            val view = engine?.let { ApiCharacterView(it.helper) }
             call.respond(coroutineScope {
                 names.map { n ->
                     async {
-                        val snap = view?.let { v -> runCatching { v.snapshot(n) }.getOrNull() }
+                        val char = engine?.let { e -> runCatching { e.helper.refreshCharacter(n) }.getOrNull() }
+                        val snap = char?.let { CharacterWorker.snapshotOf(it) }
                         CharacterDto(n, engine?.pool?.statuses?.get(n)?.value, b.settings.get(n).toDto(),
-                            level = snap?.level, skills = snap?.skills.orEmpty())
+                            level = snap?.level, skills = snap?.skills.orEmpty(), gold = char?.gold)
                     }
                 }.awaitAll()
             })
@@ -217,6 +217,10 @@ fun Route.apiRoutes(b: ApiBackend) {
     get("/bank") {
         val e = b.engine ?: return@get call.engineDown()
         call.respond(e.bankState.snapshot.value.map { BankItemDto(it.key, it.value) }.sortedBy { it.code })
+    }
+    get("/bank/gold") {
+        val e = b.engine ?: return@get call.engineDown()
+        call.respond(BankGoldDto(e.client.bank.getBankDetails().gold))
     }
     get("/rates") {
         val e = b.engine ?: return@get call.engineDown()

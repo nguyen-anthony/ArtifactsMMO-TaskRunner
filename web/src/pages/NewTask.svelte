@@ -1,12 +1,13 @@
 <!--
-  Create a task (solo) or a boss group. Solo tasks go to one character or "any eligible";
+  Create a task (solo) or a boss group. Solo tasks go to one character, "any eligible", or one
+  assigned copy per character for "Several characters";
   boss groups pick 1-3 members, optionally run the co-op optimizer, then enqueue a group.
 -->
 <script lang="ts">
   import { api } from '../lib/api'
   import { catalog } from '../lib/catalog'
   import SpecEditor from '../components/SpecEditor.svelte'
-  import type { Catalog, CharacterDto, CoopResult, StopCondition, TaskSpec } from '../lib/types'
+  import type { ActiveEvent, Catalog, CharacterDto, CoopResult, StopCondition, TaskSpec } from '../lib/types'
   import { SKILLS } from '../lib/types'
 
   let mode = $state<'solo' | 'boss'>('solo')
@@ -34,14 +35,56 @@
     }
   }
 
+  // Active events: manual event tasks expire with the event so they don't linger while pending.
+  let activeEvents = $state<ActiveEvent[]>([])
+  const loadEvents = () => api.activeEvents().then((l) => (activeEvents = l)).catch(() => {})
+  loadEvents()
+  async function eventExpiry(eventCode: string | undefined): Promise<number | undefined> {
+    if (!eventCode) return undefined
+    await loadEvents()
+    const ev = activeEvents.find((e) => e.code === eventCode)
+    if (!ev) throw new Error('That event is no longer active')
+    return ev.expiresAtMillis
+  }
+
   async function createSolo() {
     if (!spec) return
     error = ''; message = ''
     try {
-      const t = await api.createTask({ spec, priority, assignedCharacter: assigned || undefined, stopCondition: stopCondition() })
+      const expiresAtMillis = await eventExpiry((spec as any).eventCode)
+      if (multi) {
+        if (!picked.length) { error = 'Pick at least one character'; return }
+        // A precomputed gear plan belongs to one character; let each optimise its own.
+        const s = spec.kind === 'fight' ? { ...spec, equip: [], utilities: [], loadoutOptimized: false }
+          : spec.kind === 'event_fight' ? { ...spec, equip: [], utilities: [] } : spec
+        const ids: number[] = []
+        for (const name of picked) {
+          const t = await api.createTask({ spec: s, priority, assignedCharacter: name, stopCondition: stopCondition(), expiresAtMillis })
+          ids.push(t.id)
+        }
+        message = `Queued ${ids.length} tasks (${ids.map((id, i) => `#${id} ${picked[i]}`).join(', ')})`
+        return
+      }
+      const t = await api.createTask({ spec, priority, assignedCharacter: assigned || undefined, stopCondition: stopCondition(), expiresAtMillis })
       message = `Queued task #${t.id}`
     } catch (e: any) { error = e.message }
   }
+
+  // ── Several characters: one assigned task each ──
+  const MULTI = '*multi'
+  const multi = $derived(assigned === MULTI)
+  let picked = $state<string[]>([])
+  function togglePick(name: string, on: boolean) {
+    picked = on ? characters.map((c) => c.name).filter((n) => n === name || picked.includes(n)) : picked.filter((n) => n !== name)
+  }
+  /** Lowest level/skills across the picked characters, so pickers only offer what all of them can do. */
+  const multiWho = $derived.by((): CharacterDto | null => {
+    const sel = characters.filter((c) => picked.includes(c.name))
+    if (!sel.length || sel.some((c) => c.level == null)) return null
+    const skills: Record<string, number> = {}
+    for (const c of sel) for (const [k, v] of Object.entries(c.skills ?? {})) skills[k] = Math.min(skills[k] ?? v, v)
+    return { ...sel[0], name: '', level: Math.min(...sel.map((c) => c.level ?? 0)), skills, gold: null }
+  })
 
   // ── Boss group ──
   let cat = $state<Catalog | null>(null)
@@ -68,11 +111,15 @@
     error = ''; message = ''
     const monster = cat?.monsters.find((m) => m.code === bossCode)
     try {
+      await loadEvents()
+      // An event boss fights at the event tile and the group ends with the event.
+      const ev = activeEvents.find((e) => e.type === 'monster' && e.contentCode === bossCode)
       await api.createGroup({
-        spec: { kind: 'boss_fight', monsterCode: bossCode, monsterName: monster?.name, plans: coopResult?.plans ?? {} },
+        spec: { kind: 'boss_fight', monsterCode: bossCode, monsterName: monster?.name, plans: coopResult?.plans ?? {},
+          ...(ev ? { eventCode: ev.code, eventMap: { x: ev.x, y: ev.y, layer: ev.layer } } : {}) },
         // First slot = initiator (calls the fight endpoint with the others as participants).
         slots: chosen.map((c) => ({ assignedCharacter: c })),
-        priority, stopCondition: stopCondition(),
+        priority, stopCondition: stopCondition(), expiresAtMillis: ev?.expiresAtMillis,
       })
       message = `Queued boss group for ${chosen.join(', ')}`
     } catch (e: any) { error = e.message }
@@ -91,18 +138,30 @@
         <select bind:value={assigned}>
           <option value="">Any eligible</option>
           {#each characters as c}<option value={c.name}>{c.name}</option>{/each}
+          <option value={MULTI}>Several characters…</option>
         </select>
       </label>
+      {#if multi}
+        {#each characters as c}
+          <label><input type="checkbox" checked={picked.includes(c.name)}
+            onchange={(e) => togglePick(c.name, e.currentTarget.checked)} /> {c.name}{c.level != null ? ` (${c.level})` : ''}</label>
+        {/each}
+        <button onclick={() => (picked = characters.map((c) => c.name))}>All</button>
+        <button onclick={() => (picked = [])}>None</button>
+        <span class="muted">One task per character{picked.length ? ` (${picked.length})` : ''}; fights optimise gear per character.</span>
+      {/if}
     </div>
     <!-- `character`: whose gear "Optimize gear" uses. `who`: that character's levels, used
-         to filter the pickers (none selected = "Any eligible" = only unreachable content hidden). -->
-    <SpecEditor bind:spec character={assigned} who={characters.find((c) => c.name === assigned) ?? null} />
+         to filter the pickers (none selected = "Any eligible" = only unreachable content hidden).
+         With several characters, `who` is the weakest of them on every level. -->
+    <SpecEditor bind:spec character={multi ? '' : assigned}
+      who={multi ? multiWho : characters.find((c) => c.name === assigned) ?? null} />
   {:else}
     <div class="row">
       <label>Boss
         <select bind:value={bossCode}>
           <option value="">— choose —</option>
-          {#each cat?.monsters.filter((m) => m.type !== 'normal') ?? [] as m}<option value={m.code}>{m.name} (lv {m.level})</option>{/each}
+          {#each cat?.monsters.filter((m) => m.type !== 'normal') ?? [] as m}<option value={m.code}>{m.name} (lv {m.level}){activeEvents.some((e) => e.type === 'monster' && e.contentCode === m.code) ? ' — event active' : ''}</option>{/each}
         </select>
       </label>
       {#each members as _, i}
@@ -153,7 +212,8 @@
 
   <div class="row">
     {#if mode === 'solo'}
-      <button class="primary" disabled={!spec} onclick={createSolo}>Queue task</button>
+      <button class="primary" disabled={!spec || (multi && !picked.length)} onclick={createSolo}>
+        {multi ? `Queue for ${picked.length} character${picked.length === 1 ? '' : 's'}` : 'Queue task'}</button>
     {:else}
       <button class="primary" disabled={!bossCode || !members[0]} onclick={createBoss}>Queue boss group</button>
     {/if}

@@ -130,7 +130,11 @@ data class GoldInfo(
 @Serializable
 data class GrandExchangeOrder(
     val id: String,
-    val seller: String,
+    /** Older API name for [account]. */
+    val seller: String = "",
+    val account: String = "",
+    /** "sell" or "buy". */
+    val type: String = "sell",
     val code: String,
     val quantity: Int,
     val price: Int,
@@ -177,6 +181,29 @@ data class Task(
     val type: String,
     val total: Int,
     val rewards: Rewards
+)
+
+/** One entry of `GET /tasks/list`: a task the Task Master can hand out. */
+@Serializable
+data class TaskDefinition(
+    val code: String,
+    val level: Int,
+    val type: String,
+    val skill: String? = null,
+    @SerialName("min_quantity") val minQuantity: Int = 0,
+    @SerialName("max_quantity") val maxQuantity: Int = 0,
+)
+
+/** One completed Grand Exchange sale (`GET /grandexchange/history/{code}`). */
+@Serializable
+data class GEHistoryEntry(
+    @SerialName("order_id") val orderId: String = "",
+    val seller: String = "",
+    val buyer: String = "",
+    val code: String,
+    val quantity: Int,
+    val price: Int,
+    @SerialName("sold_at") val soldAt: String = "",
 )
 
 @Serializable

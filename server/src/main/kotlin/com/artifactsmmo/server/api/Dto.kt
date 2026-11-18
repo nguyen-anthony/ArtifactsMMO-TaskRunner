@@ -77,12 +77,15 @@ data class CharacterDto(
     val level: Int? = null,
     /** Skill name -> level, e.g. "mining" -> 20. */
     val skills: Map<String, Int> = emptyMap(),
+    /** Gold carried; null if the game API couldn't be reached. */
+    val gold: Int? = null,
 )
 
 @Serializable data class RateWindowDto(val limit: Int, val windowMillis: Long, val used: Int)
 @Serializable data class RatesDto(val buckets: Map<String, List<RateWindowDto>>)
 
 @Serializable data class BankItemDto(val code: String, val quantity: Int)
+@Serializable data class BankGoldDto(val gold: Int)
 
 @Serializable
 data class LogDto(val timestampMillis: Long, val character: String?, val message: String)

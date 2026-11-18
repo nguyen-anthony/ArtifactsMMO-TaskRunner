@@ -1,0 +1,743 @@
+{
+	"data": [
+		{
+			"code": "adamantite_ore",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 100,
+			"sell_price": 1
+		},
+		{
+			"code": "alexandrite",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 75000,
+			"sell_price": 8000
+		},
+		{
+			"code": "algae",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 50,
+			"sell_price": 1
+		},
+		{
+			"code": "ash_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 10,
+			"sell_price": 1
+		},
+		{
+			"code": "astralyte_crystal",
+			"npc": "tasks_trader",
+			"currency": "tasks_coin",
+			"buy_price": 12,
+			"sell_price": null
+		},
+		{
+			"code": "backpack",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": 50000,
+			"sell_price": null
+		},
+		{
+			"code": "bag_of_gold",
+			"npc": "cultist_wizard",
+			"currency": "corrupted_gem",
+			"buy_price": 8,
+			"sell_price": null
+		},
+		{
+			"code": "bandit_armor",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 2000
+		},
+		{
+			"code": "bass",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 75,
+			"sell_price": 1
+		},
+		{
+			"code": "birch_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 35,
+			"sell_price": 1
+		},
+		{
+			"code": "book_from_hell",
+			"npc": "archaeologist",
+			"currency": "page_from_hell",
+			"buy_price": 24,
+			"sell_price": null
+		},
+		{
+			"code": "burn_rune",
+			"npc": "rune_vendor",
+			"currency": "gold",
+			"buy_price": 30000,
+			"sell_price": null
+		},
+		{
+			"code": "cloth",
+			"npc": "tailor",
+			"currency": "wool",
+			"buy_price": 3,
+			"sell_price": null
+		},
+		{
+			"code": "coal",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 35,
+			"sell_price": 1
+		},
+		{
+			"code": "coconut",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 5
+		},
+		{
+			"code": "copper_ore",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 10,
+			"sell_price": 1
+		},
+		{
+			"code": "corrupted_crown",
+			"npc": "cultist_wizard",
+			"currency": "corrupted_gem",
+			"buy_price": 220,
+			"sell_price": null
+		},
+		{
+			"code": "corrupted_fruit",
+			"npc": "cultist_wizard",
+			"currency": "corrupted_gem",
+			"buy_price": 1,
+			"sell_price": null
+		},
+		{
+			"code": "corrupted_skull",
+			"npc": "cultist_wizard",
+			"currency": "corrupted_gem",
+			"buy_price": 75,
+			"sell_price": null
+		},
+		{
+			"code": "cursed_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 350,
+			"sell_price": 15
+		},
+		{
+			"code": "dead_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 50,
+			"sell_price": 1
+		},
+		{
+			"code": "death_knight_sword",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1500
+		},
+		{
+			"code": "desert_wrap",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 2000
+		},
+		{
+			"code": "diabolic_elixir",
+			"npc": "cultist_wizard",
+			"currency": "corrupted_gem",
+			"buy_price": 2,
+			"sell_price": null
+		},
+		{
+			"code": "diamond",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 50000,
+			"sell_price": 5000
+		},
+		{
+			"code": "emerald",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1500
+		},
+		{
+			"code": "emerald_book",
+			"npc": "archaeologist",
+			"currency": "elemental_page",
+			"buy_price": 30,
+			"sell_price": null
+		},
+		{
+			"code": "enchanted_fabric",
+			"npc": "beastmaster",
+			"currency": "enchanted_coin",
+			"buy_price": 1,
+			"sell_price": null
+		},
+		{
+			"code": "enchanted_mushroom",
+			"npc": "herbal_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1
+		},
+		{
+			"code": "enchanted_rune",
+			"npc": "beastmaster",
+			"currency": "enchanted_coin",
+			"buy_price": 150,
+			"sell_price": null
+		},
+		{
+			"code": "fire_crystal",
+			"npc": "sorceress",
+			"currency": "fire_dust",
+			"buy_price": 10,
+			"sell_price": null
+		},
+		{
+			"code": "forest_bank_potion",
+			"npc": "herbal_merchant",
+			"currency": "gold",
+			"buy_price": 200,
+			"sell_price": null
+		},
+		{
+			"code": "forest_ring",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 100
+		},
+		{
+			"code": "forest_staff",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 100
+		},
+		{
+			"code": "glowstem_leaf",
+			"npc": "herbal_merchant",
+			"currency": "gold",
+			"buy_price": 75,
+			"sell_price": 1
+		},
+		{
+			"code": "goblin_guard_shield",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 2000
+		},
+		{
+			"code": "gold_ore",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 50,
+			"sell_price": 1
+		},
+		{
+			"code": "golden_egg",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1000
+		},
+		{
+			"code": "golden_shrimp",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1000
+		},
+		{
+			"code": "greater_healing_rune",
+			"npc": "sandwhisper_trader",
+			"currency": "sandwhisper_coin",
+			"buy_price": 100,
+			"sell_price": null
+		},
+		{
+			"code": "greater_lifesteal_rune",
+			"npc": "sandwhisper_trader",
+			"currency": "sandwhisper_coin",
+			"buy_price": 100,
+			"sell_price": null
+		},
+		{
+			"code": "greater_protection_rune",
+			"npc": "sandwhisper_trader",
+			"currency": "sandwhisper_coin",
+			"buy_price": 100,
+			"sell_price": null
+		},
+		{
+			"code": "gudgeon",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 10,
+			"sell_price": 1
+		},
+		{
+			"code": "hard_leather",
+			"npc": "tailor",
+			"currency": "cowhide",
+			"buy_price": 3,
+			"sell_price": null
+		},
+		{
+			"code": "healing_aura_rune",
+			"npc": "rune_vendor",
+			"currency": "gold",
+			"buy_price": 25000,
+			"sell_price": null
+		},
+		{
+			"code": "healing_rune",
+			"npc": "rune_vendor",
+			"currency": "gold",
+			"buy_price": 10000,
+			"sell_price": null
+		},
+		{
+			"code": "highwayman_dagger",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 350
+		},
+		{
+			"code": "holey_boot",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 200
+		},
+		{
+			"code": "iron_ore",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 25,
+			"sell_price": 1
+		},
+		{
+			"code": "jasper_crystal",
+			"npc": "tasks_trader",
+			"currency": "tasks_coin",
+			"buy_price": 8,
+			"sell_price": null
+		},
+		{
+			"code": "lava_fish",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1
+		},
+		{
+			"code": "lich_crown",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 2500
+		},
+		{
+			"code": "life_crystal",
+			"npc": "archaeologist",
+			"currency": "life_crystal_shard",
+			"buy_price": 24,
+			"sell_price": null
+		},
+		{
+			"code": "lifesteal_rune",
+			"npc": "rune_vendor",
+			"currency": "gold",
+			"buy_price": 20000,
+			"sell_price": null
+		},
+		{
+			"code": "lost_world_map",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": 15000,
+			"sell_price": null
+		},
+		{
+			"code": "magic_sap",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 1500,
+			"sell_price": 150
+		},
+		{
+			"code": "magic_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 100,
+			"sell_price": 1
+		},
+		{
+			"code": "magical_cure",
+			"npc": "tasks_trader",
+			"currency": "tasks_coin",
+			"buy_price": 8,
+			"sell_price": null
+		},
+		{
+			"code": "malefic_crystal",
+			"npc": "archaeologist",
+			"currency": "malefic_shard",
+			"buy_price": 24,
+			"sell_price": null
+		},
+		{
+			"code": "maple_sap",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 500,
+			"sell_price": 25
+		},
+		{
+			"code": "maple_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 75,
+			"sell_price": 1
+		},
+		{
+			"code": "minor_health_potion",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": 600,
+			"sell_price": null
+		},
+		{
+			"code": "mithril_ore",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 75,
+			"sell_price": 1
+		},
+		{
+			"code": "nettle_leaf",
+			"npc": "herbal_merchant",
+			"currency": "gold",
+			"buy_price": 35,
+			"sell_price": 1
+		},
+		{
+			"code": "old_boots",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 350
+		},
+		{
+			"code": "palm_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 100,
+			"sell_price": 1
+		},
+		{
+			"code": "perfect_pearl",
+			"npc": "archaeologist",
+			"currency": "small_pearls",
+			"buy_price": 20,
+			"sell_price": null
+		},
+		{
+			"code": "piece_of_obsidian",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 350,
+			"sell_price": null
+		},
+		{
+			"code": "powerful_rune",
+			"npc": "sorceress",
+			"currency": "sonnengott_coin",
+			"buy_price": 150,
+			"sell_price": null
+		},
+		{
+			"code": "prime_fabric",
+			"npc": "tasks_trader",
+			"currency": "tasks_coin",
+			"buy_price": 14,
+			"sell_price": null
+		},
+		{
+			"code": "protection_rune",
+			"npc": "rune_vendor",
+			"currency": "gold",
+			"buy_price": 30000,
+			"sell_price": null
+		},
+		{
+			"code": "recall_potion",
+			"npc": "herbal_merchant",
+			"currency": "gold",
+			"buy_price": 200,
+			"sell_price": null
+		},
+		{
+			"code": "ruby",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1500
+		},
+		{
+			"code": "ruby_book",
+			"npc": "archaeologist",
+			"currency": "elemental_page",
+			"buy_price": 30,
+			"sell_price": null
+		},
+		{
+			"code": "salmon",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 100,
+			"sell_price": 1
+		},
+		{
+			"code": "sand_snakeskin",
+			"npc": "tailor",
+			"currency": "sand_snake_hide",
+			"buy_price": 4,
+			"sell_price": null
+		},
+		{
+			"code": "sandwhisper_bag",
+			"npc": "sandwhisper_trader",
+			"currency": "sandwhisper_coin",
+			"buy_price": 230,
+			"sell_price": null
+		},
+		{
+			"code": "sandwhisper_codex",
+			"npc": "archaeologist",
+			"currency": "codex_page",
+			"buy_price": 24,
+			"sell_price": null
+		},
+		{
+			"code": "sandwhisper_key",
+			"npc": "sandwhisper_trader",
+			"currency": "sandwhisper_coin",
+			"buy_price": 5,
+			"sell_price": null
+		},
+		{
+			"code": "sanguine_edge_of_rosen",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 2500
+		},
+		{
+			"code": "sap",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 300,
+			"sell_price": 15
+		},
+		{
+			"code": "sapphire",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1500
+		},
+		{
+			"code": "sapphire_book",
+			"npc": "archaeologist",
+			"currency": "elemental_page",
+			"buy_price": 30,
+			"sell_price": null
+		},
+		{
+			"code": "shell",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 120
+		},
+		{
+			"code": "shrimp",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 30,
+			"sell_price": 1
+		},
+		{
+			"code": "small_antidote",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": 800,
+			"sell_price": null
+		},
+		{
+			"code": "small_pearls",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 250
+		},
+		{
+			"code": "snakeskin",
+			"npc": "tailor",
+			"currency": "snake_hide",
+			"buy_price": 4,
+			"sell_price": null
+		},
+		{
+			"code": "sonnengott_cloak",
+			"npc": "sorceress",
+			"currency": "sonnengott_coin",
+			"buy_price": 245,
+			"sell_price": null
+		},
+		{
+			"code": "spruce_wood",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 25,
+			"sell_price": 1
+		},
+		{
+			"code": "strange_ore",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 100,
+			"sell_price": 1
+		},
+		{
+			"code": "sunflower",
+			"npc": "herbal_merchant",
+			"currency": "gold",
+			"buy_price": 10,
+			"sell_price": 1
+		},
+		{
+			"code": "swordfish",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 150,
+			"sell_price": 1
+		},
+		{
+			"code": "topaz",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 1500
+		},
+		{
+			"code": "topaz_book",
+			"npc": "archaeologist",
+			"currency": "elemental_page",
+			"buy_price": 30,
+			"sell_price": null
+		},
+		{
+			"code": "trout",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 50,
+			"sell_price": 1
+		},
+		{
+			"code": "vampiric_rune",
+			"npc": "sandwhisper_trader",
+			"currency": "sandwhisper_coin",
+			"buy_price": 100,
+			"sell_price": null
+		},
+		{
+			"code": "vermin_leather",
+			"npc": "tailor",
+			"currency": "rat_hide",
+			"buy_price": 4,
+			"sell_price": null
+		},
+		{
+			"code": "voidstone_axe",
+			"npc": "timber_merchant",
+			"currency": "gold",
+			"buy_price": 250000,
+			"sell_price": null
+		},
+		{
+			"code": "voidstone_fishing_rod",
+			"npc": "fish_merchant",
+			"currency": "gold",
+			"buy_price": 250000,
+			"sell_price": null
+		},
+		{
+			"code": "voidstone_gloves",
+			"npc": "herbal_merchant",
+			"currency": "gold",
+			"buy_price": 250000,
+			"sell_price": null
+		},
+		{
+			"code": "voidstone_knife",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": 250000,
+			"sell_price": null
+		},
+		{
+			"code": "voidstone_pickaxe",
+			"npc": "gemstone_merchant",
+			"currency": "gold",
+			"buy_price": 250000,
+			"sell_price": null
+		},
+		{
+			"code": "wolf_ears",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 300
+		},
+		{
+			"code": "wooden_club",
+			"npc": "nomadic_merchant",
+			"currency": "gold",
+			"buy_price": null,
+			"sell_price": 350
+		}
+	],
+	"total": 105,
+	"page": 1,
+	"size": 1000,
+	"pages": 1
+}

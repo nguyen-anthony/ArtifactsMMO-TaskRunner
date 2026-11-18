@@ -40,7 +40,9 @@ sealed class TaskType {
         val targetItemCode: String? = null,
         val targetItemName: String? = null,
         /** Fishing only: cook fish before depositing. */
-        val cookBeforeDeposit: Boolean = false
+        val cookBeforeDeposit: Boolean = false,
+        /** Stat to favour for non-tool gear; null = decide from the resource's drops. */
+        val gearFocus: StatGearOptimizer.Focus? = null,
     ) : TaskType()
 
     /** Fight monsters at a specific location. */
@@ -143,6 +145,15 @@ sealed class TaskType {
         val recycledSoFar: Int = 0,
     ) : TaskType()
 
+    /** Quick task: withdraw an item from the bank and delete it, in batches. */
+    data class BankDelete(
+        val itemCode: String,
+        val itemName: String,
+        val quantity: Int,
+        /** Items deleted by earlier batches (checkpointed via the recycled counter). */
+        val deletedSoFar: Int = 0,
+    ) : TaskType()
+
     /** Quick task: deposit a specific item from inventory to the bank. */
     data class InventoryDeposit(
         val itemCode: String,
@@ -166,6 +177,16 @@ sealed class TaskType {
     /** Quick task: deposit multiple items from inventory to the bank (one bank trip). */
     data class BulkInventoryDeposit(
         val items: List<SimpleItem>
+    ) : TaskType()
+
+    /** Quick task: move gold between the character and the bank (0 = all of it). */
+    data class GoldTransfer(val deposit: Boolean, val quantity: Int) : TaskType()
+
+    /** Quick task: buy items from a permanent NPC at its fixed map tile. */
+    data class NpcBuy(
+        val npcCode: String,
+        val npcName: String,
+        val itemsToBuy: List<SimpleItem>
     ) : TaskType()
 
     /** Event task: gather resources from an ephemeral event tile. */

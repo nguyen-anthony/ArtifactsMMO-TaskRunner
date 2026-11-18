@@ -119,26 +119,29 @@ class LegacyExecutors(
         }
 
         /**
-         * Non-combat stat gear (prospecting for gathering, wisdom for crafting) — see
-         * [StatGearOptimizer]. Best-effort, and cheap when nothing needs to change: it only
-         * costs a bank trip when a better item is actually found.
+         * Non-combat gear for gathering/crafting — skill speed (altar doll) first, then
+         * prospecting or wisdom (see [StatGearOptimizer]). Best-effort, and cheap when nothing
+         * needs to change: it only costs a bank trip when a better item is actually found.
          */
         private suspend fun ensureStatGear(ctx: ExecContext) {
-            val priority = when (legacy(ctx)) {
-                is TaskType.Gather, is TaskType.EventGather -> StatGearOptimizer.Priority.GATHERING
-                is TaskType.Craft -> StatGearOptimizer.Priority.CRAFTING
-                else -> return
-            }
+            val task = legacy(ctx)
+            if (task !is TaskType.Gather && task !is TaskType.EventGather && task !is TaskType.Craft) return
             runCatching {
                 val char = helper.refreshCharacter(ctx.character)
-                val actions = StatGearOptimizer.planFor(char, helper, helper.completedAchievements, priority)
+                val goal = when (task) {
+                    is TaskType.Gather -> StatGearOptimizer.gatheringGoal(char, helper, task.skill, task.resourceCode, requested = task.gearFocus)
+                    is TaskType.EventGather -> StatGearOptimizer.gatheringGoal(char, helper, task.skill, task.resourceCode)
+                    is TaskType.Craft -> StatGearOptimizer.Goal.crafting(task.skill)
+                    else -> return@runCatching
+                }
+                val actions = StatGearOptimizer.planFor(char, helper, helper.completedAchievements, goal)
                 if (actions.isEmpty()) return@runCatching
-                ctx.status("Optimizing gear for ${priority.name.lowercase()}...")
+                ctx.status("Optimizing gear for ${goal.label}...")
                 var updated = helper.retrieveAndEquipItems(ctx.character, actions)
                 // A competing character may have taken an item first (FCFS); re-plan once
                 // against the refreshed bank rather than settling for a half-applied swap.
                 if (actions.any { helper.getEquippedInSlot(updated, it.slot) != it.itemCode }) {
-                    val retry = StatGearOptimizer.planFor(updated, helper, helper.completedAchievements, priority)
+                    val retry = StatGearOptimizer.planFor(updated, helper, helper.completedAchievements, goal)
                     if (retry.isNotEmpty()) updated = helper.retrieveAndEquipItems(ctx.character, retry)
                 }
             }.onFailure { rethrowCancellation(it); ctx.status("Stat gear error: ${it.message}") }
@@ -165,10 +168,13 @@ class LegacyExecutors(
                 is TaskType.TaskMaster -> taskMaster.executeStep(ctx.character, task, ctx.status, prev)
                 is TaskType.BankWithdraw -> bank.executeBankWithdraw(ctx.character, task, ctx.status)
                 is TaskType.BankRecycle -> bank.executeBankRecycle(ctx.character, task, ctx.status)
+                is TaskType.BankDelete -> bank.executeBankDelete(ctx.character, task, ctx.status)
                 is TaskType.InventoryDeposit -> bank.executeInventoryDeposit(ctx.character, task, ctx.status)
                 is TaskType.InventoryRecycle -> bank.executeInventoryRecycle(ctx.character, task, ctx.status)
                 is TaskType.BulkBankWithdraw -> bank.executeBulkBankWithdraw(ctx.character, task, ctx.status)
                 is TaskType.BulkInventoryDeposit -> bank.executeBulkInventoryDeposit(ctx.character, task, ctx.status)
+                is TaskType.GoldTransfer -> bank.executeGoldTransfer(ctx.character, task, ctx.status)
+                is TaskType.NpcBuy -> event.executeNpcBuyStep(ctx.character, task, ctx.status)
                 is TaskType.EventGather -> event.executeGatherStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status, prev)
                 is TaskType.EventNpc -> event.executeNpcStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status)
                 is TaskType.EventFight -> event.executeEventFightStep(ctx.character, task, { eventActive(task.eventCode) }, ctx.status, prev)

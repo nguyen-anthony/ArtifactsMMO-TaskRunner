@@ -18,7 +18,10 @@ data class CraftableDto(
     val name: String,
     val skill: String,
     val level: Int,
+    /** Items producible now (craft actions × [yield]). */
     val maxCraftable: Int,
+    /** Items produced per craft action (e.g. 4 cookies). */
+    val yield: Int = 1,
     val ingredients: List<IngredientDto>,
     val npcBuy: List<NpcBuyDto>,
 )
@@ -28,12 +31,14 @@ val CRAFT_SKILLS = listOf("weaponcrafting", "gearcrafting", "jewelrycrafting", "
 
 /** Engine result → API shape. Order is preserved (craftable now first). */
 fun List<ActionHelper.CraftableItemInfo>.toCraftableDtos(): List<CraftableDto> = map { info ->
+    val yieldPerCraft = (info.item.craft?.quantity ?: 1).coerceAtLeast(1)
     CraftableDto(
         code = info.item.code,
         name = info.item.name,
         skill = info.item.craft?.skill.orEmpty(),
         level = info.item.craft?.level ?: info.item.level,
-        maxCraftable = info.maxCraftable,
+        maxCraftable = info.maxCraftable * yieldPerCraft,
+        yield = yieldPerCraft,
         ingredients = info.ingredients.map { IngredientDto(it.code, it.quantity, info.ingredientAvailable[it.code] ?: 0) },
         npcBuy = info.npcPurchasesNeeded.map { NpcBuyDto(it.npcCode, it.itemCode, it.currency, it.priceEach, it.quantityNeeded) },
     )

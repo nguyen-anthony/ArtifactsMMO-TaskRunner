@@ -158,6 +158,14 @@ class ContentService(transport: ApiTransport) : BaseApiService(transport) {
         return get<ApiResponse<NPC>>("/npcs/details/$code").data
     }
 
+    /** Every NPC trade entry across all NPCs (`GET /npcs/items`). */
+    suspend fun getAllNPCItems(page: Int = 1, size: Int = 100): DataPage<NPCItem> {
+        return get<DataPage<NPCItem>>("/npcs/items") {
+            parameter("page", page)
+            parameter("size", size)
+        }
+    }
+
     /**
      * Get items sold/bought by an NPC
      */

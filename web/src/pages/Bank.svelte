@@ -4,6 +4,7 @@
   import { catalog } from '../lib/catalog'
   import { live } from '../lib/live.svelte'
   import BankThresholds from '../components/BankThresholds.svelte'
+  import BankCleanup from '../components/BankCleanup.svelte'
   import type { CharacterDto, RateWindow } from '../lib/types'
 
   let thresholdEdit = $state<string | null>(null)
@@ -13,6 +14,7 @@
   let characters = $state<CharacterDto[]>([])
   let filter = $state('')
   let target = $state('')
+  let taskPriority = $state(60)
   let message = $state('')
   let error = $state('')
 
@@ -22,6 +24,35 @@
     api.bank().then((b) => (items = b)).catch((e) => (error = e.message))
   })
   api.characters().then((c) => { characters = c; target = c[0]?.name ?? '' })
+
+  // ── Gold ── (bank gold isn't in the item snapshot; refreshed on bank ticks and on demand)
+  let bankGold = $state<number | null>(null)
+  const loadGold = () => {
+    api.bankGold().then((g) => (bankGold = g.gold)).catch(() => {})
+    api.characters().then((c) => (characters = c)).catch(() => {})
+  }
+  $effect(() => { live.bankTick; loadGold() })
+  const carriedGold = $derived(characters.reduce((s, c) => s + (c.gold ?? 0), 0))
+
+  async function depositGold(names: string[]) {
+    try {
+      const ids: number[] = []
+      for (const n of names) {
+        const t = await api.createTask({ spec: { kind: 'gold_deposit', quantity: 0 }, assignedCharacter: n, priority: Number(taskPriority) || 60 })
+        ids.push(t.id)
+      }
+      message = `Queued gold deposit for ${names.join(', ')} (${ids.map((i) => `#${i}`).join(', ')})`
+    } catch (e: any) { error = e.message }
+  }
+
+  async function withdrawGold() {
+    const q = Number(prompt(`Withdraw how much gold to ${target}? (0 = all ${bankGold ?? ''})`, '0'))
+    if (!Number.isFinite(q) || q < 0) return
+    try {
+      const t = await api.createTask({ spec: { kind: 'gold_withdraw', quantity: Math.floor(q) }, assignedCharacter: target, priority: Number(taskPriority) || 60 })
+      message = `Queued gold withdraw task #${t.id}`
+    } catch (e: any) { error = e.message }
+  }
   const loadRates = () => api.rates().then((r) => (rates = r.buckets)).catch(() => {})
   loadRates()
   $effect(() => { const t = setInterval(loadRates, 5000); return () => clearInterval(t) })
@@ -33,7 +64,7 @@
     const q = Number(prompt(`Withdraw how many ${code} to ${target}?`, '1'))
     if (!q) return
     try {
-      const t = await api.createTask({ spec: { kind: 'bank_withdraw', itemCode: code, quantity: q }, assignedCharacter: target, priority: 60 })
+      const t = await api.createTask({ spec: { kind: 'bank_withdraw', itemCode: code, quantity: q }, assignedCharacter: target, priority: Number(taskPriority) || 60 })
       message = `Queued withdraw task #${t.id}`
     } catch (e: any) { error = e.message }
   }
@@ -56,7 +87,7 @@
     try {
       const t = await api.createTask({
         spec: { kind: 'bank_recycle', itemCode: code, itemName: info.name, quantity: q, craftSkill: info.craftSkill },
-        assignedCharacter: target, priority: 60,
+        assignedCharacter: target, priority: Number(taskPriority) || 60,
       })
       message = `Queued recycle task #${t.id} (${q}× ${info.name}, batched to fit ${target}'s inventory)`
     } catch (e: any) { error = e.message }
@@ -74,13 +105,36 @@
   </div>
 </div>
 
+<div class="panel" style="margin-bottom:12px">
+  <div class="row" style="justify-content:space-between">
+    <strong>Gold — bank: {bankGold ?? '…'} · characters: {carriedGold}</strong>
+    <div class="row">
+      <label title="Priority for gold deposit/withdraw tasks (shared with the Priority box below)">Priority <input type="number" style="width:60px" bind:value={taskPriority} /></label>
+      <button onclick={() => depositGold(characters.filter((c) => (c.gold ?? 0) > 0).map((c) => c.name))}
+              disabled={!characters.some((c) => (c.gold ?? 0) > 0)}>Deposit all characters' gold</button>
+      <button onclick={withdrawGold} disabled={!target}>Withdraw to {target || '…'}</button>
+      <button onclick={loadGold} title="Refresh gold">↻</button>
+    </div>
+  </div>
+  <div class="row">
+    {#each characters as c}
+      <span>{c.name}: {c.gold ?? '?'}
+        {#if (c.gold ?? 0) > 0}<button class="small" onclick={() => depositGold([c.name])}>Deposit</button>{/if}
+      </span>
+    {/each}
+  </div>
+</div>
+
 <BankThresholds bind:editCode={thresholdEdit} characters={characters.map((c) => c.name)} />
+
+<BankCleanup {target} />
 
 <div class="row" style="margin-bottom:12px">
   <label>Search <input bind:value={filter} placeholder="item code" /></label>
   <label>Character
     <select bind:value={target}>{#each characters as c}<option>{c.name}</option>{/each}</select>
   </label>
+  <label title="Priority for Withdraw/Recycle and gold tasks">Priority <input type="number" style="width:60px" bind:value={taskPriority} /></label>
   {#if message}<span>{message}</span>{/if}
   {#if error}<span class="error">{error}</span>{/if}
 </div>

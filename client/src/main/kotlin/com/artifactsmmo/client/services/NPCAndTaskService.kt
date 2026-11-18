@@ -4,6 +4,7 @@ import com.artifactsmmo.client.ApiTransport
 import com.artifactsmmo.client.BaseApiService
 import com.artifactsmmo.client.models.*
 import io.ktor.client.*
+import io.ktor.client.request.parameter
 
 /**
  * Service for NPC trading operations
@@ -31,6 +32,14 @@ class NPCService(transport: ApiTransport) : BaseApiService(transport) {
  * Service for task-related operations
  */
 class TaskService(transport: ApiTransport) : BaseApiService(transport) {
+
+    /** Every task the Task Master can hand out (`GET /tasks/list`). */
+    suspend fun getTasksList(page: Int = 1, size: Int = 100): DataPage<TaskDefinition> {
+        return get<DataPage<TaskDefinition>>("/tasks/list") {
+            parameter("page", page)
+            parameter("size", size)
+        }
+    }
 
     /**
      * Accept a new task

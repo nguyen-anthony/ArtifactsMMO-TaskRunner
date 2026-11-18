@@ -9,6 +9,7 @@ import com.artifactsmmo.server.api.RequireSession
 import com.artifactsmmo.server.api.apiRoutes
 import com.artifactsmmo.server.api.contentAndSimRoutes
 import com.artifactsmmo.server.api.craftableRoutes
+import com.artifactsmmo.server.api.eventRoutes
 import com.artifactsmmo.server.api.loadoutRoutes
 import com.artifactsmmo.server.api.toolKitRoutes
 import com.artifactsmmo.server.api.thresholdRoutes
@@ -93,6 +94,7 @@ fun Application.module(
                 apiRoutes(backend)
                 contentAndSimRoutes(backend)
                 craftableRoutes(backend)
+                eventRoutes(backend)
                 loadoutRoutes(backend)
                 toolKitRoutes(backend)
                 thresholdRoutes(backend)

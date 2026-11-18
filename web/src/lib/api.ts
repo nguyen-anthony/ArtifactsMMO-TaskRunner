@@ -5,8 +5,8 @@
 import type {
   Catalog, CharacterDto, CharacterProfile, CharacterSettings, LogLine, Me, MemberPlan, QueuedTask, RateWindow,
   StopCondition, TaskEvent, TaskRequirements, TaskSpec, EquipPlan, UtilityPlan, Craftable, CoopResult, NpcItem,
-  OfferingOverview, OfferingPreview, KnownLoadout, ToolKitConfig, ToolKitState,
-  BankThreshold, ThresholdSettings, ThresholdsState,
+  OfferingOverview, OfferingPreview, KnownLoadout, ToolKitConfig, ToolKitState, GearFocusConfig, FoodConfig,
+  BankThreshold, ThresholdSettings, ThresholdsState, CleanupConfig, CleanupState, GePrice, ActiveEvent,
 } from './types'
 
 export class ApiError extends Error {
@@ -47,8 +47,9 @@ export const api = {
   task: (id: number) => request<QueuedTask>('GET', `/tasks/${id}`),
   taskEvents: (id: number) => request<TaskEvent[]>('GET', `/tasks/${id}/events`),
   createTask: (t: CreateTask) => request<QueuedTask>('POST', '/tasks', t),
-  createGroup: (g: { spec: TaskSpec; slots: { assignedCharacter?: string }[]; priority?: number; stopCondition?: StopCondition }) =>
+  createGroup: (g: { spec: TaskSpec; slots: { assignedCharacter?: string }[]; priority?: number; stopCondition?: StopCondition; expiresAtMillis?: number }) =>
     request<unknown>('POST', '/tasks/group', g),
+  activeEvents: () => request<ActiveEvent[]>('GET', '/events/active'),
   cancelTask: (id: number) => request<void>('POST', `/tasks/${id}/cancel`, { reason: 'cancelled from web UI' }),
 
   characters: () => request<CharacterDto[]>('GET', '/characters'),
@@ -65,6 +66,7 @@ export const api = {
     request<OfferingPreview>('GET', `/offerings/${encodeURIComponent(character)}/plan/${encodeURIComponent(offeringId)}`),
 
   bank: () => request<{ code: string; quantity: number }[]>('GET', '/bank'),
+  bankGold: () => request<{ gold: number }>('GET', '/bank/gold'),
 
   loadouts: () => request<KnownLoadout[]>('GET', '/loadouts'),
   saveLoadout: (l: KnownLoadout) => request<KnownLoadout>('PUT', '/loadouts', l),
@@ -75,6 +77,10 @@ export const api = {
     )}`),
   toolKit: () => request<ToolKitState>('GET', '/toolkit'),
   saveToolKit: (c: ToolKitConfig) => request<ToolKitState>('PUT', '/toolkit', c),
+  gearFocus: () => request<GearFocusConfig>('GET', '/gear-focus'),
+  saveGearFocus: (c: GearFocusConfig) => request<GearFocusConfig>('PUT', '/gear-focus', c),
+  foodConfig: () => request<FoodConfig>('GET', '/food-config'),
+  saveFoodConfig: (c: FoodConfig) => request<FoodConfig>('PUT', '/food-config', c),
   refreshToolKit: () => request<ToolKitState>('POST', '/toolkit/refresh'),
   thresholds: () => request<ThresholdsState>('GET', '/thresholds'),
   refreshThresholds: () => request<ThresholdsState>('POST', '/thresholds/refresh'),
@@ -84,6 +90,10 @@ export const api = {
   deleteThreshold: (itemCode: string) =>
     request<ThresholdsState>('DELETE', `/thresholds/${encodeURIComponent(itemCode)}`),
   rates: () => request<{ buckets: Record<string, RateWindow[]> }>('GET', '/rates'),
+  cleanup: () => request<CleanupState>('GET', '/cleanup'),
+  refreshCleanup: () => request<CleanupState>('POST', '/cleanup/refresh'),
+  saveCleanup: (c: CleanupConfig) => request<CleanupState>('PUT', '/cleanup', c),
+  gePrice: (code: string) => request<GePrice>('GET', `/cleanup/ge/${code}`),
   logs: (character?: string) => request<LogLine[]>('GET', `/logs?limit=300${character ? `&character=${character}` : ''}`),
   resume: () => request<void>('POST', '/control/resume'),
 

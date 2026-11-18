@@ -22,11 +22,24 @@ import kotlinx.serialization.Serializable
 @Serializable data class EventDto(val code: String, val name: String, val contentType: String, val contentCode: String)
 @Serializable data class RaidDto(val code: String, val name: String, val monster: String)
 @Serializable data class NpcItemDto(val code: String, val currency: String, val buyPrice: Int?, val sellPrice: Int?)
+/** [permanent]: has a fixed map tile (not an event-only merchant); [reachable]: that tile is accessible now. */
+@Serializable data class NpcDto(
+    val code: String, val name: String, val type: String,
+    val permanent: Boolean = false, val reachable: Boolean = true,
+)
 
 @Serializable data class Catalog(
     val monsters: List<MonsterDto>, val resources: List<ResourceDto>, val items: List<ItemDto>,
     val events: List<EventDto> = emptyList(), val raids: List<RaidDto> = emptyList(),
+    val npcs: List<NpcDto> = emptyList(),
 )
+
+/**
+ * NPCs with [permanent] set: they have a static map tile ([staticTileCodes], from
+ * `/maps?content_type=npc`) and aren't spawned by an event ([eventNpcCodes]).
+ */
+internal fun classifyNpcs(npcs: List<NpcDto>, staticTileCodes: Set<String>, eventNpcCodes: Set<String>): List<NpcDto> =
+    npcs.map { it.copy(permanent = it.code in staticTileCodes && it.code !in eventNpcCodes) }.sortedBy { it.name }
 
 @Serializable data class LoadoutRequest(val character: String, val monsterCode: String)
 @Serializable
@@ -72,6 +85,19 @@ fun Route.contentAndSimRoutes(b: ApiBackend) {
         val c = catalog ?: catalogLock.withLock {
             catalog ?: run {
                 val content = e.client.content
+                val events = runCatching {
+                    allPages { e.client.events.getEvents(page = it, size = 100) }
+                        .map { EventDto(it.code, it.name, it.content.type, it.content.code) }.sortedBy { it.name }
+                }.getOrDefault(emptyList())
+                val npcs = runCatching {
+                    val staticTiles = allPages { content.getMaps(contentType = "npc", page = it, size = 100) }
+                        .mapNotNullTo(HashSet()) { it.interactions.content?.code }
+                    val eventNpcs = events.filter { it.contentType == "npc" }.mapTo(HashSet()) { it.contentCode }
+                    classifyNpcs(
+                        allPages { content.getNPCs(page = it, size = 100) }.map { NpcDto(it.code, it.name, it.type) },
+                        staticTiles, eventNpcs,
+                    )
+                }.getOrDefault(emptyList())
                 Catalog(
                     monsters = allPages { content.getMonsters(page = it, size = 100) }
                         .map { MonsterDto(it.code, it.name, it.level, it.type) }.sortedBy { it.level },
@@ -79,14 +105,12 @@ fun Route.contentAndSimRoutes(b: ApiBackend) {
                         .map { ResourceDto(it.code, it.name, it.skill, it.level) }.sortedBy { it.level },
                     items = allPages { content.getItems(page = it, size = 100) }
                         .map { ItemDto(it.code, it.name, it.level, it.type, it.craft?.skill) }.sortedBy { it.level },
-                    events = runCatching {
-                        allPages { e.client.events.getEvents(page = it, size = 100) }
-                            .map { EventDto(it.code, it.name, it.content.type, it.content.code) }.sortedBy { it.name }
-                    }.getOrDefault(emptyList()),
+                    events = events,
                     raids = runCatching {
                         allPages { e.client.raids.getRaids(page = it, size = 50) }
                             .map { RaidDto(it.code, it.name, it.monster) }.sortedBy { it.name }
                     }.getOrDefault(emptyList()),
+                    npcs = npcs,
                 ).also { catalog = it }
             }
         }
@@ -94,9 +118,11 @@ fun Route.contentAndSimRoutes(b: ApiBackend) {
         // (cheap: in-memory route search) rather than cached with the content.
         val monsters = e.contentCache.reachableContentCodes("monster")
         val resources = e.contentCache.reachableContentCodes("resource")
+        val npcs = e.contentCache.reachableContentCodes("npc")
         call.respond(c.copy(
             monsters = c.monsters.map { it.copy(reachable = it.code in monsters) },
             resources = c.resources.map { it.copy(reachable = it.code in resources) },
+            npcs = c.npcs.map { it.copy(reachable = it.code in npcs) },
         ))
     }
 

@@ -320,6 +320,28 @@ class ContentCache(private val contentService: ContentService) {
         return items
     }
 
+    /** Every item in the game (all pages), cached like [getItemsByType]. */
+    suspend fun getAllItems(): List<Item> = getItemsByType(ALL_ITEMS_KEY)
+
+    /** Every NPC trade entry across all NPCs (`GET /npcs/items`), cached for 24h. */
+    suspend fun getAllNpcItems(): List<NPCItem> {
+        npcCatalogCache.getIfPresent(ALL_NPC_ITEMS_KEY)?.let { return it }
+        val items = mutableListOf<NPCItem>()
+        var page = 1
+        while (true) {
+            val result = contentService.getAllNPCItems(page = page, size = 100)
+            items += result.data
+            if (result.data.size < 100 || page >= (result.pages ?: Int.MAX_VALUE)) break
+            page++
+        }
+        npcCatalogCache.put(ALL_NPC_ITEMS_KEY, items)
+        return items
+    }
+
+    /** Codes of [contentType] content placed on map tiles (from the pre-warmed maps; ignores reachability). */
+    fun mapContentCodes(contentType: String): Set<String> =
+        allMaps.mapNotNullTo(HashSet()) { m -> m.interactions.content?.takeIf { it.type == contentType }?.code }
+
     /**
      * Return all items of [type] (all pages merged), hitting the cache first.
      * Results are never filtered by level — callers filter by [Item.level] in memory.
@@ -329,7 +351,7 @@ class ContentCache(private val contentService: ContentService) {
         val items = mutableListOf<Item>()
         var page = 1
         while (true) {
-            val result = contentService.getItems(type = type, page = page, size = 100)
+            val result = contentService.getItems(type = type.takeIf { it != ALL_ITEMS_KEY }, page = page, size = 100)
             items.addAll(result.data)
             if (page >= (result.pages ?: Int.MAX_VALUE)) break
             if (result.data.size < 100) break
@@ -422,6 +444,8 @@ class ContentCache(private val contentService: ContentService) {
         .build()
 
     private val NPC_CACHE_KEY = "all"
+    private val ALL_NPC_ITEMS_KEY = "*all*"
+    private val ALL_ITEMS_KEY = "*all*"
 
     /**
      * Return all [NPCItem] entries (across every NPC) that have this [itemCode] for sale

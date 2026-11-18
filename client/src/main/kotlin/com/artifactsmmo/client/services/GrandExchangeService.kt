@@ -17,12 +17,22 @@ class GrandExchangeService(transport: ApiTransport) : BaseApiService(transport) 
     suspend fun getOrders(
         itemCode: String? = null,
         seller: String? = null,
+        type: String? = null,
         page: Int = 1,
         size: Int = 50
     ): DataPage<GrandExchangeOrder> {
         return get<DataPage<GrandExchangeOrder>>("/grandexchange/orders") {
             itemCode?.let { parameter("code", it) }
-            seller?.let { parameter("seller", it) }
+            seller?.let { parameter("account", it) }
+            type?.let { parameter("type", it) }
+            parameter("page", page)
+            parameter("size", size)
+        }
+    }
+
+    /** Recent completed sales of [itemCode], newest first. */
+    suspend fun getHistory(itemCode: String, page: Int = 1, size: Int = 50): DataPage<GEHistoryEntry> {
+        return get<DataPage<GEHistoryEntry>>("/grandexchange/history/$itemCode") {
             parameter("page", page)
             parameter("size", size)
         }

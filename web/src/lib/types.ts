@@ -27,20 +27,26 @@ export interface EventMap { x: number; y: number; layer: string }
 export type DropStrategy = 'COOK_AND_USE' | 'COOK_AND_BANK' | 'BANK_RAW'
 
 export type TaskSpec =
-  | { kind: 'gather'; skill: string; resourceCode: string; resourceName?: string; targetItemCode?: string; cookBeforeDeposit?: boolean }
+  | { kind: 'gather'; skill: string; resourceCode: string; resourceName?: string; targetItemCode?: string; cookBeforeDeposit?: boolean; gearFocus?: GearFocus }
   | { kind: 'fight'; monsterCode: string; monsterName?: string; equip?: EquipPlan[]; utilities?: UtilityPlan[]; loadoutOptimized?: boolean; defaultDropStrategy?: DropStrategy }
   | { kind: 'craft'; skill: string; itemCode: string; itemName?: string; mode: 'RECYCLE' | 'BANK'; targetQuantity?: number }
   | { kind: 'task_master'; taskType: 'items' | 'monsters' }
   | { kind: 'bank_withdraw'; itemCode: string; quantity: number }
   | { kind: 'bank_recycle'; itemCode: string; quantity: number; craftSkill: string; itemName?: string }
+  | { kind: 'bank_delete'; itemCode: string; quantity: number; itemName?: string }
   | { kind: 'inventory_deposit'; itemCode: string; quantity: number }
   | { kind: 'inventory_recycle'; itemCode: string; quantity: number; craftSkill: string }
   | { kind: 'bulk_bank_withdraw'; items: ItemQty[] }
   | { kind: 'bulk_inventory_deposit'; items: ItemQty[] }
+  /** quantity 0 = all of it (carried gold for deposit, bank gold for withdraw). */
+  | { kind: 'gold_deposit'; quantity: number }
+  | { kind: 'gold_withdraw'; quantity: number }
+  /** Buy from a permanent NPC (fixed tile); purchases are banked. */
+  | { kind: 'npc_buy'; npcCode: string; npcName?: string; items: ItemQty[] }
   | { kind: 'boss_fight'; monsterCode: string; monsterName?: string; plans?: Record<string, MemberPlan>; raidCode?: string; eventCode?: string; eventMap?: EventMap }
   | { kind: 'event_gather'; eventCode: string; resourceCode: string; skill: string; map: EventMap }
-  | { kind: 'event_npc'; eventCode: string; npcCode: string; map: EventMap; sell?: ItemQty[]; buy?: ItemQty[] }
-  | { kind: 'event_fight'; eventCode: string; monsterCode: string; map: EventMap }
+  | { kind: 'event_npc'; eventCode: string; npcCode: string; map: EventMap; sell?: ItemQty[]; buy?: ItemQty[]; npcName?: string }
+  | { kind: 'event_fight'; eventCode: string; monsterCode: string; map: EventMap; monsterName?: string; equip?: EquipPlan[]; utilities?: UtilityPlan[] }
   | { kind: 'daily_offering'; categories?: string[]; offeringId?: string | null }
   | { kind: 'toolkit_sync' }
 
@@ -96,7 +102,7 @@ export interface OfferingPreview {
   offeringId: string; character: string; kind: 'ready' | 'next' | 'infeasible'
   nextStep?: string | null; estimatedSeconds?: number | null; reason?: string | null
 }
-export interface CharacterDto { name: string; status?: WorkerStatus; settings: CharacterSettings; level?: number; skills?: Record<string, number> }
+export interface CharacterDto { name: string; status?: WorkerStatus; settings: CharacterSettings; level?: number; skills?: Record<string, number>; gold?: number | null }
 
 /**
  * Raw game character (client models/Character.kt, snake_case like the game API). Per-skill
@@ -126,12 +132,35 @@ export interface Catalog {
   /** `contentType`: what the event spawns ('monster' | 'resource' | 'npc'). */
   events: { code: string; name: string; contentType: string; contentCode: string }[]
   raids: { code: string; name: string; monster: string }[]
+  /** `permanent`: fixed map tile (not an event-only merchant); `reachable`: the tile is accessible now. */
+  npcs?: { code: string; name: string; type: string; permanent: boolean; reachable: boolean }[]
 }
 
 /** What an NPC trades: `buyPrice` = we can buy it, `sellPrice` = we can sell it to them. */
 export interface NpcItem { code: string; currency: string; buyPrice: number | null; sellPrice: number | null }
+/** GET /api/events/active: a live event, what it spawned and where. */
+export interface ActiveEvent {
+  code: string; name: string; type: 'npc' | 'monster' | 'resource' | string; contentCode: string
+  x: number; y: number; layer: string; expiresAtMillis?: number
+}
 
 export const TOOL_SKILLS = ['mining', 'woodcutting', 'fishing', 'alchemy', 'cooking'] as const
+/** Mirrors domain `GearFocus`: AUTO = prospecting if the resource drops a `prospectFor` item, else wisdom. */
+export type GearFocus = 'AUTO' | 'PROSPECTING' | 'WISDOM'
+
+/** Mirrors engine `GearFocusConfig` (config kind `gear_focus`, key `default`). */
+export interface GearFocusConfig { prospectFor: string[] }
+
+/** Mirrors engine `FoodConfig` (config kind `food`, key `default`). maxFood 0 = no cap. */
+export interface FoodConfig {
+  adaptive: boolean
+  lootReserveFights: number
+  minFood: number
+  maxFood: number
+  healSafety: number
+  restWhenCheaper: boolean
+}
+
 /** Mirrors engine `ToolKitConfig` (config kind `toolkit`, key `default`). */
 export interface ToolKitConfig {
   enabled: boolean
@@ -154,6 +183,82 @@ export interface ToolKitPlan {
   computedAtMillis: number
 }
 export interface ToolKitState { config: ToolKitConfig; plan: ToolKitPlan | null }
+
+/** Mirrors engine `CleanupConfig` (config kind `cleanup`, key `default`). */
+export interface CleanupConfig {
+  types: string[]
+  spares: number
+  lookaheadLevels: number
+  keep: string[]
+  protectIngredients: boolean
+  protectLoadouts: boolean
+  autoRecycle: boolean
+  recyclePriority: number
+  resourceGearMargin: number
+  resourceFoodMargin: number
+  resourceXpWindow: number
+  resourceThinUses: number
+  resourceIgnoreTypes: string[]
+}
+/** Mirrors engine `CleanupRow`: an owned item beaten on every stat by another owned item. */
+export interface CleanupRow {
+  code: string
+  name: string
+  type: string
+  level: number
+  bank: number
+  inventory: number
+  equipped: number
+  kept: number
+  keptFor: string[]
+  surplus: number
+  recyclable: number
+  dominatedBy: string[]
+  craftSkill?: string | null
+  protectedBy?: string | null
+}
+/** Mirrors engine `ResourceUse`: something a resource can still become ([path] from the resource). */
+export interface ResourceUse {
+  code: string
+  name: string
+  type: string
+  level: number
+  /** gear | tool | consumable | xp | other | npc | task */
+  kind: string
+  reason: string
+  path: string[]
+  perUnit: number
+  crafts: number
+}
+export interface NpcSellOffer { npc: string; npcName: string; price: number; currency: string; permanent: boolean }
+/** Mirrors engine `ResourceRow`: verdict `unused` | `no_recipe` | `thin`. */
+export interface ResourceRow {
+  code: string
+  name: string
+  subtype: string
+  level: number
+  bank: number
+  inventory: number
+  verdict: 'unused' | 'no_recipe' | 'thin'
+  uses?: ResourceUse[]
+  taskTargets?: ResourceUse[]
+  maxRecipeLevel?: number
+  npcSell?: NpcSellOffer[]
+  protectedBy?: string | null
+}
+export interface CleanupState {
+  config: CleanupConfig
+  report: { rows: CleanupRow[]; computedAtMillis: number; resources?: ResourceRow[] } | null
+}
+/** GET /api/cleanup/ge/{code}: Grand Exchange prices on demand. */
+export interface GePrice {
+  code: string
+  recentSales: { price: number; quantity: number; soldAt: string }[]
+  lowestSell?: number | null
+  sellQuantity: number
+  highestBuy?: number | null
+  buyQuantity: number
+}
 
 /** Mirrors engine `BankThreshold` (config kind `threshold`, keyed by item code). */
 export interface BankThreshold {
@@ -233,9 +338,10 @@ export interface RaidConfig {
 
 export interface CraftableIngredient { code: string; perCraft: number; have: number; missing: number }
 export interface NpcBuy { npc: string; item: string; currency: string; priceEach: number; quantity: number }
-/** A recipe with how many can be crafted now (inventory + bank, or bank only). */
+/** A recipe with how many items can be crafted now (inventory + bank, or bank only). */
 export interface Craftable {
-  code: string; name: string; skill: string; level: number; maxCraftable: number
+  /** `maxCraftable` is in items; one craft action makes `yield` items (e.g. 4 cookies). */
+  code: string; name: string; skill: string; level: number; maxCraftable: number; yield?: number
   ingredients: CraftableIngredient[]; npcBuy: NpcBuy[]
 }
 

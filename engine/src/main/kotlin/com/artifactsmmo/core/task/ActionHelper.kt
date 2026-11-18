@@ -55,6 +55,12 @@ class ActionHelper(
      */
     @Volatile var bankReserves: Map<String, Int> = emptyMap()
 
+    /** Gathering gear focus settings (loaded by the engine; see [StatGearOptimizer.resolveFocus]). */
+    @Volatile var gearFocus: GearFocusConfig = GearFocusConfig()
+
+    /** Fight food settings (loaded by the engine; see [FoodPlanner]). */
+    @Volatile var foodConfig: FoodConfig = FoodConfig()
+
     /** Bank quantity of [itemCode] that Task Master may use (above its reserve). */
     fun bankQuantityAboveReserve(itemCode: String): Int =
         (bankState.getQuantity(itemCode) - (bankReserves[itemCode] ?: 0)).coerceAtLeast(0)
@@ -665,6 +671,13 @@ class ActionHelper(
 
     // ── Recycling ──
 
+    /** Permanently delete [quantity] of an item from the character's inventory. */
+    suspend fun deleteItem(name: String, itemCode: String, quantity: Int): Character {
+        val result = client.actions.deleteItem(name, itemCode, quantity)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
+    }
+
     /**
      * Recycle items at a workshop. Character must be at the appropriate workshop.
      * Returns the recycling result including recovered materials.
@@ -928,6 +941,30 @@ class ActionHelper(
      */
     suspend fun getBankItemQuantity(itemCode: String): Int = bankState.getQuantity(itemCode)
 
+    /** Gold in the bank (API call; the item snapshot doesn't track gold). */
+    suspend fun getBankGold(): Int = client.bank.getBankDetails().gold
+
+    /** Move to the bank and deposit [quantity] gold (capped at what the character carries). */
+    suspend fun bankDepositGold(name: String, quantity: Int): Character {
+        var char = refreshCharacter(name)
+        val amount = minOf(quantity, char.gold)
+        if (amount <= 0) return char
+        char = navigateToBank(name, char)
+        val result = client.bank.depositGold(name, amount)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
+    }
+
+    /** Move to the bank and withdraw [quantity] gold (caller checks the bank has it). */
+    suspend fun bankWithdrawGold(name: String, quantity: Int): Character {
+        var char = refreshCharacter(name)
+        if (quantity <= 0) return char
+        char = navigateToBank(name, char)
+        val result = client.bank.withdrawGold(name, quantity)
+        waitForCooldown(result.cooldown.expiration)
+        return result.character
+    }
+
     /**
      * Fetch a single page of bank items (no item_code filter). Used by [CraftingExecutor]
      * to build a full bank snapshot in one paginated sweep instead of one call per ingredient.
@@ -1009,7 +1046,7 @@ class ActionHelper(
      * Food items never auto-selected as combat healing, even if no other food is available
      * (e.g. `coconut`: kept for alchemy/potion crafting, not eaten in fights).
      */
-    private val FOOD_EXCLUDED_FROM_COMBAT = setOf("coconut", "lava_fish", "apple")
+
 
     /**
      * Find the best food item in the character's inventory (highest heal amount)
@@ -1669,6 +1706,9 @@ class ActionHelper(
     )
 
     companion object {
+        /** Food never eaten in combat (too valuable or crafting-only). */
+        internal val FOOD_EXCLUDED_FROM_COMBAT = setOf("coconut", "lava_fish", "apple")
+
         /** All combat-relevant equipment slots, in display order. */
         val COMBAT_SLOTS = listOf(
             SlotInfo("weapon",    "weapon",     "weaponcrafting"),

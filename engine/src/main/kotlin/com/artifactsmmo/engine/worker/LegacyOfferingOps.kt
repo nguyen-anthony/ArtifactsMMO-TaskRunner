@@ -131,7 +131,7 @@ class LegacyOfferingOps(
             }
             is AcquireStep.Craft -> crafting.executeStep(
                 character,
-                TaskType.Craft(step.skill, step.itemCode, step.itemCode, CraftMode.BANK, targetQuantity = step.crafts),
+                TaskType.Craft(step.skill, step.itemCode, step.itemCode, CraftMode.BANK, targetQuantity = step.items),
                 status,
             )
         }
